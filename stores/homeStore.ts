@@ -27,31 +27,12 @@ export interface Category {
 }
 
 const initialCategories: Category[] = [
-  { title: "最近播放", type: "record" },
+  { title: "继续观看", type: "record" },
+  { title: "热门电影", type: "movie", tag: "热门" },
+  { title: "电影", type: "movie", tags: ["最新", "经典", "豆瓣高分", "冷门佳片", "华语", "欧美", "韩国", "日本", "喜剧", "爱情", "动作", "科幻", "动画", "悬疑", "犯罪", "惊悚", "冒险", "音乐", "历史", "奇幻", "恐怖", "战争", "传记", "歌舞", "武侠", "情色", "灾难", "西部", "纪录片", "短片"] },
   { title: "热门剧集", type: "tv", tag: "热门" },
-  { title: "电视剧", type: "tv", tags: ["国产剧", "美剧", "英剧", "韩剧", "日剧", "港剧", "日本动画", "动画"] },
-  {
-    title: "电影",
-    type: "movie",
-    tags: [
-      "热门",
-      "最新",
-      "经典",
-      "豆瓣高分",
-      "冷门佳片",
-      "华语",
-      "欧美",
-      "韩国",
-      "日本",
-      "动作",
-      "喜剧",
-      "爱情",
-      "科幻",
-      "悬疑",
-      "恐怖",
-    ],
-  },
-  { title: "综艺", type: "tv", tag: "综艺" },
+  { title: "剧集", type: "tv", tags: ["国产剧", "美剧", "英剧", "韩剧", "日剧", "港剧"] },
+  { title: "其它", type: "tv", tags: ["综艺", "纪录片", "日本动画"] },
   { title: "豆瓣 Top250", type: "movie", tag: "top250" },
 ];
 
@@ -89,12 +70,13 @@ interface HomeState {
   selectCategory: (category: Category) => void;
   refreshPlayRecords: () => Promise<void>;
   clearError: () => void;
+  reset: () => void;
 }
 
 // 内存缓存，应用生命周期内有效
 const dataCache = new Map<string, CacheItem>();
 
-const useHomeStore = create<HomeState>((set, get) => ({
+const initialState = {
   categories: initialCategories,
   selectedCategory: initialCategories[0],
   contentData: [],
@@ -103,6 +85,10 @@ const useHomeStore = create<HomeState>((set, get) => ({
   pageStart: 0,
   hasMore: true,
   error: null,
+}
+const useHomeStore = create<HomeState>((set, get) => ({
+  ...initialState,
+  reset: () => set(initialState),
 
   fetchInitialData: async () => {
     const { apiBaseUrl } = useSettingsStore.getState();
@@ -110,7 +96,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
 
     const { selectedCategory } = get();
     const cacheKey = getCacheKey(selectedCategory);
-
+    
     // 最近播放不缓存，始终实时获取
     if (selectedCategory.type === 'record') {
       set({ loading: true, contentData: [], pageStart: 0, hasMore: true, error: null });
@@ -276,7 +262,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
   selectCategory: (category: Category) => {
     const currentCategory = get().selectedCategory;
     const cacheKey = getCacheKey(category);
-
+    
     if (currentCategory.title !== category.title || currentCategory.tag !== category.tag) {
       set({
         selectedCategory: category,

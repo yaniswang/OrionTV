@@ -22,8 +22,8 @@ interface SettingsState {
   isLoadingServerConfig: boolean;
   loadSettings: () => Promise<void>;
   fetchServerConfig: () => Promise<void>;
+  fetchLiveSource: () => Promise<void>;
   setApiBaseUrl: (url: string) => void;
-  setM3uUrl: (url: string) => void;
   setRemoteInputEnabled: (enabled: boolean) => void;
   saveSettings: () => Promise<void>;
   setVideoSource: (config: { enabledAll: boolean; sources: { [key: string]: boolean } }) => void;
@@ -34,7 +34,6 @@ interface SettingsState {
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   apiBaseUrl: "",
   m3uUrl: "",
-  liveStreamSources: [],
   remoteInputEnabled: false,
   isModalVisible: false,
   serverConfig: null,
@@ -47,7 +46,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const settings = await SettingsManager.get();
     set({
       apiBaseUrl: settings.apiBaseUrl,
-      m3uUrl: settings.m3uUrl,
       remoteInputEnabled: settings.remoteInputEnabled || false,
       videoSource: settings.videoSource || {
         enabledAll: true,
@@ -57,6 +55,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     if (settings.apiBaseUrl) {
       api.setBaseUrl(settings.apiBaseUrl);
       await get().fetchServerConfig();
+      await get().fetchLiveSource();
     }
   },
   fetchServerConfig: async () => {
@@ -74,12 +73,20 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       set({ isLoadingServerConfig: false });
     }
   },
+  fetchLiveSource: async () => {
+    const ret = await api.getLiveSource();
+    const sources = ret.data;
+    if (sources.length>0) {
+      const sourceUrl = sources[0].url;
+      set({ m3uUrl: sourceUrl });
+      logger.info("Live source url:", sourceUrl);
+    }
+  },
   setApiBaseUrl: (url) => set({ apiBaseUrl: url }),
-  setM3uUrl: (url) => set({ m3uUrl: url }),
   setRemoteInputEnabled: (enabled) => set({ remoteInputEnabled: enabled }),
   setVideoSource: (config) => set({ videoSource: config }),
   saveSettings: async () => {
-    const { apiBaseUrl, m3uUrl, remoteInputEnabled, videoSource } = get();
+    const { apiBaseUrl, remoteInputEnabled, videoSource } = get();
     const currentSettings = await SettingsManager.get()
     const currentApiBaseUrl = currentSettings.apiBaseUrl;
     let processedApiBaseUrl = apiBaseUrl.trim();
@@ -103,7 +110,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
     await SettingsManager.save({
       apiBaseUrl: processedApiBaseUrl,
-      m3uUrl,
       remoteInputEnabled,
       videoSource,
     });

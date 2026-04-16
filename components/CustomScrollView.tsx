@@ -118,37 +118,18 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
       </View>
     );
   }
-
-  // 将数据按行分组
-  const groupItemsByRow = (items: any[], columns: number) => {
-    const rows = [];
-    for (let i = 0; i < items.length; i += columns) {
-      rows.push(items.slice(i, i + columns));
-    }
-    return rows;
-  };
-
-  const rows = groupItemsByRow(data, effectiveColumns);
-
+  
   // 动态样式
   const dynamicStyles = StyleSheet.create({
     listContent: {
-      paddingBottom: responsiveConfig.spacing * 2,
-      paddingHorizontal: responsiveConfig.spacing / 2,
-    },
-    rowContainer: {
-      flexDirection: "row",
-      marginBottom: responsiveConfig.spacing,
-    },
-    fullRowContainer: {
-      justifyContent: "space-around",
-      marginRight: responsiveConfig.spacing / 2,
-    },
-    partialRowContainer: {
-      justifyContent: "flex-start",
+      flexDirection: 'row', // 水平排列
+      flexWrap: 'wrap',     // 自动换行
+      padding: 5,           // 容器内边距
     },
     itemContainer: {
-      width: responsiveConfig.cardWidth,
+      width: (100 / effectiveColumns)+'%', 
+      justifyContent: 'center',
+      alignItems: 'center',
     },
     itemWithMargin: {
       width: responsiveConfig.cardWidth,
@@ -176,28 +157,15 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
       >
         {data.length > 0 ? (
           <>
-            {rows.map((row, rowIndex) => {
-              const isFullRow = row.length === effectiveColumns;
-              const rowStyle = isFullRow ? dynamicStyles.fullRowContainer : dynamicStyles.partialRowContainer;
+            {data.map((item, itemIndex) => {
+              const cardProps = {
+                key: itemIndex,
+                style: dynamicStyles.itemContainer,
+              };
 
               return (
-                <View key={rowIndex} style={[dynamicStyles.rowContainer, rowStyle]}>
-                  {row.map((item, itemIndex) => {
-                    const actualIndex = rowIndex * effectiveColumns + itemIndex;
-                    const isLastItemInPartialRow = !isFullRow && itemIndex === row.length - 1;
-                    const itemStyle = isLastItemInPartialRow ? dynamicStyles.itemContainer : dynamicStyles.itemWithMargin;
-
-                    const cardProps = {
-                      key: actualIndex,
-                      style: isFullRow ? dynamicStyles.itemContainer : itemStyle,
-                    };
-
-                    return (
-                      <View {...cardProps}>
-                        {renderItem({ item, index: actualIndex })}
-                      </View>
-                    );
-                  })}
+                <View {...cardProps}>
+                  {renderItem({ item, index: itemIndex })}
                 </View>
               );
             })}

@@ -25,7 +25,8 @@
           "android": {
             "newArchEnabled": false,
             "enableProguardInReleaseBuilds": true,
-            "enableShrinkResourcesInReleaseBuilds": true
+            "enableShrinkResourcesInReleaseBuilds": true,
+            "buildArchs": ["armeabi-v7a", "arm64-v8a"]
           }
         }
       ],

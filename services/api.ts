@@ -13,6 +13,18 @@ export interface DoubanResponse {
   list: DoubanItem[];
 }
 
+export interface LiveSourceItem {
+  key: string;
+  name: string;
+  url: string
+}
+
+export interface LiveSourceResponse {
+  success: boolean;
+  data: Array<LiveSourceItem>;
+}
+
+
 export interface VideoDetail {
   id: string;
   title: string;
@@ -46,6 +58,8 @@ export interface Favorite {
   title: string;
   source_name: string;
   total_episodes: number;
+  episode_index: number;
+  progress: number;
   search_title: string;
   year: string;
   save_time?: number;
@@ -207,6 +221,12 @@ export class API {
     pageStart: number = 0
   ): Promise<DoubanResponse> {
     const url = `/api/douban?type=${type}&tag=${encodeURIComponent(tag)}&pageSize=${pageSize}&pageStart=${pageStart}`;
+    const response = await this._fetch(url);
+    return response.json();
+  }
+
+  async getLiveSource(): Promise<LiveSourceResponse> {
+    const url = `/api/live/sources`;
     const response = await this._fetch(url);
     return response.json();
   }

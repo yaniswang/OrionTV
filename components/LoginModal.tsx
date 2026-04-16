@@ -13,7 +13,7 @@ import { StyledButton } from "./StyledButton";
 
 const LoginModal = () => {
   const { isLoginModalVisible, hideLoginModal, checkLoginStatus } = useAuthStore();
-  const { serverConfig, apiBaseUrl } = useSettingsStore();
+  const { serverConfig, apiBaseUrl, loadSettings } = useSettingsStore();
   const { refreshPlayRecords } = useHomeStore();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -94,6 +94,8 @@ const LoginModal = () => {
       await LoginCredentialsManager.save({ username, password });
 
       Toast.show({ type: "success", text1: "登录成功" });
+      await loadSettings();
+
       // hideLoginModal();
 
       // // Show disclaimer alert after successful login

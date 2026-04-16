@@ -1,5 +1,6 @@
 import React from "react";
-import { View, Text, StyleSheet, Modal, FlatList } from "react-native";
+import { View, Text, StyleSheet, FlatList } from "react-native";
+import Modal from "react-native-modal";
 import { StyledButton } from "./StyledButton";
 import usePlayerStore from "@/stores/playerStore";
 
@@ -31,27 +32,25 @@ export const SpeedSelectionModal: React.FC = () => {
   };
 
   return (
-    <Modal visible={showSpeedModal} transparent={true} animationType="slide" onRequestClose={onClose}>
-      <View style={styles.modalContainer}>
-        <View style={styles.modalContent}>
-          <Text style={styles.modalTitle}>播放速度</Text>
-          <FlatList
-            data={SPEED_OPTIONS}
-            numColumns={3}
-            contentContainerStyle={styles.speedList}
-            keyExtractor={(item) => `speed-${item.rate}`}
-            renderItem={({ item }) => (
-              <StyledButton
-                text={item.label}
-                onPress={() => onSelectSpeed(item.rate)}
-                isSelected={playbackRate === item.rate}
-                hasTVPreferredFocus={playbackRate === item.rate}
-                style={styles.speedItem}
-                textStyle={styles.speedItemText}
-              />
-            )}
-          />
-        </View>
+    <Modal isVisible={showSpeedModal} statusBarTranslucent={true} onBackButtonPress={onClose} onBackdropPress={onClose} onSwipeComplete={onClose} swipeDirection="down" style={styles.modalContainer}>
+      <View style={styles.modalContent}>
+        <Text style={styles.modalTitle}>播放速度</Text>
+        <FlatList
+          data={SPEED_OPTIONS}
+          numColumns={3}
+          contentContainerStyle={styles.speedList}
+          keyExtractor={(item) => `speed-${item.rate}`}
+          renderItem={({ item }) => (
+            <StyledButton
+              text={item.label}
+              onPress={() => onSelectSpeed(item.rate)}
+              isSelected={playbackRate === item.rate}
+              hasTVPreferredFocus={playbackRate === item.rate}
+              style={styles.speedItem}
+              textStyle={styles.speedItemText}
+            />
+          )}
+        />
       </View>
     </Modal>
   );
@@ -59,10 +58,8 @@ export const SpeedSelectionModal: React.FC = () => {
 
 const styles = StyleSheet.create({
   modalContainer: {
-    flex: 1,
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    backgroundColor: "transparent",
+    margin: 0,
+    alignItems: "flex-end",
   },
   modalContent: {
     width: 500,

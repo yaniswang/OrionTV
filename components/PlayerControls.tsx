@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Pressable } from "react-native";
 import { Pause, Play, SkipForward, List, Tv, ArrowDownToDot, ArrowUpFromDot, Gauge } from "lucide-react-native";
 import { ThemedText } from "@/components/ThemedText";
 import { MediaButton } from "@/components/MediaButton";
+import { FontAwesome } from "@expo/vector-icons";
 
 import usePlayerStore from "@/stores/playerStore";
 import useDetailStore from "@/stores/detailStore";
@@ -29,8 +30,10 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
     setShowSpeedModal,
     setIntroEndTime,
     setOutroStartTime,
+    toggleFavorite,
     introEndTime,
     outroStartTime,
+    isFavorited,
   } = usePlayerStore();
 
   const { detail } = useDetailStore();
@@ -59,12 +62,6 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
 
   return (
     <View style={styles.controlsOverlay}>
-      <View style={styles.topControls}>
-        <Text style={styles.controlTitle}>
-          {videoTitle} {currentEpisodeTitle ? `- ${currentEpisodeTitle}` : ""}{" "}
-          {currentSourceName ? `(${currentSourceName})` : ""}
-        </Text>
-      </View>
 
       <View style={styles.bottomControlsContainer}>
         <View style={styles.progressBarContainer}>
@@ -111,12 +108,20 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
             <List color="white" size={24} />
           </MediaButton>
 
+          <MediaButton onPress={() => setShowSourceModal(true)}>
+            <Tv color="white" size={24} />
+          </MediaButton>
+
           <MediaButton onPress={() => setShowSpeedModal(true)} timeLabel={playbackRate !== 1.0 ? `${playbackRate}x` : undefined}>
             <Gauge color="white" size={24} />
           </MediaButton>
 
-          <MediaButton onPress={() => setShowSourceModal(true)}>
-            <Tv color="white" size={24} />
+          <MediaButton onPress={toggleFavorite}>
+            <FontAwesome
+                name={isFavorited ? "heart" : "heart-o"}
+                size={20}
+                color={isFavorited ? "#feff5f" : "#ccc"}
+              />
           </MediaButton>
         </View>
       </View>
@@ -126,7 +131,9 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
 
 const styles = StyleSheet.create({
   controlsOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    bottom: 0,
+    width: '100%',
     backgroundColor: "rgba(0, 0, 0, 0.4)",
     justifyContent: "space-between",
     padding: 20,

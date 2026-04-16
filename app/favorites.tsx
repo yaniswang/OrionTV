@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useCallback } from "react";
 import { View, StyleSheet } from "react-native";
 import { ThemedView } from "@/components/ThemedView";
 import { ThemedText } from "@/components/ThemedText";
@@ -11,18 +11,21 @@ import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { getCommonResponsiveStyles } from "@/utils/ResponsiveStyles";
 import ResponsiveNavigation from "@/components/navigation/ResponsiveNavigation";
 import ResponsiveHeader from "@/components/navigation/ResponsiveHeader";
+import { useFocusEffect } from "expo-router";
 
 export default function FavoritesScreen() {
   const { favorites, loading, error, fetchFavorites } = useFavoritesStore();
-
+  
   // 响应式布局配置
   const responsiveConfig = useResponsiveLayout();
   const commonStyles = getCommonResponsiveStyles(responsiveConfig);
   const { deviceType, spacing } = responsiveConfig;
 
-  useEffect(() => {
-    fetchFavorites();
-  }, [fetchFavorites]);
+  useFocusEffect(
+    useCallback(() => {
+      fetchFavorites();
+    }, [fetchFavorites])
+  );
 
   const renderItem = ({ item }: { item: Favorite & { key: string }; index: number }) => {
     const [source, id] = item.key.split("+");
@@ -35,8 +38,9 @@ export default function FavoritesScreen() {
         poster={item.cover}
         year={item.year}
         api={api}
-        episodeIndex={1}
-        progress={0}
+        episodeIndex={item.episode_index}
+        totalEpisodes={item.total_episodes}
+        progress={item.progress}
       />
     );
   };

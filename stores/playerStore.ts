@@ -2,7 +2,7 @@ import { create } from "zustand";
 import Toast from "react-native-toast-message";
 import { AVPlaybackStatus, Video } from "expo-av";
 import { RefObject } from "react";
-import { PlayRecord, PlayRecordManager, PlayerSettingsManager } from "@/services/storage";
+import { PlayRecord, PlayRecordManager, PlayerSettingsManager, FavoriteManager } from "@/services/storage";
 import useDetailStore, { episodesSelectorBySource } from "./detailStore";
 import Logger from '@/utils/Logger';
 
@@ -31,6 +31,7 @@ interface PlayerState {
   playbackRate: number;
   introEndTime?: number;
   outroStartTime?: number;
+  isFavorited: boolean;
   setVideoRef: (ref: RefObject<Video>) => void;
   loadVideo: (options: {
     source: string;
@@ -53,6 +54,7 @@ interface PlayerState {
   setIntroEndTime: () => void;
   setOutroStartTime: () => void;
   reset: () => void;
+  toggleFavorite:  () => void;
   _seekTimeout?: NodeJS.Timeout;
   _isRecordSaveThrottled: boolean;
   // Internal helper
@@ -80,6 +82,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
   outroStartTime: undefined,
   _seekTimeout: undefined,
   _isRecordSaveThrottled: false,
+  isFavorited: false,
 
   setVideoRef: (ref) => set({ videoRef: ref }),
 
@@ -215,6 +218,8 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       const episodesMappingEnd = performance.now();
       logger.info(`[PERF] Episodes mapping (${episodes.length} episodes) took ${(episodesMappingEnd - episodesMappingStart).toFixed(2)}ms`);
       
+      const isFavorited = await FavoriteManager.isFavorited(source, id.toString());
+
       set({
         isLoading: false,
         currentEpisodeIndex: episodeIndex,
@@ -223,6 +228,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
         episodes: mappedEpisodes,
         introEndTime: playRecord?.introEndTime || playerSettings?.introEndTime,
         outroStartTime: playRecord?.outroStartTime || playerSettings?.outroStartTime,
+        isFavorited: isFavorited,
       });
       
       const perfEnd = performance.now();
@@ -272,27 +278,50 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     }
   },
 
+  toggleFavorite: async () => {
+    const detail = useDetailStore.getState().detail;
+    if (!detail) return;
+
+    const { source, id, title, poster, source_name, episodes, year } = detail;
+    const favoriteItem = {
+      cover: poster,
+      title,
+      poster,
+      source_name,
+      total_episodes: episodes.length,
+      search_title: title,
+      year: year || "",
+    };
+
+    const newIsFavorited = await FavoriteManager.toggle(source, id.toString(), favoriteItem);
+    set({ isFavorited: newIsFavorited });
+  },
+
   seek: async (duration) => {
-    const { status, videoRef } = get();
+    const { isSeeking, status, videoRef, seekPosition } = get();
     if (!status?.isLoaded || !status.durationMillis) return;
 
-    const newPosition = Math.max(0, Math.min(status.positionMillis + duration, status.durationMillis));
-    try {
-      await videoRef?.current?.setPositionAsync(newPosition);
-    } catch (error) {
-      logger.debug("Failed to seek video:", error);
-      Toast.show({ type: "error", text1: "快进/快退失败" });
-    }
+    const lastPositionMillis  = isSeeking ? seekPosition * status.durationMillis : status.positionMillis;
+    const newPosition = Math.max(0, Math.min(lastPositionMillis + duration, status.durationMillis));
 
     set({
       isSeeking: true,
       seekPosition: newPosition / status.durationMillis,
     });
 
-    if (get()._seekTimeout) {
-      clearTimeout(get()._seekTimeout);
+    const seekTimeout = get()._seekTimeout;
+    if (seekTimeout) {
+      clearTimeout(seekTimeout);
     }
-    const timeoutId = setTimeout(() => set({ isSeeking: false }), 1000);
+    const timeoutId = setTimeout(async () => {
+      try {
+        await videoRef?.current?.setPositionAsync(newPosition);
+      } catch (error) {
+        logger.debug("Failed to seek video:", error);
+        Toast.show({ type: "error", text1: "快进/快退失败" });
+      }
+      set({ isSeeking: false });
+    }, 500);
     set({ _seekTimeout: timeoutId });
   },
 

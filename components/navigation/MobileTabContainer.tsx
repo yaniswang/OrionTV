@@ -16,8 +16,8 @@ interface TabItem {
 const tabs: TabItem[] = [
   { key: 'home', label: '首页', icon: Home, route: '/' },
   { key: 'search', label: '搜索', icon: Search, route: '/search' },
-  { key: 'live', label: '直播', icon: Tv, route: '/live' },
   { key: 'favorites', label: '收藏', icon: Heart, route: '/favorites' },
+  { key: 'live', label: '直播', icon: Tv, route: '/live' },
   { key: 'settings', label: '设置', icon: Settings, route: '/settings' },
 ];
 
@@ -31,9 +31,7 @@ const MobileTabContainer: React.FC<MobileTabContainerProps> = ({ children }) => 
   const { spacing, deviceType } = useResponsiveLayout();
   
   // 在手机端过滤掉直播 tab
-  const filteredTabs = tabs.filter(tab => 
-    deviceType !== 'mobile' || tab.key !== 'live'
-  );
+  const filteredTabs = tabs;
   
   const handleTabPress = (route: string) => {
     if (route === '/') {

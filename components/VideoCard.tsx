@@ -31,7 +31,7 @@ interface VideoCardProps extends React.ComponentProps<typeof TouchableOpacity> {
  */
 const VideoCard = React.forwardRef<any, VideoCardProps>((props, ref) => {
   const { deviceType } = useResponsiveLayout();
-
+  
   switch (deviceType) {
     case 'mobile':
       return <VideoCardMobile {...props} ref={ref} />;

@@ -40,6 +40,7 @@ const VideoCard = forwardRef<View, VideoCardProps>(
       sourceName,
       progress,
       episodeIndex,
+      totalEpisodes,
       onFocus,
       onRecordDeleted,
       api,
@@ -201,16 +202,14 @@ const VideoCard = forwardRef<View, VideoCardProps>(
                 <Text style={styles.badgeText}>{sourceName}</Text>
               </View>
             )}
+            {episodeIndex && (totalEpisodes && totalEpisodes>1) && (
+              <View style={styles.episodesInfoBadge}>
+                <Text style={styles.badgeText}>{episodeIndex}/{totalEpisodes}</Text>
+              </View>
+            )}
           </View>
           <View style={styles.infoContainer}>
             <ThemedText numberOfLines={1}>{title}</ThemedText>
-            {isContinueWatching && (
-              <View style={styles.infoRow}>
-                <ThemedText style={styles.continueLabel}>
-                  第{episodeIndex}集 已观看 {Math.round((progress || 0) * 100)}%
-                </ThemedText>
-              </View>
-            )}
           </View>
         </Pressable>
       </Animated.View>
@@ -321,6 +320,15 @@ const styles = StyleSheet.create({
     top: 8,
     left: 8,
     backgroundColor: "rgba(0, 0, 0, 0.7)",
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+  },
+  episodesInfoBadge: {
+    position: "absolute",
+    right: 8,
+    bottom: 8,
+    backgroundColor: "rgba(34, 197, 94, 0.7)",
     borderRadius: 6,
     paddingHorizontal: 6,
     paddingVertical: 3,

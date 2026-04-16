@@ -1,13 +1,25 @@
 import React from "react";
-import { View, Text, StyleSheet, Modal, FlatList } from "react-native";
+import { View, Text, StyleSheet, FlatList } from "react-native";
+import Modal from "react-native-modal";
 import { StyledButton } from "./StyledButton";
+import { ThemedText } from "@/components/ThemedText";
 import useDetailStore from "@/stores/detailStore";
 import usePlayerStore from "@/stores/playerStore";
 import Logger from '@/utils/Logger';
+import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
+import { getCommonResponsiveStyles } from "@/utils/ResponsiveStyles";
 
 const logger = Logger.withTag('SourceSelectionModal');
 
 export const SourceSelectionModal: React.FC = () => {
+  // 响应式布局配置
+  const responsiveConfig = useResponsiveLayout();
+  const commonStyles = getCommonResponsiveStyles(responsiveConfig);
+  const { deviceType, spacing } = responsiveConfig;
+
+  // 动态样式
+  const dynamicStyles = createResponsiveStyles(deviceType, spacing);
+  
   const { showSourceModal, setShowSourceModal, loadVideo, currentEpisodeIndex, status } = usePlayerStore();
   const { searchResults, detail, setDetail } = useDetailStore();
 
@@ -35,27 +47,38 @@ export const SourceSelectionModal: React.FC = () => {
   };
 
   return (
-    <Modal visible={showSourceModal} transparent={true} animationType="slide" onRequestClose={onClose}>
-      <View style={styles.modalContainer}>
-        <View style={styles.modalContent}>
-          <Text style={styles.modalTitle}>选择播放源</Text>
-          <FlatList
-            data={searchResults}
-            numColumns={3}
-            contentContainerStyle={styles.sourceList}
-            keyExtractor={(item, index) => `source-${item.source}-${index}`}
-            renderItem={({ item, index }) => (
-              <StyledButton
-                text={item.source_name}
-                onPress={() => onSelectSource(index)}
-                isSelected={detail?.source === item.source}
-                hasTVPreferredFocus={detail?.source === item.source}
-                style={styles.sourceItem}
-                textStyle={styles.sourceItemText}
-              />
-            )}
-          />
-        </View>
+    <Modal isVisible={showSourceModal} statusBarTranslucent={true} onBackButtonPress={onClose} onBackdropPress={onClose} onSwipeComplete={onClose} swipeDirection="down" style={styles.modalContainer}>
+      <View style={styles.modalContent}>
+        <Text style={styles.modalTitle}>选择播放源</Text>
+        <FlatList
+          data={searchResults}
+          numColumns={3}
+          contentContainerStyle={styles.sourceList}
+          keyExtractor={(item, index) => `source-${item.source}-${index}`}
+          renderItem={({ item, index }) => (
+            <StyledButton
+              onPress={() => onSelectSource(index)}
+              isSelected={detail?.source === item.source}
+              hasTVPreferredFocus={detail?.source === item.source}
+              style={styles.sourceItem}
+              textStyle={dynamicStyles.sourceButton}
+            >
+                <ThemedText style={dynamicStyles.sourceButtonText}>{item.source_name}</ThemedText>
+                {item.episodes.length > 1 && (
+                  <View style={[dynamicStyles.badge, detail?.source === item.source && dynamicStyles.selectedBadge]}>
+                    <Text style={dynamicStyles.badgeText}>
+                      {item.episodes.length > 99 ? "99+" : `${item.episodes.length}`} 集
+                    </Text>
+                  </View>
+                )}
+                {item.resolution && (
+                  <View style={[dynamicStyles.badge, { backgroundColor: "#666" }, detail?.source === item.source && dynamicStyles.selectedBadge]}>
+                    <Text style={dynamicStyles.badgeText}>{item.resolution}</Text>
+                  </View>
+                )}
+            </StyledButton>
+          )}
+        />
       </View>
     </Modal>
   );
@@ -63,13 +86,11 @@ export const SourceSelectionModal: React.FC = () => {
 
 const styles = StyleSheet.create({
   modalContainer: {
-    flex: 1,
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    backgroundColor: "transparent",
+    margin: 0,
+    alignItems: "flex-end",
   },
   modalContent: {
-    width: 600,
+    width: 800,
     height: "100%",
     backgroundColor: "rgba(0, 0, 0, 0.85)",
     padding: 20,
@@ -95,3 +116,36 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 });
+
+const createResponsiveStyles = (deviceType: string, spacing: number) => {
+  const isTV = deviceType === 'tv';
+  const isTablet = deviceType === 'tablet';
+  const isMobile = deviceType === 'mobile';
+
+  return StyleSheet.create({
+    sourceButton: {
+      margin: isMobile ? 4 : 8,
+      minHeight: isMobile ? 36 : 44,
+    },
+    sourceButtonText: {
+      color: "white",
+      fontSize: isMobile ? 14 : 16,
+    },
+    badge: {
+      backgroundColor: "#666",
+      borderRadius: 10,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      marginLeft: 8,
+    },
+    badgeText: {
+      color: "#fff",
+      fontSize: isMobile ? 10 : 12,
+      fontWeight: "bold",
+      paddingBottom: 2.5,
+    },
+    selectedBadge: {
+      backgroundColor: "#4c4c4c",
+    },
+  });
+};

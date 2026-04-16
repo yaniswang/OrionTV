@@ -33,7 +33,7 @@ const MobileBottomTabNavigator: React.FC = () => {
   
   const handleTabPress = (route: string) => {
     if (route === '/') {
-      router.push('/');
+      router.replace('/');
     } else {
       router.push(route as any);
     }

@@ -41,6 +41,7 @@ const VideoCardMobile = forwardRef<View, VideoCardMobileProps>(
       sourceName,
       progress,
       episodeIndex,
+      totalEpisodes,
       onFocus,
       onRecordDeleted,
       api,
@@ -131,14 +132,6 @@ const VideoCardMobile = forwardRef<View, VideoCardMobileProps>(
               </View>
             )}
 
-            {/* 继续观看标识 */}
-            {isContinueWatching && (
-              <View style={styles.continueWatchingBadge}>
-                <Play size={12} color="#ffffff" fill="#ffffff" />
-                <Text style={styles.continueWatchingText}>继续</Text>
-              </View>
-            )}
-
             {/* 评分 */}
             {rate && (
               <View style={styles.ratingContainer}>
@@ -160,15 +153,15 @@ const VideoCardMobile = forwardRef<View, VideoCardMobileProps>(
                 <Text style={styles.badgeText}>{sourceName}</Text>
               </View>
             )}
+            {episodeIndex && (totalEpisodes && totalEpisodes>1) && (
+              <View style={styles.episodesInfoBadge}>
+                <Text style={styles.badgeText}>{episodeIndex}/{totalEpisodes}</Text>
+              </View>
+            )}
           </View>
 
           <View style={styles.infoContainer}>
             <ThemedText numberOfLines={2} style={styles.title}>{title}</ThemedText>
-            {isContinueWatching && (
-              <ThemedText style={styles.continueLabel} numberOfLines={1}>
-                第{episodeIndex! + 1}集 {Math.round((progress || 0) * 100)}%
-              </ThemedText>
-            )}
           </View>
         </TouchableOpacity>
       </Animated.View>
@@ -247,7 +240,7 @@ const createMobileStyles = (cardWidth: number, cardHeight: number, spacing: numb
     },
     yearBadge: {
       position: "absolute",
-      bottom: 24,
+      top: 6,
       right: 6,
       backgroundColor: "rgba(0, 0, 0, 0.7)",
       borderRadius: 4,
@@ -256,10 +249,19 @@ const createMobileStyles = (cardWidth: number, cardHeight: number, spacing: numb
     },
     sourceNameBadge: {
       position: "absolute",
-      bottom: 6,
+      top: 6,
       left: 6,
       backgroundColor: "rgba(0, 0, 0, 0.7)",
       borderRadius: 4,
+      paddingHorizontal: 4,
+      paddingVertical: 2,
+    },
+    episodesInfoBadge: {
+      position: "absolute",
+      right: 8,
+      bottom: 8,
+      backgroundColor: "rgba(34, 197, 94, 0.7)",
+      borderRadius: 6,
       paddingHorizontal: 4,
       paddingVertical: 2,
     },

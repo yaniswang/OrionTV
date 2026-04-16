@@ -1,5 +1,6 @@
-import React, { useState } from "react";
-import { View, Text, StyleSheet, Modal, FlatList } from "react-native";
+import React, { useState, useEffect } from "react";
+import { View, Text, StyleSheet, FlatList } from "react-native";
+import Modal from "react-native-modal";
 import { StyledButton } from "./StyledButton";
 import usePlayerStore from "@/stores/playerStore";
 
@@ -20,52 +21,53 @@ export const EpisodeSelectionModal: React.FC<EpisodeSelectionModalProps> = () =>
     setShowEpisodeModal(false);
   };
 
-  return (
-    <Modal visible={showEpisodeModal} transparent={true} animationType="slide" onRequestClose={onClose}>
-      <View style={styles.modalContainer}>
-        <View style={styles.modalContent}>
-          <Text style={styles.modalTitle}>选择剧集</Text>
+  useEffect(() => {
+    setSelectedEpisodeGroup(Math.floor(currentEpisodeIndex / episodeGroupSize));
+  }, [currentEpisodeIndex]);
 
-          {episodes.length > episodeGroupSize && (
-            <View style={styles.episodeGroupContainer}>
-              {Array.from({ length: Math.ceil(episodes.length / episodeGroupSize) }, (_, groupIndex) => (
-                <StyledButton
-                  key={groupIndex}
-                  text={`${groupIndex * episodeGroupSize + 1}-${Math.min(
-                    (groupIndex + 1) * episodeGroupSize,
-                    episodes.length
-                  )}`}
-                  onPress={() => setSelectedEpisodeGroup(groupIndex)}
-                  isSelected={selectedEpisodeGroup === groupIndex}
-                  style={styles.episodeGroupButton}
-                  textStyle={styles.episodeGroupButtonText}
-                />
-              ))}
-            </View>
+  return (
+    <Modal isVisible={showEpisodeModal} statusBarTranslucent={true} onBackButtonPress={onClose} onBackdropPress={onClose} onSwipeComplete={onClose} swipeDirection="down" style={styles.modalContainer}>
+      <View style={styles.modalContent}>
+        <Text style={styles.modalTitle}>选择剧集</Text>
+        {episodes.length > episodeGroupSize && (
+          <View style={styles.episodeGroupContainer}>
+            {Array.from({ length: Math.ceil(episodes.length / episodeGroupSize) }, (_, groupIndex) => (
+              <StyledButton
+                key={groupIndex}
+                text={`${groupIndex * episodeGroupSize + 1}-${Math.min(
+                  (groupIndex + 1) * episodeGroupSize,
+                  episodes.length
+                )}`}
+                onPress={() => setSelectedEpisodeGroup(groupIndex)}
+                isSelected={selectedEpisodeGroup === groupIndex}
+                style={styles.episodeGroupButton}
+                textStyle={styles.episodeGroupButtonText}
+              />
+            ))}
+          </View>
+        )}
+        <FlatList
+          data={episodes.slice(
+            selectedEpisodeGroup * episodeGroupSize,
+            (selectedEpisodeGroup + 1) * episodeGroupSize
           )}
-          <FlatList
-            data={episodes.slice(
-              selectedEpisodeGroup * episodeGroupSize,
-              (selectedEpisodeGroup + 1) * episodeGroupSize
-            )}
-            numColumns={5}
-            contentContainerStyle={styles.episodeList}
-            keyExtractor={(_, index) => `episode-${selectedEpisodeGroup * episodeGroupSize + index}`}
-            renderItem={({ item, index }) => {
-              const absoluteIndex = selectedEpisodeGroup * episodeGroupSize + index;
-              return (
-                <StyledButton
-                  text={item.title || `第 ${absoluteIndex + 1} 集`}
-                  onPress={() => onSelectEpisode(absoluteIndex)}
-                  isSelected={currentEpisodeIndex === absoluteIndex}
-                  hasTVPreferredFocus={currentEpisodeIndex === absoluteIndex}
-                  style={styles.episodeItem}
-                  textStyle={styles.episodeItemText}
-                />
-              );
-            }}
-          />
-        </View>
+          numColumns={5}
+          contentContainerStyle={styles.episodeList}
+          keyExtractor={(_, index) => `episode-${selectedEpisodeGroup * episodeGroupSize + index}`}
+          renderItem={({ item, index }) => {
+            const absoluteIndex = selectedEpisodeGroup * episodeGroupSize + index;
+            return (
+              <StyledButton
+                text={item.title || `第 ${absoluteIndex + 1} 集`}
+                onPress={() => onSelectEpisode(absoluteIndex)}
+                isSelected={currentEpisodeIndex === absoluteIndex}
+                hasTVPreferredFocus={currentEpisodeIndex === absoluteIndex}
+                style={styles.episodeItem}
+                textStyle={styles.episodeItemText}
+              />
+            );
+          }}
+        />
       </View>
     </Modal>
   );
@@ -73,13 +75,11 @@ export const EpisodeSelectionModal: React.FC<EpisodeSelectionModalProps> = () =>
 
 const styles = StyleSheet.create({
   modalContainer: {
-    flex: 1,
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    backgroundColor: "transparent",
+    margin: 0,
+    alignItems: "flex-end",
   },
   modalContent: {
-    width: 600,
+    width: 700,
     height: "100%",
     backgroundColor: "rgba(0, 0, 0, 0.85)",
     padding: 20,

@@ -16,6 +16,8 @@ import { getCommonResponsiveStyles } from "@/utils/ResponsiveStyles";
 import ResponsiveNavigation from "@/components/navigation/ResponsiveNavigation";
 import { useApiConfig, getApiConfigErrorMessage } from "@/hooks/useApiConfig";
 import { Colors } from "@/constants/Colors";
+import { LogBox } from 'react-native';
+LogBox.ignoreLogs(['new NativeEventEmitter']);
 
 const LOAD_MORE_THRESHOLD = 200;
 
@@ -23,9 +25,10 @@ export default function HomeScreen() {
   const router = useRouter();
   const colorScheme = "dark";
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const [forceReload, setForceReload] = useState(new Date().getTime());
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const insets = useSafeAreaInsets();
-
+  
   // 响应式布局配置
   const responsiveConfig = useResponsiveLayout();
   const commonStyles = getCommonResponsiveStyles(responsiveConfig);
@@ -43,53 +46,55 @@ export default function HomeScreen() {
     selectCategory,
     refreshPlayRecords,
     clearError,
+    reset,
   } = useHomeStore();
-  const { isLoggedIn, logout } = useAuthStore();
   const apiConfigStatus = useApiConfig();
+  const { isLoggedIn, logout } = useAuthStore();
 
   useFocusEffect(
     useCallback(() => {
-      refreshPlayRecords();
-    }, [refreshPlayRecords])
+      reset()
+      setForceReload(new Date().getTime());
+    }, [])
   );
 
-    // 双击返回退出逻辑（只限当前页面）
+  // 双击返回退出逻辑（只限当前页面）
   const backPressTimeRef = useRef<number | null>(null);
 
   useFocusEffect(
     useCallback(() => {
-    const handleBackPress = () => {
-      const now = Date.now();
+      const handleBackPress = () => {
+        const now = Date.now();
 
-      // 如果还没按过返回键，或距离上次超过2秒
-      if (!backPressTimeRef.current || now - backPressTimeRef.current > 2000) {
-        backPressTimeRef.current = now;
-        ToastAndroid.show("再按一次返回键退出", ToastAndroid.SHORT);
-        return true; // 拦截返回事件，不退出
-      }
+        // 如果还没按过返回键，或距离上次超过2秒
+        if (!backPressTimeRef.current || now - backPressTimeRef.current > 2000) {
+          backPressTimeRef.current = now;
+          ToastAndroid.show("再按一次返回键退出", ToastAndroid.SHORT);
+          return true; // 拦截返回事件，不退出
+        }
 
-      // 两次返回键间隔小于2秒，退出应用
-      BackHandler.exitApp();
-      return true;
-    };
-
-    // 仅限 Android 平台启用此功能
-    if (Platform.OS === "android") {
-      const backHandler = BackHandler.addEventListener("hardwareBackPress", handleBackPress);
-
-      // 返回首页时重置状态
-      return () => {
-        backHandler.remove();
-        backPressTimeRef.current = null;
+        // 两次返回键间隔小于2秒，退出应用
+        BackHandler.exitApp();
+        return true;
       };
-    }
-  }, [])
-);
+
+      // 仅限 Android 平台启用此功能
+      if (Platform.OS === "android") {
+        const backHandler = BackHandler.addEventListener("hardwareBackPress", handleBackPress);
+
+        // 返回首页时重置状态
+        return () => {
+          backHandler.remove();
+          backPressTimeRef.current = null;
+        };
+      }
+    }, [])
+  );
 
   // 统一的数据获取逻辑
   useEffect(() => {
     if (!selectedCategory) return;
-
+    
     // 如果是容器分类且没有选择标签，设置默认标签
     if (selectedCategory.tags && !selectedCategory.tag) {
       const defaultTag = selectedCategory.tags[0];
@@ -97,7 +102,7 @@ export default function HomeScreen() {
       selectCategory({ ...selectedCategory, tag: defaultTag });
       return;
     }
-
+    
     // 只有在API配置完成且分类有效时才获取数据
     if (apiConfigStatus.isConfigured && !apiConfigStatus.needsConfiguration) {
       // 对于有标签的分类，需要确保有标签才获取数据
@@ -116,6 +121,7 @@ export default function HomeScreen() {
     apiConfigStatus.needsConfiguration,
     fetchInitialData,
     selectCategory,
+    forceReload,
   ]);
 
   // 清除错误状态的逻辑
@@ -276,7 +282,7 @@ export default function HomeScreen() {
       flex: 1,
     },
   });
-
+  
   const content = (
     <ThemedView style={[commonStyles.container, dynamicStyles.container]}>
       {/* 状态栏 */}
@@ -306,13 +312,13 @@ export default function HomeScreen() {
               const isSelected = selectedTag === item;
               return (
                 <StyledButton
-                  hasTVPreferredFocus={index === 0}
+                  hasTVPreferredFocus={Platform.isTV && index === 0}
                   text={item}
                   onPress={() => handleTagSelect(item)}
                   isSelected={isSelected}
                   style={dynamicStyles.categoryButton}
                   textStyle={dynamicStyles.categoryText}
-                  variant="ghost"
+                  variant="default"
                 />
               );
             }}

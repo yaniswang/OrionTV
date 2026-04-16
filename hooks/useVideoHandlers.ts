@@ -24,7 +24,7 @@ export const useVideoHandlers = ({
   deviceType,
   detail,
 }: UseVideoHandlersProps) => {
-  
+
   const onLoad = useCallback(async () => {
     console.info(`[PERF] Video onLoad - video ready to play`);
     
@@ -43,6 +43,7 @@ export const useVideoHandlers = ({
       
       usePlayerStore.setState({ isLoading: false });
       console.info(`[PERF] Video loading complete - isLoading set to false`);
+
     } catch (error) {
       console.warn(`[AUTOPLAY] Failed to auto-play after onLoad:`, error);
       // 即使自动播放失败，也要设置加载完成状态
@@ -109,7 +110,7 @@ export const useVideoHandlers = ({
     onLoad,
     onLoadStart,
     onError,
-    useNativeControls: deviceType !== 'tv',
+    useNativeControls: false,
     shouldPlay: true,
   }), [
     currentEpisode?.url,

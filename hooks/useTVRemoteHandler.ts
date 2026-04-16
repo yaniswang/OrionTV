@@ -12,7 +12,7 @@ const CONTROLS_TIMEOUT = 5000;
  * @returns onScreenPress - 一个函数，用于处理屏幕点击事件，以显示控件并重置定时器。
  */
 export const useTVRemoteHandler = () => {
-  const { showControls, setShowControls, showEpisodeModal, togglePlayPause, seek } = usePlayerStore();
+  const { showControls, setShowControls, showEpisodeModal, showSourceModal, showSpeedModal, setShowEpisodeModal, setShowSourceModal, setShowSpeedModal, togglePlayPause, seek } = usePlayerStore();
 
   const controlsTimer = useRef<NodeJS.Timeout | null>(null);
   const fastForwardIntervalRef = useRef<NodeJS.Timeout | null>(null);

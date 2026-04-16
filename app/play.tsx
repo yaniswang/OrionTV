@@ -1,7 +1,7 @@
-import React, { useEffect, useRef, useCallback, memo, useMemo } from "react";
-import { StyleSheet, TouchableOpacity, BackHandler, AppState, AppStateStatus, View } from "react-native";
+import React, { useState, useEffect, useRef, memo, useMemo } from "react";
+import { StyleSheet, BackHandler, AppState, AppStateStatus, View, Dimensions, Platform, Text } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Video } from "expo-av";
+import { Audio, Video } from "expo-av";
 import { useKeepAwake } from "expo-keep-awake";
 import { ThemedView } from "@/components/ThemedView";
 import { PlayerControls } from "@/components/PlayerControls";
@@ -12,14 +12,22 @@ import { SeekingBar } from "@/components/SeekingBar";
 // import { NextEpisodeOverlay } from "@/components/NextEpisodeOverlay";
 import VideoLoadingAnimation from "@/components/VideoLoadingAnimation";
 import useDetailStore from "@/stores/detailStore";
+import { useSources } from "@/stores/sourceStore";
 import { useTVRemoteHandler } from "@/hooks/useTVRemoteHandler";
 import Toast from "react-native-toast-message";
 import usePlayerStore, { selectCurrentEpisode } from "@/stores/playerStore";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { useVideoHandlers } from "@/hooks/useVideoHandlers";
 import Logger from '@/utils/Logger';
+import * as ScreenOrientation from 'expo-screen-orientation';
+import { GestureDetector, Gesture, GestureHandlerRootView } from 'react-native-gesture-handler';
+import SystemSetting from 'react-native-system-setting'
+import { Immersive } from 'react-native-immersive';
+import { AnimatedVerticalProgress } from "@/components/AnimatedVerticalProgress";
 
 const logger = Logger.withTag('PlayScreen');
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // 优化的加载动画组件
 const LoadingContainer = memo(
@@ -52,19 +60,49 @@ const createResponsiveStyles = (deviceType: string) => {
       ...(isMobile || isTablet ? { paddingTop: 0 } : {}),
     },
     videoContainer: {
-      ...StyleSheet.absoluteFillObject,
-      // 为触摸设备添加更多的交互区域
-      ...(isMobile || isTablet ? { zIndex: 1 } : {}),
+      flex: 1,
+      backgroundColor: 'black'
     },
     videoPlayer: {
       ...StyleSheet.absoluteFillObject,
     },
     loadingContainer: {
-      ...StyleSheet.absoluteFillObject,
+      position: 'absolute',
       backgroundColor: "rgba(0, 0, 0, 0.8)",
       justifyContent: "center",
       alignItems: "center",
       zIndex: 10,
+      width: '100%',
+      height: '100%',
+    },
+    brightnessBar: {
+      position: "absolute",
+      left: 20,
+      top: '50%', // 上边距为50%
+      transform: [{ translateY: -75 }],
+      width: 15,
+    },
+    volumeBar: {
+      position: "absolute",
+      right: 20,
+      top: '50%', // 上边距为50%
+      transform: [{ translateY: -75 }],
+      width: 15,
+    },
+    topTitleContainer: {
+      position: "absolute",
+      top:20,
+      width: '100%',
+      justifyContent: "space-between",
+      alignItems: "center",
+    },
+    topTitleText: {
+      color: "white",
+      fontSize: 16,
+      fontWeight: "bold",
+      flex: 1,
+      textAlign: "center",
+      marginHorizontal: 10,
     },
   });
 };
@@ -72,10 +110,49 @@ const createResponsiveStyles = (deviceType: string) => {
 export default function PlayScreen() {
   const videoRef = useRef<Video>(null);
   const router = useRouter();
+  const [volume, setVolume] = useState(-1);
+  const [volumeBarWork, setVolumeBarWork] = useState(false);
+  const [brightness, setBrightness] = useState(-1);
+  const [brightnessBarWork, setBrightnessBarWork] = useState(false);
+  const [gestureMode, setGestureMode] = useState('');
   useKeepAwake();
+
+  useEffect(() => {
+    Audio.setAudioModeAsync({
+      staysActiveInBackground: true,
+    }); 
+  }, []);
 
   // 响应式布局配置
   const { deviceType } = useResponsiveLayout();
+
+  // 处理屏幕旋转
+  const setOrientation = async (fullscreen: boolean) => {
+    if (fullscreen) {
+      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+    } else {
+      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+    }
+  };
+  
+  useEffect(() => {
+    if(deviceType == 'mobile') {
+      // 进入页面切换为横屏
+      setOrientation(true);
+      Immersive.on();
+      return () => {
+        // 退出页面时切换为坚屏
+        setOrientation(false);
+        Immersive.off();
+      }
+    }
+    else if(!Platform.isTV) {
+      Immersive.on();
+      return () => {
+        Immersive.off();
+      }
+    }
+  }, []);
 
   const {
     episodeIndex: episodeIndexStr,
@@ -107,11 +184,19 @@ export default function PlayScreen() {
     setVideoRef,
     handlePlaybackStatusUpdate,
     setShowControls,
+    togglePlayPause,
     // setShowNextEpisodeOverlay,
     reset,
     loadVideo,
+    seek,
   } = usePlayerStore();
   const currentEpisode = usePlayerStore(selectCurrentEpisode);
+  const resources = useSources();
+  
+  const currentEpisodeTitle = currentEpisode?.title;
+
+  const currentSource = resources.find((r) => r.source === detail?.source);
+  const currentSourceName = currentSource?.source_name;
 
   // 使用Video事件处理hook
   const { videoProps } = useVideoHandlers({
@@ -152,14 +237,121 @@ export default function PlayScreen() {
     };
   }, [episodeIndex, source, position, setVideoRef, reset, loadVideo, id, title]);
 
-  // 优化的屏幕点击处理
-  const onScreenPress = useCallback(() => {
-    if (deviceType === "tv") {
-      tvRemoteHandler.onScreenPress();
-    } else {
-      setShowControls(!showControls);
-    }
-  }, [deviceType, tvRemoteHandler, setShowControls, showControls]);
+  // 1. 调节音量 (右侧)
+  const handleVolume = (direction:string) => {
+    let next = direction === 'up' ? volume + 0.05 : volume - 0.05;
+    next = Math.max(0, Math.min(1, next));
+    next = Math.round(next * 100) / 100;
+    SystemSetting.setVolume(next);
+    setVolumeBarWork(true);
+    setVolume(next);
+  };
+
+  // 2. 调节亮度 (左侧)
+  const handleBrightness = (direction:string) => {
+    let next = direction === 'up' ? brightness + 0.05 : brightness - 0.05;
+    next = Math.max(0, Math.min(1, next));
+    next = Math.round(next * 100) / 100;
+    SystemSetting.setAppBrightness(next);
+    setBrightnessBarWork(true);
+    setBrightness(next)
+  };
+
+  // 3. 快进/快退
+  const handleSeek = (direction:string) => {
+    let seconds = direction == 'right' ? 20000 : -20000;
+    seek(seconds)
+  };
+
+  // 单击显示控制条
+  const singleTap = Gesture.Tap()
+  .numberOfTaps(1)
+  .runOnJS(true)
+  .onEnd(() => {
+    tvRemoteHandler.onScreenPress();
+  });
+
+  // --- 1. 双击手势 (播放/暂停) ---
+  const doubleTap = Gesture.Tap()
+    .numberOfTaps(2)
+    .runOnJS(true)
+    .onEnd(() => {
+      togglePlayPause()
+    });
+
+  const lastT_X = useRef(0);
+  const accumulativeX = useRef(0);
+  const lastT_Y = useRef(0);
+  const accumulativeY = useRef(0);
+  // --- 2. 平移手势 (快进、音量、亮度) ---
+  const panGesture = Gesture.Pan()
+    .runOnJS(true)
+    .onStart(async () => {
+      // 拖动开始时刷新音量和亮度值
+      const volume = await SystemSetting.getVolume()
+      setVolume(Math.round(volume * 100) / 100);
+      const brightness = await SystemSetting.getAppBrightness();
+      setBrightness(Math.round(brightness * 100) / 100)
+    })
+    .onUpdate((e) => {
+      const { x, translationX, translationY, velocityX, velocityY } = e;
+      const deltaX = translationX - lastT_X.current;
+      lastT_X.current = translationX;
+      accumulativeX.current += deltaX;
+      const deltaY = translationY - lastT_Y.current;
+      lastT_Y.current = translationY;
+      accumulativeY.current += deltaY;
+
+      const isRightSide = x > SCREEN_WIDTH / 2;
+      
+      const absX = Math.abs(accumulativeX.current);
+      const absY = Math.abs(accumulativeY.current);
+
+      const directionX = accumulativeX.current < 0 ? 'left' : 'right';
+      const directionY = accumulativeY.current < 0 ? 'up' : 'down';
+      if(gestureMode == '') {
+        // 首次判断手势模式，灵敏度阈值更高防止误判
+        if (absY > 50) {
+          // 垂直没滑动
+          if (isRightSide) {
+            setGestureMode('volume');
+            handleVolume(directionY);
+          } else {
+            setGestureMode('brightness');
+            handleBrightness(directionY);
+          }
+        }
+        else if(absX > 50) {
+          setGestureMode('seek');
+        }
+      } else {
+        // 二次判断手势，降低灵敏度阈值
+        if (gestureMode === 'seek') {
+          if (absX > 10) {
+            handleSeek(directionX)
+            accumulativeX.current = 0;
+          }
+        }
+        else {
+          if (absY > 10) {
+            if (gestureMode === 'volume') {
+              handleVolume(directionY);
+              accumulativeY.current = 0;
+            }
+            else if(gestureMode === 'brightness') {
+              handleBrightness(directionY);
+              accumulativeY.current = 0;
+            }
+          }
+        }
+      }
+    })
+    .onEnd(() => {
+      setGestureMode('');
+    });
+
+  const taps = Gesture.Exclusive(doubleTap, singleTap);
+  const composedGesture = Gesture.Race(panGesture, taps);
 
   useEffect(() => {
     const handleAppStateChange = (nextAppState: AppStateStatus) => {
@@ -215,38 +407,50 @@ export default function PlayScreen() {
 
   return (
     <ThemedView focusable style={dynamicStyles.container}>
-      <TouchableOpacity
-        activeOpacity={1}
-        style={dynamicStyles.videoContainer}
-        onPress={onScreenPress}
-        disabled={deviceType !== "tv" && showControls} // 移动端和平板端在显示控制条时禁用触摸
-      >
-        {/* 条件渲染Video组件：只有在有有效URL时才渲染 */}
-        {currentEpisode?.url ? (
-          <Video ref={videoRef} style={dynamicStyles.videoPlayer} {...videoProps} />
-        ) : (
-          <LoadingContainer style={dynamicStyles.loadingContainer} currentEpisode={currentEpisode} />
-        )}
+      {/* 条件渲染Video组件：只有在有有效URL时才渲染 */}
+      {currentEpisode?.url ? (
+        <GestureHandlerRootView style={{ flex: 1 }}>
+          <GestureDetector gesture={composedGesture}>
+            <View style={dynamicStyles.videoContainer}>
+              <Video ref={videoRef} style={dynamicStyles.videoPlayer} {...videoProps} />
+            </View>
+          </GestureDetector>
+        </GestureHandlerRootView>
+      ) : (
+        <LoadingContainer style={dynamicStyles.loadingContainer} currentEpisode={currentEpisode} />
+      )}
 
-        {showControls && deviceType === "tv" && (
-          <PlayerControls showControls={showControls} setShowControls={setShowControls} />
-        )}
+      {showControls && (
+        <PlayerControls showControls={showControls} setShowControls={setShowControls} />
+      )}
+      {showControls && (
+        <View style={dynamicStyles.topTitleContainer}>
+          <Text style={dynamicStyles.topTitleText}>
+            {videoTitle} {currentEpisodeTitle ? `- ${currentEpisodeTitle}` : ""}{" "}
+            {currentSourceName ? `(${currentSourceName})` : ""}
+          </Text>
+        </View>
+      )}
 
-        <SeekingBar />
+      {!showControls && (<SeekingBar />)}
 
-        {/* 只在Video组件存在且正在加载时显示加载动画覆盖层 */}
-        {currentEpisode?.url && isLoading && (
-          <View style={dynamicStyles.loadingContainer}>
-            <VideoLoadingAnimation showProgressBar />
-          </View>
-        )}
+      {/* 只在Video组件存在且正在加载时显示加载动画覆盖层 */}
+      {currentEpisode?.url && isLoading && (
+        <View style={dynamicStyles.loadingContainer}>
+          <VideoLoadingAnimation showProgressBar />
+        </View>
+      )}
 
-        {/* <NextEpisodeOverlay visible={showNextEpisodeOverlay} onCancel={() => setShowNextEpisodeOverlay(false)} /> */}
-      </TouchableOpacity>
-
+      {/* <NextEpisodeOverlay visible={showNextEpisodeOverlay} onCancel={() => setShowNextEpisodeOverlay(false)} /> */}
       <EpisodeSelectionModal />
       <SourceSelectionModal />
       <SpeedSelectionModal />
+      <View style={dynamicStyles.brightnessBar}>
+        <AnimatedVerticalProgress progress={brightness} isWork={brightnessBarWork} />
+      </View>
+      <View style={dynamicStyles.volumeBar}>
+        <AnimatedVerticalProgress progress={volume} isWork={volumeBarWork} />
+      </View>
     </ThemedView>
   );
 }

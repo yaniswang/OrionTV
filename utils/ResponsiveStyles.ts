@@ -37,7 +37,7 @@ export const getCommonResponsiveStyles = (config: ResponsiveConfig) => {
     // 容器样式
     container: {
       flex: 1,
-      paddingHorizontal: spacing,
+      backgroundColor: '#000000'
     },
 
     safeContainer: {

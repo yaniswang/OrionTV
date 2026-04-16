@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { View, FlatList, StyleSheet, ActivityIndicator, Modal, useTVEventHandler, HWEvent, Text } from "react-native";
+import { View, FlatList, StyleSheet, ActivityIndicator, useTVEventHandler, HWEvent, Text, Platform } from "react-native";
 import LivePlayer from "@/components/LivePlayer";
 import { fetchAndParseM3u, getPlayableUrl, Channel } from "@/services/m3u";
 import { ThemedView } from "@/components/ThemedView";
@@ -10,14 +10,45 @@ import { getCommonResponsiveStyles } from "@/utils/ResponsiveStyles";
 import ResponsiveNavigation from "@/components/navigation/ResponsiveNavigation";
 import ResponsiveHeader from "@/components/navigation/ResponsiveHeader";
 import { DeviceUtils } from "@/utils/DeviceUtils";
+import * as ScreenOrientation from 'expo-screen-orientation';
+import Modal from "react-native-modal";
+import { Immersive } from 'react-native-immersive';
 
 export default function LiveScreen() {
   const { m3uUrl } = useSettingsStore();
   
+  // 处理屏幕旋转
+  const setOrientation = async (fullscreen: boolean) => {
+    if (fullscreen) {
+      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+    } else {
+      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+    }
+  };
+
   // 响应式布局配置
   const responsiveConfig = useResponsiveLayout();
   const commonStyles = getCommonResponsiveStyles(responsiveConfig);
   const { deviceType, spacing } = responsiveConfig;
+
+  useEffect(() => {
+    if(deviceType == 'mobile') {
+      // 进入页面切换为横屏
+      setOrientation(true);
+      Immersive.on();
+      return () => {
+        // 退出页面时切换为坚屏
+        setOrientation(false);
+        Immersive.off();
+      }
+    }
+    else if(!Platform.isTV) {
+      Immersive.on();
+      return () => {
+        Immersive.off();
+      }
+    }
+  }, []);
 
   const [channels, setChannels] = useState<Channel[]>([]);
   const [groupedChannels, setGroupedChannels] = useState<Record<string, Channel[]>>({});
@@ -93,17 +124,32 @@ export default function LiveScreen() {
     (event: HWEvent) => {
       if (deviceType !== 'tv') return;
       if (isChannelListVisible) return;
-      if (event.eventType === "down") setIsChannelListVisible(true);
-      else if (event.eventType === "left") changeChannel("prev");
-      else if (event.eventType === "right") changeChannel("next");
+      if (event.eventType === "select") setIsChannelListVisible(true);
+      else if (event.eventType === "left" || event.eventType === "up") changeChannel("prev");
+      else if (event.eventType === "right" || event.eventType === "down") changeChannel("next");
     },
     [changeChannel, isChannelListVisible, deviceType]
   );
 
   useTVEventHandler(deviceType === 'tv' ? handleTVEvent : () => {});
 
+  // 优化的屏幕点击处理
+  const onScreenPress = useCallback(() => {
+    if (isChannelListVisible) return;
+    setIsChannelListVisible(true);
+  }, [isChannelListVisible]);
+
+  // 处理屏幕手势
+  const onScreenGesture = useCallback((direction: string) => {
+    changeChannel(direction==='right'?'prev':'next')
+  }, [changeChannel]);
+
   // 动态样式
   const dynamicStyles = createResponsiveStyles(deviceType, spacing);
+
+  const onClose = () => {
+    setIsChannelListVisible(false);
+  };
 
   const renderLiveContent = () => (
     <>
@@ -111,52 +157,49 @@ export default function LiveScreen() {
         streamUrl={selectedChannelUrl} 
         channelTitle={channelTitle} 
         onPlaybackStatusUpdate={() => {}} 
+        onScreenPress={onScreenPress}
+        onScreenGesture={onScreenGesture}
       />
       <Modal
-        animationType="slide"
-        transparent={true}
-        visible={isChannelListVisible}
-        onRequestClose={() => setIsChannelListVisible(false)}
+        isVisible={isChannelListVisible} statusBarTranslucent={true} onBackButtonPress={onClose} onBackdropPress={onClose} onSwipeComplete={onClose} swipeDirection="down" style={dynamicStyles.modalContainer}
       >
-        <View style={dynamicStyles.modalContainer}>
-          <View style={dynamicStyles.modalContent}>
-            <Text style={dynamicStyles.modalTitle}>选择频道</Text>
-            <View style={dynamicStyles.listContainer}>
-              <View style={dynamicStyles.groupColumn}>
+        <View style={dynamicStyles.modalContent}>
+          <Text style={dynamicStyles.modalTitle}>选择频道</Text>
+          <View style={dynamicStyles.listContainer}>
+            <View style={dynamicStyles.groupColumn}>
+              <FlatList
+                data={channelGroups}
+                keyExtractor={(item, index) => `group-${item}-${index}`}
+                renderItem={({ item }) => (
+                  <StyledButton
+                    text={item}
+                    onPress={() => setSelectedGroup(item)}
+                    isSelected={selectedGroup === item}
+                    style={dynamicStyles.groupButton}
+                    textStyle={dynamicStyles.groupButtonText}
+                  />
+                )}
+              />
+            </View>
+            <View style={dynamicStyles.channelColumn}>
+              {isLoading ? (
+                <ActivityIndicator size="large" />
+              ) : (
                 <FlatList
-                  data={channelGroups}
-                  keyExtractor={(item, index) => `group-${item}-${index}`}
+                  data={groupedChannels[selectedGroup] || []}
+                  keyExtractor={(item, index) => `${item.id}-${item.group}-${index}`}
                   renderItem={({ item }) => (
                     <StyledButton
-                      text={item}
-                      onPress={() => setSelectedGroup(item)}
-                      isSelected={selectedGroup === item}
-                      style={dynamicStyles.groupButton}
-                      textStyle={dynamicStyles.groupButtonText}
+                      text={item.name || "Unknown Channel"}
+                      onPress={() => handleSelectChannel(item)}
+                      isSelected={channels[currentChannelIndex]?.id === item.id}
+                      hasTVPreferredFocus={channels[currentChannelIndex]?.id === item.id}
+                      style={dynamicStyles.channelItem}
+                      textStyle={dynamicStyles.channelItemText}
                     />
                   )}
                 />
-              </View>
-              <View style={dynamicStyles.channelColumn}>
-                {isLoading ? (
-                  <ActivityIndicator size="large" />
-                ) : (
-                  <FlatList
-                    data={groupedChannels[selectedGroup] || []}
-                    keyExtractor={(item, index) => `${item.id}-${item.group}-${index}`}
-                    renderItem={({ item }) => (
-                      <StyledButton
-                        text={item.name || "Unknown Channel"}
-                        onPress={() => handleSelectChannel(item)}
-                        isSelected={channels[currentChannelIndex]?.id === item.id}
-                        hasTVPreferredFocus={channels[currentChannelIndex]?.id === item.id}
-                        style={dynamicStyles.channelItem}
-                        textStyle={dynamicStyles.channelItemText}
-                      />
-                    )}
-                  />
-                )}
-              </View>
+              )}
             </View>
           </View>
         </View>
@@ -170,17 +213,7 @@ export default function LiveScreen() {
     </ThemedView>
   );
 
-  // 根据设备类型决定是否包装在响应式导航中
-  if (deviceType === 'tv') {
-    return content;
-  }
-
-  return (
-    <ResponsiveNavigation>
-      <ResponsiveHeader title="直播" showBackButton />
-      {content}
-    </ResponsiveNavigation>
-  );
+  return content;
 }
 
 const createResponsiveStyles = (deviceType: string, spacing: number) => {
@@ -193,16 +226,13 @@ const createResponsiveStyles = (deviceType: string, spacing: number) => {
       flex: 1,
     },
     modalContainer: {
-      flex: 1,
-      flexDirection: "row",
-      justifyContent: isMobile ? "center" : "flex-end",
-      backgroundColor: "transparent",
+      margin: 0,
+      alignItems: "flex-end",
     },
     modalContent: {
       width: isMobile ? '90%' : isTablet ? 400 : 450,
       height: "100%",
       backgroundColor: "rgba(0, 0, 0, 0.85)",
-      padding: spacing,
     },
     modalTitle: {
       color: "white",

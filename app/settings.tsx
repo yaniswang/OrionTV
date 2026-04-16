@@ -10,7 +10,6 @@ import { useSettingsStore } from "@/stores/settingsStore";
 // import useAuthStore from "@/stores/authStore";
 import { useRemoteControlStore } from "@/stores/remoteControlStore";
 import { APIConfigSection } from "@/components/settings/APIConfigSection";
-import { LiveStreamSection } from "@/components/settings/LiveStreamSection";
 import { RemoteInputSection } from "@/components/settings/RemoteInputSection";
 import { UpdateSection } from "@/components/settings/UpdateSection";
 // import { VideoSourceSection } from "@/components/settings/VideoSourceSection";
@@ -35,7 +34,7 @@ function isSectionItem(
 }
 
 export default function SettingsScreen() {
-  const { loadSettings, saveSettings, setApiBaseUrl, setM3uUrl } = useSettingsStore();
+  const { loadSettings, saveSettings, setApiBaseUrl } = useSettingsStore();
   const { lastMessage, targetPage, clearMessage } = useRemoteControlStore();
   const backgroundColor = useThemeColor({}, "background");
   const insets = useSafeAreaInsets();
@@ -52,7 +51,6 @@ export default function SettingsScreen() {
 
   const saveButtonRef = useRef<any>(null);
   const apiSectionRef = useRef<any>(null);
-  const liveStreamSectionRef = useRef<any>(null);
 
   useEffect(() => {
     loadSettings();
@@ -73,9 +71,6 @@ export default function SettingsScreen() {
     if (currentSection === "api" && apiSectionRef.current) {
       // API Config Section
       setApiBaseUrl(message);
-    } else if (currentSection === "livestream" && liveStreamSectionRef.current) {
-      // Live Stream Section
-      setM3uUrl(message);
     }
   };
 
@@ -127,20 +122,6 @@ export default function SettingsScreen() {
   //     ),
   //     key: "api",
   //   },
-  //   // 直播源配置 - 仅在非手机端显示
-  //   deviceType !== "mobile" && {
-  //     component: (
-  //       <LiveStreamSection
-  //         ref={liveStreamSectionRef}
-  //         onChanged={markAsChanged}
-  //         onFocus={() => {
-  //           setCurrentFocusIndex(2);
-  //           setCurrentSection("livestream");
-  //         }}
-  //       />
-  //     ),
-  //     key: "livestream",
-  //   },
   //   // {
   //   //   component: (
   //   //     <VideoSourceSection
@@ -184,19 +165,6 @@ export default function SettingsScreen() {
         />
       ),
       key: "api",
-    },
-    deviceType !== "mobile" && {
-      component: (
-        <LiveStreamSection
-          ref={liveStreamSectionRef}
-          onChanged={markAsChanged}
-          onFocus={() => {
-            setCurrentFocusIndex(2);
-            setCurrentSection("livestream");
-          }}
-        />
-      ),
-      key: "livestream",
     },
     Platform.OS === "android" && {
       component: <UpdateSection />,
