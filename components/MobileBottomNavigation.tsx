@@ -69,7 +69,7 @@ export const MobileBottomNavigation: React.FC<MobileBottomNavigationProps> = ({
 
   const handleNavigation = (route: string) => {
     if (route === '/') {
-      router.push('/');
+      router.replace('/');
     } else {
       router.push(route as any);
     }

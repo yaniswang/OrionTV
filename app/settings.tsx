@@ -261,7 +261,7 @@ export default function SettingsScreen() {
 
   return (
     <ResponsiveNavigation>
-      <ResponsiveHeader title="设置" showBackButton />
+      <ResponsiveHeader title="设置" />
       {renderSettingsContent()}
     </ResponsiveNavigation>
   );

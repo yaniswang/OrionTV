@@ -1,5 +1,6 @@
 import React from "react";
-import { View, Text, StyleSheet, FlatList } from "react-native";
+import { View, Text, StyleSheet } from "react-native";
+import { FlashList } from "@shopify/flash-list";
 import Modal from "react-native-modal";
 import { StyledButton } from "./StyledButton";
 import usePlayerStore from "@/stores/playerStore";
@@ -35,11 +36,12 @@ export const SpeedSelectionModal: React.FC = () => {
     <Modal isVisible={showSpeedModal} statusBarTranslucent={true} onBackButtonPress={onClose} onBackdropPress={onClose} onSwipeComplete={onClose} swipeDirection="down" style={styles.modalContainer}>
       <View style={styles.modalContent}>
         <Text style={styles.modalTitle}>播放速度</Text>
-        <FlatList
+        <FlashList
           data={SPEED_OPTIONS}
           numColumns={3}
-          contentContainerStyle={styles.speedList}
           keyExtractor={(item) => `speed-${item.rate}`}
+          extraData={playbackRate}
+          estimatedItemSize={77}
           renderItem={({ item }) => (
             <StyledButton
               text={item.label}
@@ -74,10 +76,8 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "bold",
   },
-  speedList: {
-    justifyContent: "flex-start",
-  },
   speedItem: {
+    flex: 1,
     paddingVertical: 10,
     margin: 4,
     marginLeft: 10,

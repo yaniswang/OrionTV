@@ -1,5 +1,6 @@
 import React, { useEffect, useCallback, useRef, useState } from "react";
-import { View, StyleSheet, ActivityIndicator, FlatList, Pressable, Animated, StatusBar, Platform, BackHandler, ToastAndroid } from "react-native";
+import { View, StyleSheet, ActivityIndicator, Pressable, Animated, StatusBar, Platform, BackHandler, ToastAndroid } from "react-native";
+import { FlashList } from "@shopify/flash-list";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ThemedView } from "@/components/ThemedView";
 import { ThemedText } from "@/components/ThemedText";
@@ -160,6 +161,7 @@ export default function HomeScreen() {
     const isSelected = selectedCategory?.title === item.title;
     return (
       <StyledButton
+        onLayout={(e) => console.log('实际宽度:', e.nativeEvent.layout.width)}
         text={item.title}
         onPress={() => handleCategorySelect(item)}
         isSelected={isSelected}
@@ -293,20 +295,22 @@ export default function HomeScreen() {
 
       {/* 分类选择器 */}
       <View style={dynamicStyles.categoryContainer}>
-        <FlatList
+        <FlashList
           data={categories}
           renderItem={renderCategory}
           keyExtractor={(item) => item.title}
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={dynamicStyles.categoryListContent}
+          estimatedItemSize={100}
+          extraData={selectedCategory} 
         />
       </View>
 
       {/* 子分类标签 */}
       {selectedCategory && selectedCategory.tags && (
         <View style={dynamicStyles.categoryContainer}>
-          <FlatList
+          <FlashList
             data={selectedCategory.tags}
             renderItem={({ item, index }) => {
               const isSelected = selectedTag === item;
@@ -322,10 +326,12 @@ export default function HomeScreen() {
                 />
               );
             }}
+            extraData={selectedTag} 
             keyExtractor={(item) => item}
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={dynamicStyles.categoryListContent}
+            estimatedItemSize={92}
           />
         </View>
       )}

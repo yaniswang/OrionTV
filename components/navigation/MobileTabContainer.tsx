@@ -34,10 +34,10 @@ const MobileTabContainer: React.FC<MobileTabContainerProps> = ({ children }) => 
   const filteredTabs = tabs;
   
   const handleTabPress = (route: string) => {
-    if (route === '/') {
-      router.push('/');
-    } else {
+    if (route == '/live') {
       router.push(route as any);
+    } else {
+      router.replace(route as any);
     }
   };
 

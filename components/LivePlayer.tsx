@@ -155,7 +155,7 @@ export default function LivePlayer({ streamUrl, channelTitle, onPlaybackStatusUp
       const directionY = accumulativeY.current < 0 ? 'up' : 'down';
       if(gestureMode == '') {
         // 首次判断手势模式，灵敏度阈值更高防止误判
-        if (absY > 50) {
+        if (absY > 100) {
           // 垂直没滑动
           if (isRightSide) {
             setGestureMode('volume');

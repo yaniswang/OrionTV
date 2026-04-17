@@ -78,7 +78,7 @@ export default function FavoritesScreen() {
 
   return (
     <ResponsiveNavigation>
-      <ResponsiveHeader title="我的收藏" showBackButton />
+      <ResponsiveHeader title="我的收藏" />
       {content}
     </ResponsiveNavigation>
   );

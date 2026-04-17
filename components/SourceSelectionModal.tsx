@@ -1,5 +1,6 @@
 import React from "react";
-import { View, Text, StyleSheet, FlatList } from "react-native";
+import { View, Text, StyleSheet } from "react-native";
+import { FlashList } from "@shopify/flash-list";
 import Modal from "react-native-modal";
 import { StyledButton } from "./StyledButton";
 import { ThemedText } from "@/components/ThemedText";
@@ -50,11 +51,12 @@ export const SourceSelectionModal: React.FC = () => {
     <Modal isVisible={showSourceModal} statusBarTranslucent={true} onBackButtonPress={onClose} onBackdropPress={onClose} onSwipeComplete={onClose} swipeDirection="down" style={styles.modalContainer}>
       <View style={styles.modalContent}>
         <Text style={styles.modalTitle}>选择播放源</Text>
-        <FlatList
+        <FlashList
           data={searchResults}
           numColumns={3}
-          contentContainerStyle={styles.sourceList}
           keyExtractor={(item, index) => `source-${item.source}-${index}`}
+          extraData={detail?.source}
+          estimatedItemSize={60}
           renderItem={({ item, index }) => (
             <StyledButton
               onPress={() => onSelectSource(index)}
@@ -102,10 +104,8 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "bold",
   },
-  sourceList: {
-    justifyContent: "flex-start",
-  },
   sourceItem: {
+    flex: 1,
     paddingVertical: 2,
     margin: 4,
     marginLeft: 10,

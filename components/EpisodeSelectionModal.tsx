@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, FlatList } from "react-native";
+import { View, Text, StyleSheet } from "react-native";
+import { FlashList } from "@shopify/flash-list";
 import Modal from "react-native-modal";
 import { StyledButton } from "./StyledButton";
 import usePlayerStore from "@/stores/playerStore";
@@ -46,14 +47,15 @@ export const EpisodeSelectionModal: React.FC<EpisodeSelectionModalProps> = () =>
             ))}
           </View>
         )}
-        <FlatList
+        <FlashList
           data={episodes.slice(
             selectedEpisodeGroup * episodeGroupSize,
             (selectedEpisodeGroup + 1) * episodeGroupSize
           )}
           numColumns={5}
-          contentContainerStyle={styles.episodeList}
           keyExtractor={(_, index) => `episode-${selectedEpisodeGroup * episodeGroupSize + index}`}
+          extraData={currentEpisodeIndex} 
+          estimatedItemSize={60}
           renderItem={({ item, index }) => {
             const absoluteIndex = selectedEpisodeGroup * episodeGroupSize + index;
             return (
@@ -91,10 +93,8 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "bold",
   },
-  episodeList: {
-    justifyContent: "flex-start",
-  },
   episodeItem: {
+    flex: 1,
     paddingVertical: 2,
     margin: 4,
     width: "18%",

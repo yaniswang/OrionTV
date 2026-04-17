@@ -53,7 +53,7 @@ const TabletSidebarNavigator: React.FC<TabletSidebarNavigatorProps> = ({
 
   const handleItemPress = (route: string) => {
     if (route === '/') {
-      router.push('/');
+      router.replace('/');
     } else {
       router.push(route as any);
     }

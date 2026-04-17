@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { View, FlatList, StyleSheet, ActivityIndicator, useTVEventHandler, HWEvent, Text, Platform } from "react-native";
+import { View, StyleSheet, ActivityIndicator, useTVEventHandler, HWEvent, Text, Platform } from "react-native";
+import { FlashList } from "@shopify/flash-list";
 import LivePlayer from "@/components/LivePlayer";
 import { fetchAndParseM3u, getPlayableUrl, Channel } from "@/services/m3u";
 import { ThemedView } from "@/components/ThemedView";
@@ -167,9 +168,11 @@ export default function LiveScreen() {
           <Text style={dynamicStyles.modalTitle}>选择频道</Text>
           <View style={dynamicStyles.listContainer}>
             <View style={dynamicStyles.groupColumn}>
-              <FlatList
+              <FlashList
                 data={channelGroups}
                 keyExtractor={(item, index) => `group-${item}-${index}`}
+                extraData={selectedGroup}
+                estimatedItemSize={76}
                 renderItem={({ item }) => (
                   <StyledButton
                     text={item}
@@ -185,9 +188,11 @@ export default function LiveScreen() {
               {isLoading ? (
                 <ActivityIndicator size="large" />
               ) : (
-                <FlatList
+                <FlashList
                   data={groupedChannels[selectedGroup] || []}
                   keyExtractor={(item, index) => `${item.id}-${item.group}-${index}`}
+                  extraData={channels[currentChannelIndex]?.id}
+                  estimatedItemSize={65}
                   renderItem={({ item }) => (
                     <StyledButton
                       text={item.name || "Unknown Channel"}
