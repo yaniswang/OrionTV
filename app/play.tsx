@@ -286,18 +286,22 @@ export default function PlayScreen() {
   // --- 2. 平移手势 (快进、音量、亮度) ---
   const panGesture = Gesture.Pan()
     .runOnJS(true)
-    .onStart(async () => {
+    .onBegin(async (event) => {
       // 拖动开始时刷新音量和亮度值
       const volume = await SystemSetting.getVolume()
       setVolume(Math.round(volume * 100) / 100);
       const brightness = await SystemSetting.getAppBrightness();
       setBrightness(Math.round(brightness * 100) / 100)
+      lastT_X.current = 0;
+      lastT_Y.current = 0;
     })
     .onUpdate((e) => {
       const { x, translationX, translationY, velocityX, velocityY } = e;
+
       const deltaX = translationX - lastT_X.current;
       lastT_X.current = translationX;
       accumulativeX.current += deltaX;
+
       const deltaY = translationY - lastT_Y.current;
       lastT_Y.current = translationY;
       accumulativeY.current += deltaY;
@@ -311,7 +315,7 @@ export default function PlayScreen() {
       const directionY = accumulativeY.current < 0 ? 'up' : 'down';
       if(gestureMode == '') {
         // 首次判断手势模式，灵敏度阈值更高防止误判
-        if (absY > 100) {
+        if (absY > 50) {
           // 垂直没滑动
           if (isRightSide) {
             setGestureMode('volume');
@@ -320,9 +324,12 @@ export default function PlayScreen() {
             setGestureMode('brightness');
             handleBrightness(directionY);
           }
+          accumulativeY.current = 0;
         }
         else if(absX > 50) {
           setGestureMode('seek');
+          handleSeek(directionX)
+          accumulativeX.current = 0;
         }
       } else {
         // 二次判断手势，降低灵敏度阈值
@@ -346,8 +353,10 @@ export default function PlayScreen() {
         }
       }
     })
-    .onEnd(() => {
+    .onFinalize(() => {
       setGestureMode('');
+      accumulativeX.current = 0;
+      accumulativeY.current = 0;
     });
 
   const taps = Gesture.Exclusive(doubleTap, singleTap);

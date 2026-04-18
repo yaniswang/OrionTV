@@ -7,7 +7,7 @@ import Logger from "@/utils/Logger";
 
 const logger = Logger.withTag('DetailStore');
 
-export type SearchResultWithResolution = SearchResult & { resolution?: string | null };
+export type SearchResultWithResolution = SearchResult & { resolution?: string | null, pingTime: number };
 
 interface DetailState {
   q: string | null;
@@ -70,11 +70,11 @@ const useDetailStore = create<DetailState>((set, get) => ({
       
       const resultsWithResolution = await Promise.all(
         results.map(async (searchResult) => {
-          let resolution;
+          let videoInfo;
           const m3u8Start = performance.now();
           try {
             if (searchResult.episodes && searchResult.episodes.length > 0) {
-              resolution = await getResolutionFromM3U8(searchResult.episodes[0], signal);
+              videoInfo = await getResolutionFromM3U8(searchResult.episodes[0], signal);
             }
           } catch (e) {
             if ((e as Error).name !== "AbortError") {
@@ -82,8 +82,8 @@ const useDetailStore = create<DetailState>((set, get) => ({
             }
           }
           const m3u8End = performance.now();
-          logger.info(`[PERF] M3U8 resolution for ${searchResult.source_name}: ${(m3u8End - m3u8Start).toFixed(2)}ms (${resolution || 'failed'})`);
-          return { ...searchResult, resolution };
+          logger.info(`[PERF] M3U8 resolution for ${searchResult.source_name}: ${(m3u8End - m3u8Start).toFixed(2)}ms (${videoInfo && JSON.stringify(videoInfo) || 'failed'})`);
+          return { ...searchResult, ...videoInfo };
         })
       );
       
@@ -241,7 +241,7 @@ const useDetailStore = create<DetailState>((set, get) => ({
                 logger.warn(`[WARN] Source "${resource.name}" returned 0 results for "${q}"`);
               }
             } catch (error) {
-              logger.error(`[ERROR] Failed to fetch from ${resource.name}:`, error);
+              // logger.error(`[ERROR] Failed to fetch from ${resource.name}:`, error);
             }
           });
 

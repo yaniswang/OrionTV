@@ -161,7 +161,6 @@ export default function HomeScreen() {
     const isSelected = selectedCategory?.title === item.title;
     return (
       <StyledButton
-        onLayout={(e) => console.log('实际宽度:', e.nativeEvent.layout.width)}
         text={item.title}
         onPress={() => handleCategorySelect(item)}
         isSelected={isSelected}

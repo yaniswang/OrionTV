@@ -1,5 +1,5 @@
-import React, { useEffect } from "react";
-import { View, Text, StyleSheet, Image, ScrollView, ActivityIndicator } from "react-native";
+import React, { useEffect, useState } from "react";
+import { View, Text, StyleSheet, Image, ScrollView, ActivityIndicator, Platform } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ThemedView } from "@/components/ThemedView";
 import { ThemedText } from "@/components/ThemedText";
@@ -20,6 +20,8 @@ export default function DetailScreen() {
   const responsiveConfig = useResponsiveLayout();
   const commonStyles = getCommonResponsiveStyles(responsiveConfig);
   const { deviceType, spacing } = responsiveConfig;
+
+  const [selectedTab, setSelectedTab] = useState<string>('episodes');
 
   const {
     detail,
@@ -138,56 +140,73 @@ export default function DetailScreen() {
             <ThemedText style={dynamicStyles.description}>{detail.desc}</ThemedText>
           </View>
 
-          {/* 播放源 */}
-          <View style={dynamicStyles.sourcesContainer}>
-            <View style={dynamicStyles.sourcesTitleContainer}>
-              <ThemedText style={dynamicStyles.sourcesTitle}>播放源 ({searchResults.length})</ThemedText>
-              {!allSourcesLoaded && <ActivityIndicator style={{ marginLeft: 10 }} />}
-            </View>
-            <View style={dynamicStyles.sourceList}>
-              {searchResults.map((item, index) => {
-                const isSelected = detail?.source === item.source;
-                return (
-                  <StyledButton
-                    key={index}
-                    onPress={() => setDetail(item)}
-                    isSelected={isSelected}
-                    style={dynamicStyles.sourceButton}
-                  >
-                    <ThemedText style={dynamicStyles.sourceButtonText}>{item.source_name}</ThemedText>
-                    {item.episodes.length > 1 && (
-                      <View style={[dynamicStyles.badge, isSelected && dynamicStyles.selectedBadge]}>
-                        <Text style={dynamicStyles.badgeText}>
-                          {item.episodes.length > 99 ? "99+" : `${item.episodes.length}`} 集
-                        </Text>
-                      </View>
-                    )}
-                    {item.resolution && (
-                      <View style={[dynamicStyles.badge, { backgroundColor: "#666" }, isSelected && dynamicStyles.selectedBadge]}>
-                        <Text style={dynamicStyles.badgeText}>{item.resolution}</Text>
-                      </View>
-                    )}
-                  </StyledButton>
-                );
-              })}
-            </View>
+          {/* Tabs切换 */}
+          <View style={dynamicStyles.tabButtonContainer}>
+            <StyledButton
+              text={'选集'}
+              onPress={() => setSelectedTab('episodes')}
+              isSelected={selectedTab==='episodes'}
+              style={dynamicStyles.tabButton}
+              textStyle={dynamicStyles.tabButtonText}
+            />
+            <StyledButton
+              text={`换源 (${searchResults.length})`}
+              onPress={() => setSelectedTab('sources')}
+              isSelected={selectedTab==='sources'}
+              style={dynamicStyles.tabButton}
+              textStyle={dynamicStyles.tabButtonText}
+            />
           </View>
 
           {/* 剧集列表 */}
-          <View style={dynamicStyles.episodesContainer}>
-            <ThemedText style={dynamicStyles.episodesTitle}>播放列表</ThemedText>
-            <View style={dynamicStyles.episodeList}>
-              {detail.episodes.map((episode, index) => (
-                <StyledButton
-                  key={index}
-                  style={dynamicStyles.episodeButton}
-                  onPress={() => handlePlay(index)}
-                  text={`第 ${index + 1} 集`}
-                  textStyle={dynamicStyles.episodeButtonText}
-                />
-              ))}
+          {selectedTab === 'episodes' && (
+            <View style={dynamicStyles.episodesContainer}>
+              <View style={dynamicStyles.episodeList}>
+                {detail.episodes.map((episode, index) => (
+                  <StyledButton
+                    key={index}
+                    style={dynamicStyles.episodeButton}
+                    onPress={() => handlePlay(index)}
+                    text={`第 ${index + 1} 集`}
+                    textStyle={dynamicStyles.episodeButtonText}
+                  />
+                ))}
+              </View>
             </View>
-          </View>
+          )}
+
+          {/* 播放源 */}
+          {selectedTab === 'sources' && (
+            <View style={dynamicStyles.sourcesContainer}>
+              <View style={dynamicStyles.sourceList}>
+                {searchResults.map((item, index) => {
+                  const isSelected = detail?.source === item.source;
+                  return (
+                    <StyledButton
+                      key={index}
+                      onPress={() => setDetail(item)}
+                      isSelected={isSelected}
+                      style={dynamicStyles.sourceButton}
+                    >
+                      <ThemedText style={dynamicStyles.sourceButtonText}>{item.source_name}</ThemedText>
+                      {item.episodes.length > 1 && (
+                        <View style={[dynamicStyles.badge, isSelected && dynamicStyles.selectedBadge]}>
+                          <Text style={dynamicStyles.badgeText}>
+                            {item.episodes.length > 99 ? "99+" : `${item.episodes.length}`} 集
+                          </Text>
+                        </View>
+                      )}
+                      {item.resolution && (
+                        <View style={[dynamicStyles.badge, { backgroundColor: "#666" }, isSelected && dynamicStyles.selectedBadge]}>
+                          <Text style={dynamicStyles.badgeText}>{item.resolution}</Text>
+                        </View>
+                      )}
+                    </StyledButton>
+                  );
+                })}
+              </View>
+            </View>
+          )}
         </ScrollView>
       );
     } else {
@@ -221,54 +240,74 @@ export default function DetailScreen() {
           </View>
 
           <View style={dynamicStyles.bottomContainer}>
-            <View style={dynamicStyles.sourcesContainer}>
-              <View style={dynamicStyles.sourcesTitleContainer}>
-                <ThemedText style={dynamicStyles.sourcesTitle}>选择播放源 共 {searchResults.length} 个</ThemedText>
-                {!allSourcesLoaded && <ActivityIndicator style={{ marginLeft: 10 }} />}
-              </View>
-              <View style={dynamicStyles.sourceList}>
-                {searchResults.map((item, index) => {
-                  const isSelected = detail?.source === item.source;
-                  return (
+            {/* Tabs切换 */}
+            <View style={dynamicStyles.tabButtonContainer}>
+              <StyledButton
+                text={'选集'}
+                onPress={() => setSelectedTab('episodes')}
+                isSelected={selectedTab==='episodes'}
+                style={dynamicStyles.tabButton}
+                textStyle={dynamicStyles.tabButtonText}
+              />
+              <StyledButton
+                text={`换源 (${searchResults.length})`}
+                onPress={() => setSelectedTab('sources')}
+                isSelected={selectedTab==='sources'}
+                style={dynamicStyles.tabButton}
+                textStyle={dynamicStyles.tabButtonText}
+              />
+            </View>
+            {selectedTab === 'episodes' && (
+              <View style={dynamicStyles.episodesContainer}>
+                <ScrollView contentContainerStyle={dynamicStyles.episodeList}>
+                  {detail.episodes.map((episode, index) => (
                     <StyledButton
                       key={index}
-                      onPress={() => setDetail(item)}
-                      hasTVPreferredFocus={index === 0}
-                      isSelected={isSelected}
-                      style={dynamicStyles.sourceButton}
-                    >
-                      <ThemedText style={dynamicStyles.sourceButtonText}>{item.source_name}</ThemedText>
-                      {item.episodes.length > 1 && (
-                        <View style={[dynamicStyles.badge, isSelected && dynamicStyles.selectedBadge]}>
-                          <Text style={dynamicStyles.badgeText}>
-                            {item.episodes.length > 99 ? "99+" : `${item.episodes.length}`} 集
-                          </Text>
-                        </View>
-                      )}
-                      {item.resolution && (
-                        <View style={[dynamicStyles.badge, { backgroundColor: "#666" }, isSelected && dynamicStyles.selectedBadge]}>
-                          <Text style={dynamicStyles.badgeText}>{item.resolution}</Text>
-                        </View>
-                      )}
-                    </StyledButton>
-                  );
-                })}
+                      hasTVPreferredFocus={Platform.isTV && index === 0}
+                      style={dynamicStyles.episodeButton}
+                      onPress={() => handlePlay(index)}
+                      text={`第 ${index + 1} 集`}
+                      textStyle={dynamicStyles.episodeButtonText}
+                    />
+                  ))}
+                </ScrollView>
               </View>
-            </View>
-            <View style={dynamicStyles.episodesContainer}>
-              <ThemedText style={dynamicStyles.episodesTitle}>播放列表</ThemedText>
-              <ScrollView contentContainerStyle={dynamicStyles.episodeList}>
-                {detail.episodes.map((episode, index) => (
-                  <StyledButton
-                    key={index}
-                    style={dynamicStyles.episodeButton}
-                    onPress={() => handlePlay(index)}
-                    text={`第 ${index + 1} 集`}
-                    textStyle={dynamicStyles.episodeButtonText}
-                  />
-                ))}
-              </ScrollView>
-            </View>
+            )}
+            {selectedTab === 'sources' && (
+              <View style={dynamicStyles.sourcesContainer}>
+                <View style={dynamicStyles.sourcesTitleContainer}>
+                  {!allSourcesLoaded && <ActivityIndicator style={{ marginLeft: 10 }} />}
+                </View>
+                <View style={dynamicStyles.sourceList}>
+                  {searchResults.map((item, index) => {
+                    const isSelected = detail?.source === item.source;
+                    return (
+                      <StyledButton
+                        key={index}
+                        onPress={() => setDetail(item)}
+                        hasTVPreferredFocus={index === 0}
+                        isSelected={isSelected}
+                        style={dynamicStyles.sourceButton}
+                      >
+                        <ThemedText style={dynamicStyles.sourceButtonText}>{item.source_name}</ThemedText>
+                        {item.episodes.length > 1 && (
+                          <View style={[dynamicStyles.badge, isSelected && dynamicStyles.selectedBadge]}>
+                            <Text style={dynamicStyles.badgeText}>
+                              {item.episodes.length > 99 ? "99+" : `${item.episodes.length}`} 集
+                            </Text>
+                          </View>
+                        )}
+                        {item.resolution && (
+                          <View style={[dynamicStyles.badge, { backgroundColor: "#666" }, isSelected && dynamicStyles.selectedBadge]}>
+                            <Text style={dynamicStyles.badgeText}>{item.resolution}</Text>
+                          </View>
+                        )}
+                      </StyledButton>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
           </View>
         </ScrollView>
       );
@@ -375,6 +414,20 @@ const createResponsiveStyles = (deviceType: string, spacing: number) => {
       fontSize: isMobile ? 13 : 14,
       color: "#ccc",
       lineHeight: isMobile ? 18 : 22,
+    },
+
+    tabButtonContainer: {
+      flexDirection: "row",
+      alignItems: "center",
+    },
+    tabButton: {
+      margin: isMobile ? 4 : 8,
+      minHeight: isMobile ? 36 : 44,
+      paddingHorizontal: spacing,
+    },
+    tabButtonText:  {
+      color: "white",
+      fontSize: isMobile ? 14 : 16,
     },
 
     // 播放源和剧集样式
