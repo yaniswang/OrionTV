@@ -32,9 +32,9 @@ export default function LivePlayer({ streamUrl, channelTitle, onPlaybackStatusUp
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const [volume, setVolume] = useState(-1);
-  const [volumeBarWork, setVolumeBarWork] = useState(false);
+  const [volumeBarShow, setVolumeBarShow] = useState(-1);
   const [brightness, setBrightness] = useState(-1);
-  const [brightnessBarWork, setBrightnessBarWork] = useState(false);
+  const [brightnessBarShow, setBrightnessBarShow] = useState(-1);
   const [gestureMode, setGestureMode] = useState('');
 
   const lastT_Y = useRef(0);
@@ -111,8 +111,8 @@ export default function LivePlayer({ streamUrl, channelTitle, onPlaybackStatusUp
     next = Math.max(0, Math.min(1, next));
     next = Math.round(next * 100) / 100;
     SystemSetting.setVolume(next);
-    setVolumeBarWork(true);
     setVolume(next);
+    setVolumeBarShow(new Date().getTime());
   };
 
   // 2. 调节亮度 (左侧)
@@ -121,8 +121,8 @@ export default function LivePlayer({ streamUrl, channelTitle, onPlaybackStatusUp
     next = Math.max(0, Math.min(1, next));
     next = Math.round(next * 100) / 100;
     SystemSetting.setAppBrightness(next);
-    setBrightnessBarWork(true);
     setBrightness(next)
+    setBrightnessBarShow(new Date().getTime());
   };
 
   // 单击显示控制条
@@ -146,7 +146,7 @@ export default function LivePlayer({ streamUrl, channelTitle, onPlaybackStatusUp
     })
     .onUpdate((e) => {
       const { x, translationX, translationY, velocityX, velocityY } = e;
-      
+
       const deltaY = translationY - lastT_Y.current;
       lastT_Y.current = translationY;
       accumulativeY.current += deltaY;
@@ -230,10 +230,10 @@ export default function LivePlayer({ streamUrl, channelTitle, onPlaybackStatusUp
         </View>
       )}
       <View style={styles.brightnessBar}>
-        <AnimatedVerticalProgress progress={brightness} isWork={brightnessBarWork} />
+        <AnimatedVerticalProgress progress={brightness} forceShow={brightnessBarShow} />
       </View>
       <View style={styles.volumeBar}>
-        <AnimatedVerticalProgress progress={volume} isWork={volumeBarWork} />
+        <AnimatedVerticalProgress progress={volume} forceShow={volumeBarShow} />
       </View>
     </View>
   );

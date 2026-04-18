@@ -1,12 +1,16 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { View, Animated } from 'react-native';
 
-export const AnimatedVerticalProgress = ({ progress, isWork }) => {
-  const animatedHeight = useRef(new Animated.Value(0)).current;
+export const AnimatedVerticalProgress = ({ progress, forceShow }) => {
+  if (progress == -1) {
+    return null;
+  }
+  const animatedHeight = useRef(new Animated.Value(progress * 100)).current;
   const showTimer = useRef<NodeJS.Timeout | null>(null);
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
+    console.log(progress)
     Animated.timing(animatedHeight, {
         toValue: progress * 100, // 对应高度百分比
         duration: 500,
@@ -18,10 +22,10 @@ export const AnimatedVerticalProgress = ({ progress, isWork }) => {
     return () => {
       if (showTimer.current) clearTimeout(showTimer.current);
     }
-  }, [progress]);
+  }, [progress, forceShow]);
 
   return (
-    <View style={{ opacity: isWork && isVisible ? 1 : 0, width: 15, height: 150, backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: 8, justifyContent: 'flex-end' }}>
+    <View style={{ opacity: forceShow && isVisible ? 1 : 0, width: 15, height: 150, backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: 8, justifyContent: 'flex-end' }}>
       <Animated.View style={{
         width: '100%',
         borderRadius: 8,

@@ -111,9 +111,9 @@ export default function PlayScreen() {
   const videoRef = useRef<Video>(null);
   const router = useRouter();
   const [volume, setVolume] = useState(-1);
-  const [volumeBarWork, setVolumeBarWork] = useState(false);
+  const [volumeBarShow, setVolumeBarShow] = useState(-1);
   const [brightness, setBrightness] = useState(-1);
-  const [brightnessBarWork, setBrightnessBarWork] = useState(false);
+  const [brightnessBarShow, setBrightnessBarShow] = useState(-1);
   const [gestureMode, setGestureMode] = useState('');
   useKeepAwake();
 
@@ -243,8 +243,8 @@ export default function PlayScreen() {
     next = Math.max(0, Math.min(1, next));
     next = Math.round(next * 100) / 100;
     SystemSetting.setVolume(next);
-    setVolumeBarWork(true);
     setVolume(next);
+    setVolumeBarShow(new Date().getTime());
   };
 
   // 2. 调节亮度 (左侧)
@@ -253,8 +253,8 @@ export default function PlayScreen() {
     next = Math.max(0, Math.min(1, next));
     next = Math.round(next * 100) / 100;
     SystemSetting.setAppBrightness(next);
-    setBrightnessBarWork(true);
     setBrightness(next)
+    setBrightnessBarShow(new Date().getTime());
   };
 
   // 3. 快进/快退
@@ -455,10 +455,10 @@ export default function PlayScreen() {
       <SourceSelectionModal />
       <SpeedSelectionModal />
       <View style={dynamicStyles.brightnessBar}>
-        <AnimatedVerticalProgress progress={brightness} isWork={brightnessBarWork} />
+        <AnimatedVerticalProgress progress={brightness} forceShow={brightnessBarShow} />
       </View>
       <View style={dynamicStyles.volumeBar}>
-        <AnimatedVerticalProgress progress={volume} isWork={volumeBarWork} />
+        <AnimatedVerticalProgress progress={volume} forceShow={volumeBarShow} />
       </View>
     </ThemedView>
   );
