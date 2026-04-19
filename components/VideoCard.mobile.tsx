@@ -153,9 +153,9 @@ const VideoCardMobile = forwardRef<View, VideoCardMobileProps>(
                 <Text style={styles.badgeText}>{sourceName}</Text>
               </View>
             )}
-            {episodeIndex && (totalEpisodes && totalEpisodes>1) && (
+            {(totalEpisodes && totalEpisodes>1) && (
               <View style={styles.episodesInfoBadge}>
-                <Text style={styles.badgeText}>{episodeIndex}/{totalEpisodes}</Text>
+                <Text style={styles.badgeText}>{episodeIndex?episodeIndex+'/':null}{totalEpisodes}</Text>
               </View>
             )}
           </View>

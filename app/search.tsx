@@ -69,7 +69,20 @@ export default function SearchScreen() {
     try {
       const response = await api.searchVideos(term);
       if (response.results.length > 0) {
-        setResults(response.results);
+        // 聚合搜索
+        const mapExist = new Map<string, boolean>()
+        const results = response.results.filter((item: any) => {
+          const key = `${item.title.replaceAll(' ', '')}-${item.year || 'unknown'}-${item.episodes.length === 1 ? 'movie' : 'tv'}`;
+          delete item['source'];
+          delete item['source_name'];
+          if (!mapExist.has(key)) {
+            mapExist.set(key, true);
+            return true;
+          } else {
+            return false;
+          }
+        });
+        setResults(results);
       } else {
         setError("没有找到相关内容");
       }
@@ -102,6 +115,7 @@ export default function SearchScreen() {
       poster={item.poster}
       year={item.year}
       sourceName={item.source_name}
+      totalEpisodes={item.episodes.length}
       api={api}
     />
   );

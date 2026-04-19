@@ -193,7 +193,7 @@ const VideoCard = forwardRef<View, VideoCardProps>(
               </View>
             )}
             {year && (
-              <View style={styles.yearBadge}>
+              <View style={{...styles.yearBadge, ...(rate?styles.yearBadgeLeft:styles.yearBadgeRight)}}>
                 <Text style={styles.badgeText}>{year}</Text>
               </View>
             )}
@@ -202,9 +202,9 @@ const VideoCard = forwardRef<View, VideoCardProps>(
                 <Text style={styles.badgeText}>{sourceName}</Text>
               </View>
             )}
-            {episodeIndex && (totalEpisodes && totalEpisodes>1) && (
+            {(totalEpisodes && totalEpisodes>1) && (
               <View style={styles.episodesInfoBadge}>
-                <Text style={styles.badgeText}>{episodeIndex}/{totalEpisodes}</Text>
+                <Text style={styles.badgeText}>{episodeIndex?episodeIndex+'/':null}{totalEpisodes}</Text>
               </View>
             )}
           </View>
@@ -309,11 +309,16 @@ const styles = StyleSheet.create({
   yearBadge: {
     position: "absolute",
     top: 8,
-    right: 8,
     backgroundColor: "rgba(0, 0, 0, 0.7)",
     borderRadius: 6,
     paddingHorizontal: 6,
     paddingVertical: 3,
+  },
+  yearBadgeLeft: {
+    left: 6,
+  },
+  yearBadgeRight: {
+    right: 6,
   },
   sourceNameBadge: {
     position: "absolute",
