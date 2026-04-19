@@ -112,7 +112,7 @@ const VideoCardMobile = forwardRef<View, VideoCardMobileProps>(
     const isContinueWatching = progress !== undefined && progress > 0 && progress < 1;
 
     const styles = createMobileStyles(cardWidth, cardHeight, spacing);
-
+    
     return (
       <Animated.View style={[styles.wrapper, { opacity: fadeAnim }]} ref={ref}>
         <TouchableOpacity
@@ -142,7 +142,7 @@ const VideoCardMobile = forwardRef<View, VideoCardMobileProps>(
 
             {/* 年份 */}
             {year && (
-              <View style={styles.yearBadge}>
+              <View style={{...styles.yearBadge, ...(rate?styles.yearBadgeLeft:styles.yearBadgeRight)}}>
                 <Text style={styles.badgeText}>{year}</Text>
               </View>
             )}
@@ -241,11 +241,16 @@ const createMobileStyles = (cardWidth: number, cardHeight: number, spacing: numb
     yearBadge: {
       position: "absolute",
       top: 6,
-      right: 6,
       backgroundColor: "rgba(0, 0, 0, 0.7)",
       borderRadius: 4,
       paddingHorizontal: 4,
       paddingVertical: 2,
+    },
+    yearBadgeLeft: {
+      left: 6,
+    },
+    yearBadgeRight: {
+      right: 6,
     },
     sourceNameBadge: {
       position: "absolute",

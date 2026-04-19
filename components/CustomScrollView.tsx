@@ -128,7 +128,7 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
     },
     itemContainer: {
       width: (100 / effectiveColumns)+'%', 
-      justifyContent: 'center',
+      justifyContent: 'flex-start',
       alignItems: 'center',
     },
     itemWithMargin: {

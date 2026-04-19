@@ -215,12 +215,53 @@ export class API {
   }
 
   async getDoubanData(
-    type: "movie" | "tv",
+    type: "movie_hot" | "movie_new" | 'movie_high' | 'movie_unpop' | 'movie_all' | 'tv_hot' | 'tv_all' | 'show_hot' | 'show_all',
     tag: string,
     pageSize: number = 16,
     pageStart: number = 0
   ): Promise<DoubanResponse> {
-    const url = `/api/douban?type=${type}&tag=${encodeURIComponent(tag)}&pageSize=${pageSize}&pageStart=${pageStart}`;
+    let url = '';
+    if (type === 'movie_hot') {
+      url = `/api/douban/categories?kind=movie&category=${encodeURIComponent('热门')}&type=${encodeURIComponent(tag)}&limit=${pageSize}&start=${pageStart}`
+    }
+    else if(type === 'movie_new') {
+      url = `/api/douban/categories?kind=movie&category=${encodeURIComponent('最新')}&type=${encodeURIComponent(tag)}&limit=${pageSize}&start=${pageStart}`
+    }
+    else if(type === 'movie_high') {
+      url = `/api/douban/categories?kind=movie&category=${encodeURIComponent('豆瓣高分')}&type=${encodeURIComponent(tag)}&limit=${pageSize}&start=${pageStart}`
+    }
+    else if(type === 'movie_unpop') {
+      url = `/api/douban/categories?kind=movie&category=${encodeURIComponent('冷门佳片')}&type=${encodeURIComponent(tag)}&limit=${pageSize}&start=${pageStart}`
+    }
+    else if(type === 'movie_all') {
+      url = `/api/douban/recommends?kind=movie&category=${encodeURIComponent(tag==='全部'?'all':tag)}&&format=&region=all&year=all&platform=all&sort=T&label=all&limit=${pageSize}&start=${pageStart}`
+    }
+    else if(type === 'tv_hot') {
+      const mapTvHot = {
+        '全部': 'tv',
+        '国产': 'tv_domestic',
+        '欧美': 'tv_american',
+        '日本': 'tv_japanese',
+        '韩国': 'tv_korean',
+        '动漫': 'tv_animation',
+        '纪录片': 'tv_documentary'
+      };
+      url = `/api/douban/categories?kind=tv&category=tv&type=${encodeURIComponent(mapTvHot[tag])}&limit=${pageSize}&start=${pageStart}`;
+    }
+    else if(type === 'tv_all') {
+      url = `/api/douban/recommends?kind=tv&category=${encodeURIComponent(tag==='全部'?'all':tag)}&format=电视剧&region=all&year=all&platform=all&sort=T&label=all&limit=${pageSize}&start=${pageStart}`;
+    }
+    else if(type === 'show_hot') {
+      const mapShowHot = {
+        '全部': 'show',
+        '国内': 'show_domestic',
+        '国外': 'show_foreign',
+      };
+      url = `/api/douban/categories?kind=tv&category=show&type=${encodeURIComponent(mapShowHot[tag])}&limit=${pageSize}&start=${pageStart}`;
+    }
+    else if(type === 'show_all') {
+      url = `/api/douban/recommends?kind=tv&category=${encodeURIComponent(tag==='全部'?'all':tag)}&format=综艺&region=all&year=all&platform=all&sort=T&label=all&limit=${pageSize}&start=${pageStart}`;
+    }
     const response = await this._fetch(url);
     return response.json();
   }

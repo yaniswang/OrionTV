@@ -21,26 +21,29 @@ export type RowItem = (SearchResult | PlayRecord) & {
 
 export interface Category {
   title: string;
-  type?: "movie" | "tv" | "record";
+  type?: "record" | "movie_hot" | "movie_new" | 'movie_high' | 'movie_unpop' | 'movie_all' | 'tv_hot' | 'tv_all' | 'show_hot' | 'show_all';
   tag?: string;
   tags?: string[];
 }
 
 const initialCategories: Category[] = [
   { title: "继续观看", type: "record" },
-  { title: "热门电影", type: "movie", tag: "热门" },
-  { title: "电影", type: "movie", tags: ["最新", "经典", "豆瓣高分", "冷门佳片", "华语", "欧美", "韩国", "日本", "喜剧", "爱情", "动作", "科幻", "动画", "悬疑", "犯罪", "惊悚", "冒险", "音乐", "历史", "奇幻", "恐怖", "战争", "传记", "歌舞", "武侠", "情色", "灾难", "西部", "纪录片", "短片"] },
-  { title: "热门剧集", type: "tv", tag: "热门" },
-  { title: "剧集", type: "tv", tags: ["国产剧", "美剧", "英剧", "韩剧", "日剧", "港剧"] },
-  { title: "其它", type: "tv", tags: ["综艺", "纪录片", "日本动画"] },
-  { title: "豆瓣 Top250", type: "movie", tag: "top250" },
+  { title: "热门电影", type: "movie_hot", tags: ['全部', '华语', '欧美', '韩国', '日本'] },
+  { title: "最新电影", type: "movie_new", tags: ['全部', '华语', '欧美', '韩国', '日本'] },
+  { title: "高分电影", type: "movie_high", tags: ['全部', '华语', '欧美', '韩国', '日本'] },
+  { title: "冷门电影", type: "movie_unpop", tags: ['全部', '华语', '欧美', '韩国', '日本'] },
+  { title: "电影", type: "movie_all", tags: ['喜剧', '爱情', '动作', '科幻', '悬疑', '犯罪', '惊悚', '冒险', '音乐', '历史', '奇幻', '恐怖', '战争', '传记', '歌舞', '武侠', '情色', '灾难', '西部', '纪录片', '短片'] },
+  { title: "热门剧集", type: "tv_hot", tags: ['全部', '国产', '欧美', '日本', '韩国', '动漫', '纪录片'] },
+  { title: "剧集", type: "tv_all", tags: ['喜剧', '爱情', '悬疑', '武侠', '古装', '家庭', '犯罪', '科幻', '恐怖', '历史', '战争', '动作', '冒险', '传记', '剧情', '奇幻', '惊悚', '灾难', '歌舞', '音乐'] },
+  { title: "热门综艺", type: "show_hot", tags: ["全部", "国内", "国外"] },
+  { title: "综艺", type: "show_all", tags: ['真人秀', '脱口秀', '音乐', '歌舞'] },
 ];
 
 // 添加缓存项接口
 interface CacheItem {
   data: RowItem[];
   timestamp: number;
-  type: 'movie' | 'tv' | 'record';
+  type: "record" | "movie_hot" | "movie_new" | 'movie_high' | 'movie_unpop' | 'movie_all' | 'tv_hot' | 'tv_all' | 'show_hot' | 'show_all';
   hasMore: boolean;
 }
 
@@ -197,7 +200,6 @@ const useHomeStore = create<HomeState>((set, get) => ({
             type: selectedCategory.type,
             hasMore: true // 始终为 true，因为我们允许继续加载
           });
-
           set({
             contentData: newItems, // 使用完整的新数据
             pageStart: newItems.length,
