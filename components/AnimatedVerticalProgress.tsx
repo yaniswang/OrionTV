@@ -10,6 +10,9 @@ export const AnimatedVerticalProgress = ({ progress, forceShow }) => {
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
+    if (forceShow == -1) {
+      return;
+    }
     Animated.timing(animatedHeight, {
         toValue: progress * 100, // 对应高度百分比
         duration: 500,

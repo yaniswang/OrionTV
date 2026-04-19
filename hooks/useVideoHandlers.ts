@@ -10,6 +10,7 @@ interface UseVideoHandlersProps {
   introEndTime?: number;
   playbackRate: number;
   handlePlaybackStatusUpdate: (status: any) => void;
+  handleVideoSize: (naturalSize: any) => void;
   deviceType: string;
   detail?: { poster?: string };
 }
@@ -21,6 +22,7 @@ export const useVideoHandlers = ({
   introEndTime,
   playbackRate,
   handlePlaybackStatusUpdate,
+  handleVideoSize,
   deviceType,
   detail,
 }: UseVideoHandlersProps) => {
@@ -100,6 +102,13 @@ export const useVideoHandlers = ({
     }
   }, [currentEpisode?.url]);
 
+  // 获取视频大小
+  const onReadyForDisplay = useCallback((event) => {
+    if (event && event.naturalSize) {
+      if (handleVideoSize) handleVideoSize(event.naturalSize);
+    }
+  }, []);
+
   // 优化的Video组件props
   const videoProps = useMemo(() => ({
     source: { uri: currentEpisode?.url || '' },
@@ -110,6 +119,7 @@ export const useVideoHandlers = ({
     onLoad,
     onLoadStart,
     onError,
+    onReadyForDisplay,
     useNativeControls: false,
     shouldPlay: true,
   }), [

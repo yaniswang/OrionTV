@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, memo, useMemo } from "react";
+import React, { useState, useEffect, useRef, memo, useMemo, useCallback } from "react";
 import { StyleSheet, BackHandler, AppState, AppStateStatus, View, Dimensions, Platform, Text } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Audio, Video } from "expo-av";
@@ -115,6 +115,7 @@ export default function PlayScreen() {
   const [brightness, setBrightness] = useState(-1);
   const [brightnessBarShow, setBrightnessBarShow] = useState(-1);
   const [gestureMode, setGestureMode] = useState('');
+  const [landscape, setLandscape] = useState(-1);
   useKeepAwake();
 
   useEffect(() => {
@@ -134,25 +135,6 @@ export default function PlayScreen() {
       await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
     }
   };
-  
-  useEffect(() => {
-    if(deviceType == 'mobile') {
-      // 进入页面切换为横屏
-      setOrientation(true);
-      Immersive.on();
-      return () => {
-        // 退出页面时切换为坚屏
-        setOrientation(false);
-        Immersive.off();
-      }
-    }
-    else if(!Platform.isTV) {
-      Immersive.on();
-      return () => {
-        Immersive.off();
-      }
-    }
-  }, []);
 
   const {
     episodeIndex: episodeIndexStr,
@@ -198,6 +180,11 @@ export default function PlayScreen() {
   const currentSource = resources.find((r) => r.source === detail?.source);
   const currentSourceName = currentSource?.source_name;
 
+  const handleVideoSize = useCallback((naturalSize) => {
+    const { width, height } = naturalSize;
+    setLandscape(width > height ? 1 : 0);
+  }, []);
+
   // 使用Video事件处理hook
   const { videoProps } = useVideoHandlers({
     videoRef,
@@ -206,9 +193,29 @@ export default function PlayScreen() {
     introEndTime,
     playbackRate,
     handlePlaybackStatusUpdate,
+    handleVideoSize,
     deviceType,
     detail: detail || undefined,
   });
+
+  useEffect(() => {
+    if(deviceType == 'mobile' && landscape === 1) {
+      // 手机并且视频为横屏模式，切换为横屏
+      setOrientation(true);
+    }
+    if(!Platform.isTV) {
+      // 非TV才需要切换沉浸式模式
+      Immersive.on();
+    }
+    return () => {
+      if(deviceType == 'mobile' && landscape === 1) {
+        setOrientation(false);
+      }
+      if (!Platform.isTV) {
+        Immersive.off();
+      }
+    }
+  }, [landscape]);
 
   // TV遥控器处理 - 总是调用hook，但根据设备类型决定是否使用结果
   const tvRemoteHandler = useTVRemoteHandler();
