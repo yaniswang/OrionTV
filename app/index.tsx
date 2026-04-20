@@ -170,6 +170,17 @@ export default function HomeScreen() {
     );
   };
 
+  const selectedType =selectedCategory.type || '';
+  let stype = null;
+  if(/^movie_/.test(selectedType)){
+    stype = 'movie';
+  }
+  else if(/^tv_/.test(selectedType)){
+    stype = 'tv';
+  }
+  else if(/^show_/.test(selectedType)) {
+    stype = 'tv';
+  }
   const renderContentItem = ({ item }: { item: RowItem; index: number }) => (
     <VideoCard
       id={item.id}
@@ -185,6 +196,7 @@ export default function HomeScreen() {
       totalEpisodes={item.totalEpisodes}
       api={api}
       onRecordDeleted={fetchInitialData}
+      stype={/^movie_/.test(selectedCategory.type || '')?'movie':null}
     />
   );
 

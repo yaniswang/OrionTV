@@ -27,6 +27,7 @@ interface VideoCardMobileProps extends React.ComponentProps<typeof TouchableOpac
   onFocus?: () => void;
   onRecordDeleted?: () => void;
   api: API;
+  stype: string | null;
 }
 
 const VideoCardMobile = forwardRef<View, VideoCardMobileProps>(
@@ -46,6 +47,7 @@ const VideoCardMobile = forwardRef<View, VideoCardMobileProps>(
       onRecordDeleted,
       api,
       playTime = 0,
+      stype,
     }: VideoCardMobileProps,
     ref
   ) => {
@@ -60,16 +62,18 @@ const VideoCardMobile = forwardRef<View, VideoCardMobileProps>(
         longPressTriggered.current = false;
         return;
       }
-      
+
+      const videoStype = stype || totalEpisodes !== undefined ? (totalEpisodes > 1 ? 'tv' : 'movie') : null;
+
       if (progress !== undefined && episodeIndex !== undefined) {
         router.push({
           pathname: "/play",
-          params: { source, id, episodeIndex: episodeIndex - 1, title, position: playTime * 1000 },
+          params: { source, id, episodeIndex: episodeIndex - 1, title, year, stype: videoStype, position: playTime * 1000 },
         });
       } else {
         router.push({
           pathname: "/detail",
-          params: { source, q: title },
+          params: { q: title, year, stype: videoStype },
         });
       }
     };

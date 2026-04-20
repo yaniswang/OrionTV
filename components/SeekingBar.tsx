@@ -3,20 +3,24 @@ import { View, StyleSheet, Text } from "react-native";
 import usePlayerStore from "@/stores/playerStore";
 
 const formatTime = (milliseconds: number) => {
-  if (isNaN(milliseconds) || milliseconds < 0) {
-    return "00:00";
-  }
-  const totalSeconds = Math.floor(milliseconds / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
+  if (!milliseconds) return "00:00";
+  const seconds = milliseconds / 1000;
 
-  if (hours > 0) {
-    return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}:${seconds
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainingSeconds = Math.round(seconds % 60);
+
+  if (hours === 0) {
+    // 不到一小时，格式为 00:00
+    return `${minutes.toString().padStart(2, '0')}:${remainingSeconds
       .toString()
-      .padStart(2, "0")}`;
+      .padStart(2, '0')}`;
+  } else {
+    // 超过一小时，格式为 00:00:00
+    return `${hours.toString().padStart(2, '0')}:${minutes
+      .toString()
+      .padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
   }
-  return `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
 };
 
 export const SeekingBar = () => {

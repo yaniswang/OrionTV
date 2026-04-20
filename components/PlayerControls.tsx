@@ -48,10 +48,23 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
 
   const formatTime = (milliseconds: number) => {
     if (!milliseconds) return "00:00";
-    const totalSeconds = Math.floor(milliseconds / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
+    const seconds = milliseconds / 1000;
+
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const remainingSeconds = Math.round(seconds % 60);
+
+    if (hours === 0) {
+      // 不到一小时，格式为 00:00
+      return `${minutes.toString().padStart(2, '0')}:${remainingSeconds
+        .toString()
+        .padStart(2, '0')}`;
+    } else {
+      // 超过一小时，格式为 00:00:00
+      return `${hours.toString().padStart(2, '0')}:${minutes
+        .toString()
+        .padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+    }
   };
 
   const onPlayNextEpisode = () => {
@@ -59,6 +72,9 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
       playEpisode(currentEpisodeIndex + 1);
     }
   };
+
+  const durationMillis = status.durationMillis || 0;
+  const seekPositionMillis = seekPosition * durationMillis;
 
   return (
     <View style={styles.controlsOverlay}>
@@ -79,7 +95,7 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
 
         <ThemedText style={{ color: "white", marginTop: 5 }}>
           {status?.isLoaded
-            ? `${formatTime(status.positionMillis)} / ${formatTime(status.durationMillis || 0)}`
+            ? `${formatTime(isSeeking ? seekPositionMillis : status.positionMillis)} / ${formatTime(status.durationMillis || 0)}`
             : "00:00 / 00:00"}
         </ThemedText>
 

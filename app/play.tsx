@@ -142,12 +142,16 @@ export default function PlayScreen() {
     source: sourceStr,
     id: videoId,
     title: videoTitle,
+    year: videoYear,
+    stype: videoStype
   } = useLocalSearchParams<{
     episodeIndex: string;
     position?: string;
     source?: string;
     id?: string;
     title?: string;
+    year: string;
+    stype: string;
   }>();
   const episodeIndex = parseInt(episodeIndexStr || "0", 10);
   const position = positionStr ? parseInt(positionStr, 10) : undefined;
@@ -228,9 +232,9 @@ export default function PlayScreen() {
     logger.info(`[PERF] PlayScreen useEffect START - source: ${source}, id: ${id}, title: ${title}`);
 
     setVideoRef(videoRef);
-    if (source && id && title) {
+    if (source && id && title && videoYear) {
       logger.info(`[PERF] Calling loadVideo with episodeIndex: ${episodeIndex}, position: ${position}`);
-      loadVideo({ source, id, episodeIndex, position, title });
+      loadVideo({ source, id, episodeIndex, position, title, year: videoYear, stype: videoStype });
     } else {
       logger.info(`[PERF] Missing required params - source: ${!!source}, id: ${!!id}, title: ${!!title}`);
     }
@@ -242,7 +246,7 @@ export default function PlayScreen() {
       logger.info(`[PERF] PlayScreen unmounting - calling reset()`);
       reset(); // Reset state when component unmounts
     };
-  }, [episodeIndex, source, position, setVideoRef, reset, loadVideo, id, title]);
+  }, [episodeIndex, source, position, setVideoRef, reset, loadVideo, id, title, videoYear, videoStype]);
 
   // 1. 调节音量 (右侧)
   const handleVolume = (direction:string) => {

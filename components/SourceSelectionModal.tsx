@@ -37,6 +37,8 @@ export const SourceSelectionModal: React.FC = () => {
         id: newDetail.id.toString(),
         episodeIndex: currentEpisodeIndex,
         title: newDetail.title,
+        year: newDetail.year,
+        stype: newDetail.episodes.length > 1 ? 'tv' : 'movie',
         position: currentPosition
       });
     }
@@ -50,7 +52,7 @@ export const SourceSelectionModal: React.FC = () => {
   return (
     <Modal isVisible={showSourceModal} statusBarTranslucent={true} onBackButtonPress={onClose} onBackdropPress={onClose} onSwipeComplete={onClose} swipeDirection="down" style={styles.modalContainer}>
       <View style={styles.modalContent}>
-        <Text style={styles.modalTitle}>选择播放源</Text>
+        <Text style={styles.modalTitle}>选择播放源 ({searchResults.length})</Text>
         <FlashList
           data={searchResults}
           numColumns={3}

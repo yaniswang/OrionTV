@@ -21,7 +21,7 @@ interface DetailState {
   isFavorited: boolean;
   failedSources: Set<string>; // 记录失败的source列表
 
-  init: (q: string, preferredSource?: string, id?: string) => Promise<void>;
+  init: (q: string, year: string, stype: string, preferredSource?: string, id?: string) => Promise<void>;
   setDetail: (detail: SearchResultWithResolution) => Promise<void>;
   abort: () => void;
   toggleFavorite: () => Promise<void>;
@@ -41,9 +41,9 @@ const useDetailStore = create<DetailState>((set, get) => ({
   isFavorited: false,
   failedSources: new Set(),
 
-  init: async (q, preferredSource, id) => {
+  init: async (q, year, stype, preferredSource, id) => {
     const perfStart = performance.now();
-    logger.info(`[PERF] DetailStore.init START - q: ${q}, preferredSource: ${preferredSource}, id: ${id}`);
+    logger.info(`[PERF] DetailStore.init START - q: ${q}, year: ${year}, stype: ${stype}, preferredSource: ${preferredSource}, id: ${id}`);
     
     const { controller: oldController } = get();
     if (oldController) {
@@ -120,7 +120,11 @@ const useDetailStore = create<DetailState>((set, get) => ({
         
         try {
           const response = await api.searchVideo(q, preferredSource, signal);
-          preferredResult = response.results;
+          // 二次过滤year和stype
+          preferredResult = response.results.filter((item: any) => {
+            const itemStype = item.episodes.length > 1 ? 'tv' : 'movie';
+            return item.year == year && (stype !== undefined && itemStype === stype || stype === undefined)
+          });
         } catch (error) {
           preferredSearchError = error;
           logger.error(`[ERROR] API searchVideo (preferred) FAILED - source: ${preferredSource}, error:`, error);
@@ -153,7 +157,11 @@ const useDetailStore = create<DetailState>((set, get) => ({
             const fallbackEnd = performance.now();
             logger.info(`[PERF] FALLBACK search END - took ${(fallbackEnd - fallbackStart).toFixed(2)}ms, total results: ${allResults.length}`);
             
-            const filteredResults = allResults.filter(item => item.title === q);
+            // 二次过滤year和stype
+            const filteredResults = allResults.filter((item: any) => {
+              const itemStype = item.episodes.length > 1 ? 'tv' : 'movie';
+              return item.title == q && item.year == year && (stype !== undefined && itemStype === stype || stype === undefined)
+            });
             logger.info(`[FALLBACK] Filtered results: ${filteredResults.length} matches for "${q}"`);
             
             if (filteredResults.length > 0) {
@@ -184,11 +192,17 @@ const useDetailStore = create<DetailState>((set, get) => ({
           try {
             const { results: allResults } = await api.searchVideos(q);
             
+          // 二次过滤year和stype
+          const filteredResults = allResults.filter((item: any) => {
+            const itemStype = item.episodes.length > 1 ? 'tv' : 'movie';
+            return item.title == q && item.year == year && (stype !== undefined && itemStype === stype || stype === undefined)
+          });
+
             const searchAllEnd = performance.now();
-            logger.info(`[PERF] API searchVideos (background) END - took ${(searchAllEnd - searchAllStart).toFixed(2)}ms, results: ${allResults.length}`);
+            logger.info(`[PERF] API searchVideos (background) END - took ${(searchAllEnd - searchAllStart).toFixed(2)}ms, results: ${filteredResults.length}`);
             
             if (signal.aborted) return;
-            await processAndSetResults(allResults.filter(item => item.title === q), true);
+            await processAndSetResults(filteredResults.filter(item => item.title === q), true);
           } catch (backgroundError) {
             logger.warn(`[WARN] Background search failed, but preferred source already succeeded:`, backgroundError);
           }
@@ -225,13 +239,18 @@ const useDetailStore = create<DetailState>((set, get) => ({
             try {
               const searchStart = performance.now();
               const { results } = await api.searchVideo(q, resource.key, signal);
+              // 二次过滤year和stype
+              const filteredResults = results.filter((item: any) => {
+                const itemStype = item.episodes.length > 1 ? 'tv' : 'movie';
+                return item.year == year && (stype !== undefined && itemStype === stype || stype === undefined)
+              });
               const searchEnd = performance.now();
-              logger.info(`[PERF] API searchVideo (${resource.name}) took ${(searchEnd - searchStart).toFixed(2)}ms, results: ${results.length}`);
+              logger.info(`[PERF] API searchVideo (${resource.name}) took ${(searchEnd - searchStart).toFixed(2)}ms, results: ${filteredResults.length}`);
               
-              if (results.length > 0) {
-                totalResults += results.length;
-                logger.info(`[SUCCESS] Source "${resource.name}" found ${results.length} results for "${q}"`);
-                await processAndSetResults(results, true);
+              if (filteredResults.length > 0) {
+                totalResults += filteredResults.length;
+                logger.info(`[SUCCESS] Source "${resource.name}" found ${filteredResults.length} results for "${q}"`);
+                await processAndSetResults(filteredResults, true);
                 if (!firstResultFound) {
                   set({ loading: false }); // Stop loading indicator on first result
                   firstResultFound = true;

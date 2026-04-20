@@ -26,6 +26,7 @@ interface VideoCardProps extends React.ComponentProps<typeof TouchableOpacity> {
   onFocus?: () => void;
   onRecordDeleted?: () => void; // 添加回调属性
   api: API;
+  stype: string | null;
 }
 
 const VideoCard = forwardRef<View, VideoCardProps>(
@@ -45,6 +46,7 @@ const VideoCard = forwardRef<View, VideoCardProps>(
       onRecordDeleted,
       api,
       playTime = 0,
+      stype,
     }: VideoCardProps,
     ref
   ) => {
@@ -67,16 +69,19 @@ const VideoCard = forwardRef<View, VideoCardProps>(
         longPressTriggered.current = false;
         return;
       }
+
+      const videoStype = stype || totalEpisodes !== undefined ? (totalEpisodes > 1 ? 'tv' : 'movie') : null;
+
       // 如果有播放进度，直接转到播放页面
       if (progress !== undefined && episodeIndex !== undefined) {
         router.push({
           pathname: "/play",
-          params: { source, id, episodeIndex: episodeIndex - 1, title, position: playTime * 1000 },
+          params: { source, id, episodeIndex: episodeIndex - 1, title, year, stype: videoStype , position: playTime * 1000 },
         });
       } else {
         router.push({
           pathname: "/detail",
-          params: { source, q: title },
+          params: { q: title, year, stype: videoStype  },
         });
       }
     };

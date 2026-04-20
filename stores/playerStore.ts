@@ -37,6 +37,8 @@ interface PlayerState {
     source: string;
     id: string;
     title: string;
+    year: string;
+    stype: string;
     episodeIndex: number;
     position?: number;
   }) => Promise<void>;
@@ -86,9 +88,9 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
 
   setVideoRef: (ref) => set({ videoRef: ref }),
 
-  loadVideo: async ({ source, id, episodeIndex, position, title }) => {
+  loadVideo: async ({ source, id, episodeIndex, position, title, year, stype }) => {
     const perfStart = performance.now();
-    logger.info(`[PERF] PlayerStore.loadVideo START - source: ${source}, id: ${id}, title: ${title}`);
+    logger.info(`[PERF] PlayerStore.loadVideo START - source: ${source}, id: ${id}, title: ${title}, year: ${year}, stype: ${stype}`);
     
     let detail = useDetailStore.getState().detail;
     let episodes: string[] = [];
@@ -105,15 +107,15 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     set({
       isLoading: true,
     });
-
-    const needsDetailInit = !detail || !episodes || episodes.length === 0 || detail.title !== title;
+    
+    const needsDetailInit = !detail || !episodes || episodes.length === 0 || detail.title !== title || detail.year !== year;
     logger.info(`[PERF] Detail check - needsInit: ${needsDetailInit}, hasDetail: ${!!detail}, episodesCount: ${episodes?.length || 0}`);
 
     if (needsDetailInit) {
       const detailInitStart = performance.now();
       logger.info(`[PERF] DetailStore.init START - ${title}`);
       
-      await useDetailStore.getState().init(title, source, id);
+      await useDetailStore.getState().init(title, year, stype, source, id);
       
       const detailInitEnd = performance.now();
       logger.info(`[PERF] DetailStore.init END - took ${(detailInitEnd - detailInitStart).toFixed(2)}ms`);
