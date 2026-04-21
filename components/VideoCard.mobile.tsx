@@ -63,7 +63,7 @@ const VideoCardMobile = forwardRef<View, VideoCardMobileProps>(
         return;
       }
 
-      const videoStype = stype || totalEpisodes !== undefined ? (totalEpisodes > 1 ? 'tv' : 'movie') : null;
+      const videoStype = stype || (totalEpisodes !== undefined ? (totalEpisodes > 1 ? 'tv' : 'movie') : null);
 
       if (progress !== undefined && episodeIndex !== undefined) {
         router.push({

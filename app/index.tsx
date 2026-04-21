@@ -181,6 +181,7 @@ export default function HomeScreen() {
   else if(/^show_/.test(selectedType)) {
     stype = 'tv';
   }
+
   const renderContentItem = ({ item }: { item: RowItem; index: number }) => (
     <VideoCard
       id={item.id}
@@ -196,7 +197,7 @@ export default function HomeScreen() {
       totalEpisodes={item.totalEpisodes}
       api={api}
       onRecordDeleted={fetchInitialData}
-      stype={/^movie_/.test(selectedCategory.type || '')?'movie':null}
+      stype={stype}
     />
   );
 

@@ -70,7 +70,7 @@ const VideoCard = forwardRef<View, VideoCardProps>(
         return;
       }
 
-      const videoStype = stype || totalEpisodes !== undefined ? (totalEpisodes > 1 ? 'tv' : 'movie') : null;
+      const videoStype = stype || (totalEpisodes !== undefined ? (totalEpisodes > 1 ? 'tv' : 'movie') : null);
 
       // 如果有播放进度，直接转到播放页面
       if (progress !== undefined && episodeIndex !== undefined) {
