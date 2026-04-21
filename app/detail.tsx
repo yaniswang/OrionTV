@@ -52,7 +52,7 @@ export default function DetailScreen() {
       pathname: "/play",
       params: {
         // Pass necessary identifiers, the rest will be in the store
-        q: detail.title,
+        title: detail.title,
         year,
         stype,
         source: detail.source,

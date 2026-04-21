@@ -120,9 +120,11 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
             <ArrowUpFromDot color="white" size={24} />
           </MediaButton>
 
-          <MediaButton onPress={() => setShowEpisodeModal(true)}>
-            <List color="white" size={24} />
-          </MediaButton>
+          {episodes.length > 1 && (
+            <MediaButton onPress={() => setShowEpisodeModal(true)}>
+              <List color="white" size={24} />
+            </MediaButton>
+          )}
 
           <MediaButton onPress={() => setShowSourceModal(true)}>
             <Tv color="white" size={24} />

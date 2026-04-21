@@ -446,7 +446,7 @@ export default function PlayScreen() {
       {showControls && (
         <View style={dynamicStyles.topTitleContainer}>
           <Text style={dynamicStyles.topTitleText}>
-            {videoTitle} {currentEpisodeTitle ? `- ${currentEpisodeTitle}` : ""}{" "}
+            {title} {videoStype === 'tv' && currentEpisodeTitle ? `- ${currentEpisodeTitle}` : ""}{" "}
             {currentSourceName ? `(${currentSourceName})` : ""}
           </Text>
         </View>
@@ -465,6 +465,7 @@ export default function PlayScreen() {
       <EpisodeSelectionModal />
       <SourceSelectionModal />
       <SpeedSelectionModal />
+      
       <View style={dynamicStyles.brightnessBar}>
         <AnimatedVerticalProgress progress={brightness} forceShow={brightnessBarShow} />
       </View>
