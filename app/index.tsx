@@ -349,6 +349,7 @@ export default function HomeScreen() {
       {selectedCategory && selectedCategory.tags && (
         <View style={dynamicStyles.categoryContainer}>
           <FlashList
+            key={selectedCategory.type}
             data={selectedCategory.tags}
             renderItem={({ item, index }) => {
               const isSelected = selectedTag === item;
