@@ -1,5 +1,5 @@
 import React, { useEffect, useCallback, useRef, useState } from "react";
-import { View, StyleSheet, ActivityIndicator, Pressable, Animated, StatusBar, Platform, BackHandler, ToastAndroid } from "react-native";
+import { View, StyleSheet, ActivityIndicator, Pressable, Animated, StatusBar, Platform, BackHandler, ToastAndroid, Alert, LogBox } from "react-native";
 import { FlashList } from "@shopify/flash-list";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ThemedView } from "@/components/ThemedView";
@@ -10,6 +10,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { Search, Settings, LogOut, Heart } from "lucide-react-native";
 import { StyledButton } from "@/components/StyledButton";
 import useHomeStore, { RowItem, Category } from "@/stores/homeStore";
+import { PlayRecordManager } from "@/services/storage";
 import useAuthStore from "@/stores/authStore";
 import CustomScrollView from "@/components/CustomScrollView";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
@@ -17,7 +18,6 @@ import { getCommonResponsiveStyles } from "@/utils/ResponsiveStyles";
 import ResponsiveNavigation from "@/components/navigation/ResponsiveNavigation";
 import { useApiConfig, getApiConfigErrorMessage } from "@/hooks/useApiConfig";
 import { Colors } from "@/constants/Colors";
-import { LogBox } from 'react-native';
 LogBox.ignoreLogs(['new NativeEventEmitter']);
 
 const LOAD_MORE_THRESHOLD = 200;
@@ -54,10 +54,14 @@ export default function HomeScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      reset()
       setForceReload(new Date().getTime());
     }, [])
   );
+
+  useEffect(() =>{
+    // 页面刷新时，清空homeStore数据
+    reset();
+  }, []);
 
   // 双击返回退出逻辑（只限当前页面）
   const backPressTimeRef = useRef<number | null>(null);
@@ -182,6 +186,28 @@ export default function HomeScreen() {
     stype = 'tv';
   }
 
+  const onLongPress = async (title: string, source: string, id: string) => {
+    if (selectedCategory.type !== 'record') return;
+    Alert.alert("删除观看记录", `确定要删除"${title}"的观看记录吗？`, [
+      {
+        text: "取消",
+        style: "cancel",
+      },
+      {
+        text: "删除",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await PlayRecordManager.remove(source, id);
+            fetchInitialData();
+          } catch (error) {
+            Alert.alert("错误", "删除观看记录失败，请重试");
+          }
+        },
+      },
+    ]);
+  }
+
   const renderContentItem = ({ item }: { item: RowItem; index: number }) => (
     <VideoCard
       id={item.id}
@@ -196,7 +222,7 @@ export default function HomeScreen() {
       sourceName={item.sourceName}
       totalEpisodes={item.totalEpisodes}
       api={api}
-      onRecordDeleted={fetchInitialData}
+      onLongPress={onLongPress}
       stype={stype}
     />
   );

@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, forwardRef } from "react";
-import { View, Text, Image, StyleSheet, Pressable, TouchableOpacity, Alert, Animated, Platform } from "react-native";
+import { View, Text, Image, StyleSheet, Pressable, TouchableOpacity, Animated, Platform } from "react-native";
 import { useRouter } from "expo-router";
 import { Star, Play } from "lucide-react-native";
-import { PlayRecordManager } from "@/services/storage";
 import { API } from "@/services/api";
 import { ThemedText } from "@/components/ThemedText";
 import { Colors } from "@/constants/Colors";
@@ -24,9 +23,9 @@ interface VideoCardProps extends React.ComponentProps<typeof TouchableOpacity> {
   episodeIndex?: number; // 剧集索引
   totalEpisodes?: number; // 总集数
   onFocus?: () => void;
-  onRecordDeleted?: () => void; // 添加回调属性
+  onLongPress?: (title: string, source: string, id: string) => void;
   api: API;
-  stype: string | null;
+  stype?: string | null;
 }
 
 const VideoCard = forwardRef<View, VideoCardProps>(
@@ -43,7 +42,7 @@ const VideoCard = forwardRef<View, VideoCardProps>(
       episodeIndex,
       totalEpisodes,
       onFocus,
-      onRecordDeleted,
+      onLongPress,
       api,
       playTime = 0,
       stype,
@@ -115,40 +114,8 @@ const VideoCard = forwardRef<View, VideoCardProps>(
     }, [fadeAnim]);
 
     const handleLongPress = () => {
-      // Only allow long press for items with progress (play records)
-      if (progress === undefined) return;
-
       longPressTriggered.current = true;
-
-      // Show confirmation dialog to delete play record
-      Alert.alert("删除观看记录", `确定要删除"${title}"的观看记录吗？`, [
-        {
-          text: "取消",
-          style: "cancel",
-        },
-        {
-          text: "删除",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              // Delete from local storage
-              await PlayRecordManager.remove(source, id);
-
-              // Call the onRecordDeleted callback
-              if (onRecordDeleted) {
-                onRecordDeleted();
-              }
-              // 如果没有回调函数，则使用导航刷新作为备选方案
-              else if (router.canGoBack()) {
-                router.replace("/");
-              }
-            } catch (error) {
-              logger.info("Failed to delete play record:", error);
-              Alert.alert("错误", "删除观看记录失败，请重试");
-            }
-          },
-        },
-      ]);
+      onLongPress?.(title, source, id);
     };
 
     // 是否是继续观看的视频

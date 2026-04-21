@@ -1,9 +1,9 @@
 import React, { useCallback } from "react";
-import { View, StyleSheet } from "react-native";
+import { View, StyleSheet, Alert } from "react-native";
 import { ThemedView } from "@/components/ThemedView";
 import { ThemedText } from "@/components/ThemedText";
 import useFavoritesStore from "@/stores/favoritesStore";
-import { Favorite } from "@/services/storage";
+import { Favorite, FavoriteManager } from "@/services/storage";
 import VideoCard from "@/components/VideoCard";
 import { api } from "@/services/api";
 import CustomScrollView from "@/components/CustomScrollView";
@@ -27,6 +27,27 @@ export default function FavoritesScreen() {
     }, [fetchFavorites])
   );
 
+  const onLongPress = async (title: string, source: string, id: string) => {
+    Alert.alert("删除收藏记录", `确定要删除"${title}"的收藏记录吗？`, [
+      {
+        text: "取消",
+        style: "cancel",
+      },
+      {
+        text: "删除",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await FavoriteManager.remove(source, id);
+            fetchFavorites();
+          } catch (error) {
+            Alert.alert("错误", "删除收藏记录失败，请重试");
+          }
+        },
+      },
+    ]);
+  }
+
   const renderItem = ({ item }: { item: Favorite & { key: string }; index: number }) => {
     const [source, id] = item.key.split("+");
     return (
@@ -41,6 +62,7 @@ export default function FavoritesScreen() {
         episodeIndex={item.episode_index}
         totalEpisodes={item.total_episodes}
         progress={item.progress}
+        onLongPress={onLongPress}
       />
     );
   };

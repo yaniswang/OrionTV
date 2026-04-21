@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef, forwardRef } from "react";
-import { View, Text, Image, StyleSheet, TouchableOpacity, Alert, Animated } from "react-native";
+import { View, Text, Image, StyleSheet, TouchableOpacity, Animated } from "react-native";
 import { useRouter } from "expo-router";
 import { Star, Play } from "lucide-react-native";
-import { PlayRecordManager } from "@/services/storage";
 import { API } from "@/services/api";
 import { ThemedText } from "@/components/ThemedText";
 import { Colors } from "@/constants/Colors";
@@ -25,9 +24,9 @@ interface VideoCardMobileProps extends React.ComponentProps<typeof TouchableOpac
   episodeIndex?: number;
   totalEpisodes?: number;
   onFocus?: () => void;
-  onRecordDeleted?: () => void;
+  onLongPress?: (title: string, source: string, id: string) => void;
   api: API;
-  stype: string | null;
+  stype?: string | null;
 }
 
 const VideoCardMobile = forwardRef<View, VideoCardMobileProps>(
@@ -44,7 +43,7 @@ const VideoCardMobile = forwardRef<View, VideoCardMobileProps>(
       episodeIndex,
       totalEpisodes,
       onFocus,
-      onRecordDeleted,
+      onLongPress,
       api,
       playTime = 0,
       stype,
@@ -88,29 +87,8 @@ const VideoCardMobile = forwardRef<View, VideoCardMobileProps>(
     }, [fadeAnim]);
 
     const handleLongPress = () => {
-      if (progress === undefined) return;
-
       longPressTriggered.current = true;
-
-      Alert.alert("删除观看记录", `确定要删除"${title}"的观看记录吗？`, [
-        {
-          text: "取消",
-          style: "cancel",
-        },
-        {
-          text: "删除",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await PlayRecordManager.remove(source, id);
-              onRecordDeleted?.();
-            } catch (error) {
-              logger.info("Failed to delete play record:", error);
-              Alert.alert("错误", "删除观看记录失败，请重试");
-            }
-          },
-        },
-      ]);
+      onLongPress?.(title, source, id);
     };
 
     const isContinueWatching = progress !== undefined && progress > 0 && progress < 1;
