@@ -78,7 +78,7 @@ const useDetailStore = create<DetailState>((set, get) => ({
             }
           } catch (e) {
             if ((e as Error).name !== "AbortError") {
-              logger.info(`Failed to get resolution for ${searchResult.source_name}`, e);
+              logger.error(`M3U8解析失败 ${searchResult.source_name}`, e);
             }
           }
           const m3u8End = performance.now();
@@ -94,7 +94,7 @@ const useDetailStore = create<DetailState>((set, get) => ({
 
       set((state) => {
         const existingSources = new Set(state.searchResults.map((r) => r.source));
-        const newResults = resultsWithResolution.filter((r) => !existingSources.has(r.source));
+        const newResults = resultsWithResolution.filter((r) => r.pingTime && !existingSources.has(r.source));
         const finalResults = merge ? [...state.searchResults, ...newResults] : resultsWithResolution;
 
         return {

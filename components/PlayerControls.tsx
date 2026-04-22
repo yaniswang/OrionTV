@@ -100,9 +100,11 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
         </ThemedText>
 
         <View style={styles.bottomControls}>
-          <MediaButton onPress={setIntroEndTime} timeLabel={introEndTime ? formatTime(introEndTime) : undefined}>
-            <ArrowDownToDot color="white" size={24} />
-          </MediaButton>
+          {episodes.length > 1 && (
+            <MediaButton onPress={setIntroEndTime} timeLabel={introEndTime ? formatTime(introEndTime) : undefined}>
+              <ArrowDownToDot color="white" size={24} />
+            </MediaButton>
+          )}
 
           <MediaButton onPress={togglePlayPause} hasTVPreferredFocus={showControls}>
             {status?.isLoaded && status.isPlaying ? (
@@ -112,13 +114,17 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
             )}
           </MediaButton>
 
-          <MediaButton onPress={onPlayNextEpisode} disabled={!hasNextEpisode}>
-            <SkipForward color={hasNextEpisode ? "white" : "#666"} size={24} />
-          </MediaButton>
+          {episodes.length > 1 && (
+            <MediaButton onPress={onPlayNextEpisode} disabled={!hasNextEpisode}>
+              <SkipForward color={hasNextEpisode ? "white" : "#666"} size={24} />
+            </MediaButton>
+          )}
 
-          <MediaButton onPress={setOutroStartTime} timeLabel={outroStartTime ? formatTime(outroStartTime) : undefined}>
-            <ArrowUpFromDot color="white" size={24} />
-          </MediaButton>
+          {episodes.length > 1 && (
+            <MediaButton onPress={setOutroStartTime} timeLabel={outroStartTime ? formatTime(outroStartTime) : undefined}>
+              <ArrowUpFromDot color="white" size={24} />
+            </MediaButton>
+          )}
 
           {episodes.length > 1 && (
             <MediaButton onPress={() => setShowEpisodeModal(true)}>

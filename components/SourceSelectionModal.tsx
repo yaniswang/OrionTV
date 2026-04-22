@@ -75,11 +75,11 @@ export const SourceSelectionModal: React.FC = () => {
                     </Text>
                   </View>
                 )}
-                {item.resolution && (
+                {/* {item.resolution && (
                   <View style={[dynamicStyles.badge, { backgroundColor: "#666" }, detail?.source === item.source && dynamicStyles.selectedBadge]}>
                     <Text style={dynamicStyles.badgeText}>{item.resolution}</Text>
                   </View>
-                )}
+                )} */}
             </StyledButton>
           )}
         />
@@ -94,7 +94,7 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
   },
   modalContent: {
-    width: 800,
+    width: 600,
     height: "100%",
     backgroundColor: "rgba(0, 0, 0, 0.85)",
     padding: 20,

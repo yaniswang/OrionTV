@@ -198,11 +198,11 @@ export default function DetailScreen() {
                           </Text>
                         </View>
                       )}
-                      {item.resolution && (
+                      {/* {item.resolution && (
                         <View style={[dynamicStyles.badge, { backgroundColor: "#666" }, isSelected && dynamicStyles.selectedBadge]}>
                           <Text style={dynamicStyles.badgeText}>{item.resolution}</Text>
                         </View>
-                      )}
+                      )} */}
                     </StyledButton>
                   );
                 })}
@@ -299,11 +299,11 @@ export default function DetailScreen() {
                             </Text>
                           </View>
                         )}
-                        {item.resolution && (
+                        {/* {item.resolution && (
                           <View style={[dynamicStyles.badge, { backgroundColor: "#666" }, isSelected && dynamicStyles.selectedBadge]}>
                             <Text style={dynamicStyles.badgeText}>{item.resolution}</Text>
                           </View>
-                        )}
+                        )} */}
                       </StyledButton>
                     );
                   })}
