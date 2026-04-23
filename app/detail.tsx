@@ -157,6 +157,7 @@ export default function DetailScreen() {
               isSelected={selectedTab==='sources'}
               style={dynamicStyles.tabButton}
               textStyle={dynamicStyles.tabButtonText}
+              isLoading={!allSourcesLoaded }
             />
           </View>
 
