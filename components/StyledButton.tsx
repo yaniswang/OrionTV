@@ -1,5 +1,5 @@
 import React, { forwardRef } from "react";
-import { Animated, Pressable, StyleSheet, StyleProp, ViewStyle, PressableProps, TextStyle, View, Platform } from "react-native";
+import { Animated, Pressable, StyleSheet, StyleProp, ViewStyle, PressableProps, TextStyle, View, Platform, ActivityIndicator } from "react-native";
 import { ThemedText } from "./ThemedText";
 import { Colors } from "@/constants/Colors";
 import { useButtonAnimation } from "@/hooks/useAnimation";
@@ -10,12 +10,13 @@ interface StyledButtonProps extends PressableProps {
   text?: string;
   variant?: "default" | "primary" | "ghost";
   isSelected?: boolean;
+  isLoading?: boolean;
   style?: StyleProp<ViewStyle>;
   textStyle?: StyleProp<TextStyle>;
 }
 
 export const StyledButton = forwardRef<View, StyledButtonProps>(
-  ({ children, text, variant = "default", isSelected = false, style, textStyle, ...rest }, ref) => {
+  ({ children, text, variant = "default", isSelected = false, isLoading = false, style, textStyle, ...rest }, ref) => {
     const colorScheme = "dark";
     const colors = Colors[colorScheme];
     const [isFocused, setIsFocused] = React.useState(false);
@@ -122,6 +123,7 @@ export const StyledButton = forwardRef<View, StyledButtonProps>(
           ]}
           {...rest}
         >
+          {isLoading && <ActivityIndicator />}
           {text ? (
             <ThemedText
               style={[

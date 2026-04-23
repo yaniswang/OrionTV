@@ -257,6 +257,7 @@ export default function DetailScreen() {
                 isSelected={selectedTab==='sources'}
                 style={dynamicStyles.tabButton}
                 textStyle={dynamicStyles.tabButtonText}
+                isLoading={!allSourcesLoaded }
               />
             </View>
             {selectedTab === 'episodes' && (
@@ -277,9 +278,6 @@ export default function DetailScreen() {
             )}
             {selectedTab === 'sources' && (
               <View style={dynamicStyles.sourcesContainer}>
-                <View style={dynamicStyles.sourcesTitleContainer}>
-                  {!allSourcesLoaded && <ActivityIndicator style={{ marginLeft: 10 }} />}
-                </View>
                 <View style={dynamicStyles.sourceList}>
                   {searchResults.map((item, index) => {
                     const isSelected = detail?.source === item.source;
