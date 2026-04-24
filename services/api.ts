@@ -47,6 +47,7 @@ export interface SearchResult {
   episodes: string[];
   source: string;
   source_name: string;
+  source_count?: number;
   class?: string;
   year: string;
   desc?: string;

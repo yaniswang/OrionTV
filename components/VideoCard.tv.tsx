@@ -18,6 +18,7 @@ interface VideoCardProps extends React.ComponentProps<typeof TouchableOpacity> {
   year?: string;
   rate?: string;
   sourceName?: string;
+  sourceCount?: number;
   progress?: number; // 播放进度，0-1之间的小数
   playTime?: number; // 播放时间 in ms
   episodeIndex?: number; // 剧集索引
@@ -38,6 +39,7 @@ const VideoCard = forwardRef<View, VideoCardProps>(
       year,
       rate,
       sourceName,
+      sourceCount,
       progress,
       episodeIndex,
       totalEpisodes,
@@ -165,13 +167,18 @@ const VideoCard = forwardRef<View, VideoCardProps>(
               </View>
             )}
             {year && (
-              <View style={{...styles.yearBadge, ...(rate?styles.yearBadgeLeft:styles.yearBadgeRight)}}>
+              <View style={styles.yearBadge}>
                 <Text style={styles.badgeText}>{year}</Text>
               </View>
             )}
             {sourceName && (
               <View style={styles.sourceNameBadge}>
                 <Text style={styles.badgeText}>{sourceName}</Text>
+              </View>
+            )}
+            {sourceCount && (
+              <View style={styles.sourceNameBadge}>
+                <Text style={styles.badgeText}>源:{sourceCount}</Text>
               </View>
             )}
             {(totalEpisodes && totalEpisodes>1) && (
@@ -281,21 +288,16 @@ const styles = StyleSheet.create({
   yearBadge: {
     position: "absolute",
     top: 8,
+    left: 8,
     backgroundColor: "rgba(0, 0, 0, 0.7)",
     borderRadius: 6,
     paddingHorizontal: 6,
     paddingVertical: 3,
   },
-  yearBadgeLeft: {
-    left: 6,
-  },
-  yearBadgeRight: {
-    right: 6,
-  },
   sourceNameBadge: {
     position: "absolute",
     top: 8,
-    left: 8,
+    right: 8,
     backgroundColor: "rgba(0, 0, 0, 0.7)",
     borderRadius: 6,
     paddingHorizontal: 6,

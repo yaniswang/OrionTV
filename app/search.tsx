@@ -70,19 +70,25 @@ export default function SearchScreen() {
       const response = await api.searchVideos(term);
       if (response.results.length > 0) {
         // 聚合搜索
-        const mapExist = new Map<string, boolean>()
-        const results = response.results.filter((item: any) => {
+        const mapResults = new Map<string, SearchResult>()
+        response.results.map((item: any) => {
           const key = `${item.title.replaceAll(' ', '')}-${item.year || 'unknown'}-${item.episodes.length === 1 ? 'movie' : 'tv'}`;
           delete item['source'];
           delete item['source_name'];
-          if (!mapExist.has(key)) {
-            mapExist.set(key, true);
-            return true;
+          const existedItem = mapResults.get(key);
+          if (!existedItem) {
+            // 首个源
+            item['source_count'] = 1;
+            mapResults.set(key, item);
           } else {
-            return false;
+            existedItem.source_count ++;
           }
         });
-        setResults(results);
+        const arrResults = [...mapResults.values()];
+        arrResults.sort((a, b) => {
+          return b.source_count - a.source_count;
+        })
+        setResults(arrResults);
       } else {
         setError("没有找到相关内容");
       }
@@ -115,6 +121,7 @@ export default function SearchScreen() {
       poster={item.poster}
       year={item.year}
       sourceName={item.source_name}
+      sourceCount={item.source_count}
       totalEpisodes={item.episodes.length}
       api={api}
     />

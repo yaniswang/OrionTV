@@ -19,6 +19,7 @@ interface VideoCardMobileProps extends React.ComponentProps<typeof TouchableOpac
   year?: string;
   rate?: string;
   sourceName?: string;
+  sourceCount?: number;
   progress?: number;
   playTime?: number;
   episodeIndex?: number;
@@ -39,6 +40,7 @@ const VideoCardMobile = forwardRef<View, VideoCardMobileProps>(
       year,
       rate,
       sourceName,
+      sourceCount,
       progress,
       episodeIndex,
       totalEpisodes,
@@ -124,7 +126,7 @@ const VideoCardMobile = forwardRef<View, VideoCardMobileProps>(
 
             {/* 年份 */}
             {year && (
-              <View style={{...styles.yearBadge, ...(rate?styles.yearBadgeLeft:styles.yearBadgeRight)}}>
+              <View style={styles.yearBadge}>
                 <Text style={styles.badgeText}>{year}</Text>
               </View>
             )}
@@ -133,6 +135,11 @@ const VideoCardMobile = forwardRef<View, VideoCardMobileProps>(
             {sourceName && (
               <View style={styles.sourceNameBadge}>
                 <Text style={styles.badgeText}>{sourceName}</Text>
+              </View>
+            )}
+            {sourceCount && (
+              <View style={styles.sourceNameBadge}>
+                <Text style={styles.badgeText}>源:{sourceCount}</Text>
               </View>
             )}
             {(totalEpisodes && totalEpisodes>1) && (
@@ -223,21 +230,16 @@ const createMobileStyles = (cardWidth: number, cardHeight: number, spacing: numb
     yearBadge: {
       position: "absolute",
       top: 6,
+      left: 6,
       backgroundColor: "rgba(0, 0, 0, 0.7)",
       borderRadius: 4,
       paddingHorizontal: 4,
       paddingVertical: 2,
     },
-    yearBadgeLeft: {
-      left: 6,
-    },
-    yearBadgeRight: {
-      right: 6,
-    },
     sourceNameBadge: {
       position: "absolute",
       top: 6,
-      left: 6,
+      right: 6,
       backgroundColor: "rgba(0, 0, 0, 0.7)",
       borderRadius: 4,
       paddingHorizontal: 4,

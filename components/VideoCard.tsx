@@ -16,6 +16,7 @@ interface VideoCardProps extends React.ComponentProps<typeof TouchableOpacity> {
   year?: string;
   rate?: string;
   sourceName?: string;
+  sourceCount?: number;
   progress?: number;
   playTime?: number;
   episodeIndex?: number;
