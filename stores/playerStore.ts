@@ -489,6 +489,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   reset: () => {
+    useDetailStore.getState().abort();
     set({
       episodes: [],
       currentEpisodeIndex: 0,

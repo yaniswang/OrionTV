@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text, StyleSheet, ActivityIndicator } from "react-native";
 import { FlashList } from "@shopify/flash-list";
 import Modal from "react-native-modal";
 import { StyledButton } from "./StyledButton";
@@ -22,7 +22,7 @@ export const SourceSelectionModal: React.FC = () => {
   const dynamicStyles = createResponsiveStyles(deviceType, spacing);
   
   const { showSourceModal, setShowSourceModal, loadVideo, currentEpisodeIndex, status } = usePlayerStore();
-  const { searchResults, detail, setDetail } = useDetailStore();
+  const { searchResults, detail, setDetail, allSourcesLoaded } = useDetailStore();
 
   const onSelectSource = (index: number) => {
     logger.debug("onSelectSource", index, searchResults[index].source, detail?.source);
@@ -52,7 +52,10 @@ export const SourceSelectionModal: React.FC = () => {
   return (
     <Modal isVisible={showSourceModal} statusBarTranslucent={true} onBackButtonPress={onClose} onBackdropPress={onClose} onSwipeComplete={onClose} swipeDirection="down" style={styles.modalContainer}>
       <View style={styles.modalContent}>
-        <Text style={styles.modalTitle}>选择播放源 ({searchResults.length})</Text>
+        <View style={styles.modalTitleContainer}>
+          {!allSourcesLoaded && (<ActivityIndicator style={{marginRight: 5}} />)}
+          <Text style={styles.modalTitle}>选择播放源 ({searchResults.length})</Text>
+        </View>
         <FlashList
           data={searchResults}
           numColumns={3}
@@ -99,9 +102,13 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0, 0, 0, 0.85)",
     padding: 20,
   },
+  modalTitleContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   modalTitle: {
     color: "white",
-    marginBottom: 12,
     textAlign: "center",
     fontSize: 18,
     fontWeight: "bold",

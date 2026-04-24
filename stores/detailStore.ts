@@ -68,7 +68,7 @@ const useDetailStore = create<DetailState>((set, get) => ({
       const resolutionStart = performance.now();
       logger.info(`[PERF] Resolution detection START - processing ${results.length} sources`);
       
-      const resultsWithResolution = await Promise.all(
+      let resultsWithResolution = await Promise.all(
         results.map(async (searchResult) => {
           let videoInfo;
           const m3u8Start = performance.now();
@@ -94,7 +94,8 @@ const useDetailStore = create<DetailState>((set, get) => ({
 
       set((state) => {
         const existingSources = new Set(state.searchResults.map((r) => r.source));
-        const newResults = resultsWithResolution.filter((r) => r.pingTime && !existingSources.has(r.source));
+        resultsWithResolution = resultsWithResolution.filter((r) => r.pingTime); // 丢充无法获取M3U8的数据
+        const newResults = resultsWithResolution.filter((r) => !existingSources.has(r.source));
         const finalResults = merge ? [...state.searchResults, ...newResults] : resultsWithResolution;
 
         return {
@@ -202,7 +203,11 @@ const useDetailStore = create<DetailState>((set, get) => ({
             logger.info(`[PERF] API searchVideos (background) END - took ${(searchAllEnd - searchAllStart).toFixed(2)}ms, results: ${filteredResults.length}`);
             
             if (signal.aborted) return;
-            await processAndSetResults(filteredResults.filter(item => item.title === q), true);
+            // 拆分为单个请求,实现动态加载的效果
+            const processPromises = filteredResults.map(async (result) => {
+              await processAndSetResults([result], true);
+            })
+            await Promise.all(processPromises);
           } catch (backgroundError) {
             logger.warn(`[WARN] Background search failed, but preferred source already succeeded:`, backgroundError);
           }
