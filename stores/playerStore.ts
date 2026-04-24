@@ -115,7 +115,13 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       const detailInitStart = performance.now();
       logger.info(`[PERF] DetailStore.init START - ${title}`);
       
-      await useDetailStore.getState().init(title, year, stype, source, id);
+      useDetailStore.getState().init(title, year, stype, source, id);
+
+      while(true) {
+        // 第一个结果返回就开始播放
+        if(!useDetailStore.getState().loading)break;
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
       
       const detailInitEnd = performance.now();
       logger.info(`[PERF] DetailStore.init END - took ${(detailInitEnd - detailInitStart).toFixed(2)}ms`);

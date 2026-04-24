@@ -154,6 +154,7 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
         onScroll={handleScroll}
         scrollEventThrottle={16}
         showsVerticalScrollIndicator={responsiveConfig.deviceType !== 'tv'}
+        removeClippedSubviews={true}
       >
         {data.length > 0 ? (
           <>
