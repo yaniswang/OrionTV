@@ -41,7 +41,7 @@ export default function DetailScreen() {
       init(q, year, stype, source, id);
     }
     return () => {
-      // abort();
+      abort();
     };
   }, [abort, init, q, year, stype, source, id]);
 
