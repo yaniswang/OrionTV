@@ -13,7 +13,7 @@ import ResponsiveNavigation from "@/components/navigation/ResponsiveNavigation";
 import ResponsiveHeader from "@/components/navigation/ResponsiveHeader";
 
 export default function DetailScreen() {
-  const { q, year, stype } = useLocalSearchParams<{ q: string; year: string, stype: string }>();
+  const { source, id, q, year, stype } = useLocalSearchParams<{ source: string; id: string; q: string; year: string, stype: string }>();
   const router = useRouter();
 
   // 响应式布局配置
@@ -38,12 +38,12 @@ export default function DetailScreen() {
 
   useEffect(() => {
     if (q) {
-      init(q, year, stype);
+      init(q, year, stype, source, id);
     }
     return () => {
       abort();
     };
-  }, [abort, init, q, year, stype]);
+  }, [abort, init, q, year, stype, source, id]);
 
   const handlePlay = (episodeIndex: number) => {
     if (!detail) return;
@@ -195,7 +195,7 @@ export default function DetailScreen() {
                       {item.episodes.length > 1 && (
                         <View style={[dynamicStyles.badge, isSelected && dynamicStyles.selectedBadge]}>
                           <Text style={dynamicStyles.badgeText}>
-                            {item.episodes.length > 99 ? "99+" : `${item.episodes.length}`} 集
+                            {`${item.episodes.length}`} 集
                           </Text>
                         </View>
                       )}
@@ -294,7 +294,7 @@ export default function DetailScreen() {
                         {item.episodes.length > 1 && (
                           <View style={[dynamicStyles.badge, isSelected && dynamicStyles.selectedBadge]}>
                             <Text style={dynamicStyles.badgeText}>
-                              {item.episodes.length > 99 ? "99+" : `${item.episodes.length}`} 集
+                              {`${item.episodes.length}`} 集
                             </Text>
                           </View>
                         )}

@@ -1,12 +1,13 @@
-import React, { useCallback, useRef, useState, useEffect } from "react";
-import { View, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, BackHandler } from "react-native";
+import React, { useCallback, useRef, useState, useEffect, ReactElement } from "react";
+import { View, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, BackHandler, Platform } from "react-native";
 import { ThemedText } from "@/components/ThemedText";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { getCommonResponsiveStyles } from "@/utils/ResponsiveStyles";
+import { FlashList } from "@shopify/flash-list";
 
 interface CustomScrollViewProps {
   data: any[];
-  renderItem: ({ item, index }: { item: any; index: number }) => React.ReactNode;
+  renderItem: ({ item, index }: { item: unknown; index: number }) => ReactElement;
   numColumns?: number; // 如果不提供，将使用响应式默认值
   loading?: boolean;
   loadingMore?: boolean;
@@ -29,8 +30,7 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
   emptyMessage = "暂无内容",
   ListFooterComponent,
 }) => {
-  const scrollViewRef = useRef<ScrollView>(null);
-  const firstCardRef = useRef<any>(null); // <--- 新增
+  const scrollViewRef = useRef<any>(null);
   const [showScrollToTop, setShowScrollToTop] = useState(false);
   const responsiveConfig = useResponsiveLayout();
   const commonStyles = getCommonResponsiveStyles(responsiveConfig);
@@ -56,25 +56,15 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
 
   const handleScroll = useCallback(
     ({ nativeEvent }: { nativeEvent: any }) => {
-      const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
-      const isCloseToBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - loadMoreThreshold;
-
+      const offsetY = nativeEvent.contentOffset.y;
       // 显示/隐藏返回顶部按钮
-      setShowScrollToTop(contentOffset.y > 200);
-
-      if (isCloseToBottom && !loadingMore && onEndReached) {
-        onEndReached();
-      }
+      setShowScrollToTop(offsetY> 200);
     },
-    [onEndReached, loadingMore, loadMoreThreshold]
+    []
   );
 
   const scrollToTop = () => {
-    scrollViewRef.current?.scrollTo({ y: 0, animated: true });
-    // 滚动动画结束后聚焦第一个卡片
-    setTimeout(() => {
-      firstCardRef.current?.focus();
-    }, 500); // 500ms 适配大多数动画时长
+    scrollViewRef.current?.scrollToOffset({ offset: 0, animated: true });
   };
 
   const renderFooter = () => {
@@ -92,6 +82,14 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
     }
     return null;
   };
+
+  const renderEmpty = () => {
+    return (
+      <View style={commonStyles.center}>
+        <ThemedText>{emptyMessage}</ThemedText>
+      </View>
+    )
+  }
 
   if (loading) {
     return (
@@ -122,14 +120,8 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
   // 动态样式
   const dynamicStyles = StyleSheet.create({
     listContent: {
-      flexDirection: 'row', // 水平排列
-      flexWrap: 'wrap',     // 自动换行
+      flex: 1,
       padding: 5,           // 容器内边距
-    },
-    itemContainer: {
-      width: (100 / effectiveColumns)+'%', 
-      justifyContent: 'flex-start',
-      alignItems: 'center',
     },
     itemWithMargin: {
       width: responsiveConfig.cardWidth,
@@ -147,38 +139,21 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
   });
 
   return (
-    <View style={{ flex: 1 }}>
-      <ScrollView
+    <View style={dynamicStyles.listContent}>
+      <FlashList
         ref={scrollViewRef}
-        contentContainerStyle={dynamicStyles.listContent}
+        data={data}
+        refreshing={loading}
+        numColumns={effectiveColumns}
+        estimatedItemSize={300}
+        renderItem={renderItem}
+        ListFooterComponent={renderFooter}
+        ListEmptyComponent={renderEmpty}
+        onEndReached={onEndReached}
+        onEndReachedThreshold={0.5}
         onScroll={handleScroll}
-        scrollEventThrottle={16}
-        showsVerticalScrollIndicator={responsiveConfig.deviceType !== 'tv'}
-        removeClippedSubviews={true}
-      >
-        {data.length > 0 ? (
-          <>
-            {data.map((item, itemIndex) => {
-              const cardProps = {
-                key: itemIndex,
-                style: dynamicStyles.itemContainer,
-              };
-
-              return (
-                <View {...cardProps}>
-                  {renderItem({ item, index: itemIndex })}
-                </View>
-              );
-            })}
-            {renderFooter()}
-          </>
-        ) : (
-          <View style={commonStyles.center}>
-            <ThemedText>{emptyMessage}</ThemedText>
-          </View>
-        )}
-      </ScrollView>
-      {deviceType!=='tv' && (
+      />
+      {!Platform.isTV && (
         <TouchableOpacity
           style={dynamicStyles.scrollToTopButton}
           onPress={scrollToTop}

@@ -168,11 +168,10 @@ const useHomeStore = create<HomeState>((set, get) => ({
           pageStart
         );
 
-        const newItems = result.list.map((item) => ({
-          ...item,
-          id: item.title,
-          source: "douban",
-        })) as RowItem[];
+        const newItems = result.list.map((item) => {
+          delete item['id'];
+          return item;
+        }) as RowItem[];
 
         const cacheKey = getCacheKey(selectedCategory);
 

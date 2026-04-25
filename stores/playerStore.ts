@@ -108,84 +108,66 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       isLoading: true,
     });
     
-    const needsDetailInit = !detail || !episodes || episodes.length === 0 || detail.title !== title || detail.year !== year;
-    logger.info(`[PERF] Detail check - needsInit: ${needsDetailInit}, hasDetail: ${!!detail}, episodesCount: ${episodes?.length || 0}`);
+    const detailInitStart = performance.now();
+    logger.info(`[PERF] DetailStore.init START - ${title}`);
+    
+    useDetailStore.getState().init(title, year, stype, source, id);
 
-    if (needsDetailInit) {
-      const detailInitStart = performance.now();
-      logger.info(`[PERF] DetailStore.init START - ${title}`);
+    while(true) {
+      // 第一个结果返回就开始播放
+      if(!useDetailStore.getState().loading)break;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    
+    const detailInitEnd = performance.now();
+    logger.info(`[PERF] DetailStore.init END - took ${(detailInitEnd - detailInitStart).toFixed(2)}ms`);
+    
+    detail = useDetailStore.getState().detail;
+    
+    if (!detail) {
+      logger.error(`[ERROR] Detail not found after initialization for "${title}" (source: ${source}, id: ${id})`);
       
-      useDetailStore.getState().init(title, year, stype, source, id);
-
-      while(true) {
-        // 第一个结果返回就开始播放
-        if(!useDetailStore.getState().loading)break;
-        await new Promise(resolve => setTimeout(resolve, 10));
+      // 检查DetailStore的错误状态
+      const detailStoreState = useDetailStore.getState();
+      if (detailStoreState.error) {
+        logger.error(`[ERROR] DetailStore error: ${detailStoreState.error}`);
+        set({ 
+          isLoading: false,
+          // 可以选择在这里设置一个错误状态，但playerStore可能没有error字段
+        });
+      } else {
+        logger.error(`[ERROR] DetailStore init completed but no detail found and no error reported`);
+        set({ isLoading: false });
       }
+      return;
+    }
+    
+    // 使用DetailStore找到的实际source来获取episodes，而不是原始的preferredSource
+    logger.info(`[INFO] Using actual source "${detail.source}" instead of preferred source "${source}"`);  
+    episodes = episodesSelectorBySource(detail.source)(useDetailStore.getState());
+    
+    if (!episodes || episodes.length === 0) {
+      logger.error(`[ERROR] No episodes found for "${title}" from source "${detail.source}" (${detail.source_name})`);
       
-      const detailInitEnd = performance.now();
-      logger.info(`[PERF] DetailStore.init END - took ${(detailInitEnd - detailInitStart).toFixed(2)}ms`);
+      // 尝试从searchResults中直接获取episodes
+      const detailStoreState = useDetailStore.getState();
+      logger.info(`[INFO] Available sources in searchResults: ${detailStoreState.searchResults.map(r => `${r.source}(${r.episodes?.length || 0} episodes)`).join(', ')}`);
       
-      detail = useDetailStore.getState().detail;
-      
-      if (!detail) {
-        logger.error(`[ERROR] Detail not found after initialization for "${title}" (source: ${source}, id: ${id})`);
-        
-        // 检查DetailStore的错误状态
-        const detailStoreState = useDetailStore.getState();
-        if (detailStoreState.error) {
-          logger.error(`[ERROR] DetailStore error: ${detailStoreState.error}`);
-          set({ 
-            isLoading: false,
-            // 可以选择在这里设置一个错误状态，但playerStore可能没有error字段
-          });
-        } else {
-          logger.error(`[ERROR] DetailStore init completed but no detail found and no error reported`);
-          set({ isLoading: false });
-        }
+      // 如果当前source没有episodes，尝试使用第一个有episodes的source
+      const sourceWithEpisodes = detailStoreState.searchResults.find(r => r.episodes && r.episodes.length > 0);
+      if (sourceWithEpisodes) {
+        logger.info(`[FALLBACK] Using alternative source "${sourceWithEpisodes.source}" with ${sourceWithEpisodes.episodes.length} episodes`);
+        episodes = sourceWithEpisodes.episodes;
+        // 更新detail为有episodes的source
+        detail = sourceWithEpisodes;
+      } else {
+        logger.error(`[ERROR] No source with episodes found in searchResults`);
+        set({ isLoading: false });
         return;
       }
-      
-      // 使用DetailStore找到的实际source来获取episodes，而不是原始的preferredSource
-      logger.info(`[INFO] Using actual source "${detail.source}" instead of preferred source "${source}"`);  
-      episodes = episodesSelectorBySource(detail.source)(useDetailStore.getState());
-      
-      if (!episodes || episodes.length === 0) {
-        logger.error(`[ERROR] No episodes found for "${title}" from source "${detail.source}" (${detail.source_name})`);
-        
-        // 尝试从searchResults中直接获取episodes
-        const detailStoreState = useDetailStore.getState();
-        logger.info(`[INFO] Available sources in searchResults: ${detailStoreState.searchResults.map(r => `${r.source}(${r.episodes?.length || 0} episodes)`).join(', ')}`);
-        
-        // 如果当前source没有episodes，尝试使用第一个有episodes的source
-        const sourceWithEpisodes = detailStoreState.searchResults.find(r => r.episodes && r.episodes.length > 0);
-        if (sourceWithEpisodes) {
-          logger.info(`[FALLBACK] Using alternative source "${sourceWithEpisodes.source}" with ${sourceWithEpisodes.episodes.length} episodes`);
-          episodes = sourceWithEpisodes.episodes;
-          // 更新detail为有episodes的source
-          detail = sourceWithEpisodes;
-        } else {
-          logger.error(`[ERROR] No source with episodes found in searchResults`);
-          set({ isLoading: false });
-          return;
-        }
-      }
-      
-      logger.info(`[SUCCESS] Detail and episodes loaded - source: ${detail.source_name}, episodes: ${episodes.length}`);
-    } else {
-      logger.info(`[PERF] Skipping DetailStore.init - using cached data`);
-      
-      // 即使是缓存的数据，也要确保使用正确的source获取episodes
-      if (detail && detail.source && detail.source !== source) {
-        logger.info(`[INFO] Cached detail source "${detail.source}" differs from provided source "${source}", updating episodes`);
-        episodes = episodesSelectorBySource(detail.source)(useDetailStore.getState());
-        
-        if (!episodes || episodes.length === 0) {
-          logger.warn(`[WARN] Cached detail source "${detail.source}" has no episodes, trying provided source "${source}"`);
-          episodes = episodesSelectorBySource(source)(useDetailStore.getState());
-        }
-      }
     }
+    
+    logger.info(`[SUCCESS] Detail and episodes loaded - source: ${detail.source_name}, episodes: ${episodes.length}`);
 
     // 最终验证：确保我们有有效的detail和episodes数据
     if (!detail) {

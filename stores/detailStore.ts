@@ -139,7 +139,16 @@ const useDetailStore = create<DetailState>((set, get) => ({
         // 检查preferred source结果
         if (preferredResult.length > 0) {
           logger.info(`[SUCCESS] Preferred source "${preferredSource}" found ${preferredResult.length} results for "${q}"`);
-          await processAndSetResults(preferredResult, false);
+          // 拆分为单个请求,实现动态加载的效果
+          let firstResultFound = false;
+          const processPromises = preferredResult.map(async (result) => {
+            await processAndSetResults([result], true);
+            if (!firstResultFound) {
+              set({ loading: false }); // Stop loading indicator on first result
+              firstResultFound = true;
+            }
+          })
+          await Promise.all(processPromises);
           set({ loading: false });
         } else {
           // 降级策略：preferred source失败时立即尝试所有源
@@ -167,7 +176,16 @@ const useDetailStore = create<DetailState>((set, get) => ({
             
             if (filteredResults.length > 0) {
               logger.info(`[SUCCESS] FALLBACK search found results, proceeding with ${filteredResults[0].source_name}`);
-              await processAndSetResults(filteredResults, false);
+              // 拆分为单个请求,实现动态加载的效果
+              let firstResultFound = false;
+              const processPromises = filteredResults.map(async (result) => {
+                await processAndSetResults([result], true);
+                if (!firstResultFound) {
+                  set({ loading: false }); // Stop loading indicator on first result
+                  firstResultFound = true;
+                }
+              })
+              await Promise.all(processPromises);
               set({ loading: false });
             } else {
               logger.error(`[ERROR] FALLBACK search found no matching results for "${q}"`);

@@ -74,7 +74,7 @@ export const SourceSelectionModal: React.FC = () => {
                 {item.episodes.length > 1 && (
                   <View style={[dynamicStyles.badge, detail?.source === item.source && dynamicStyles.selectedBadge]}>
                     <Text style={dynamicStyles.badgeText}>
-                      {item.episodes.length > 99 ? "99+" : `${item.episodes.length}`} 集
+                      {`${item.episodes.length}`} 集
                     </Text>
                   </View>
                 )}
