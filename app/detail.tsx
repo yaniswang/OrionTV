@@ -41,13 +41,13 @@ export default function DetailScreen() {
       init(q, year, stype, source, id);
     }
     return () => {
-      abort();
+      // abort();
     };
   }, [abort, init, q, year, stype, source, id]);
 
   const handlePlay = (episodeIndex: number) => {
     if (!detail) return;
-    abort(); // Cancel any ongoing fetches
+    // abort(); // Cancel any ongoing fetches
     router.push({
       pathname: "/play",
       params: {
