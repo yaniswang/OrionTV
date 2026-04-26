@@ -60,7 +60,7 @@ interface PlayerState {
   _seekTimeout?: NodeJS.Timeout;
   _isRecordSaveThrottled: boolean;
   // Internal helper
-  _savePlayRecord: (updates?: Partial<PlayRecord>, options?: { immediate?: boolean }) => void;
+  savePlayRecord: (updates?: Partial<PlayRecord>, options?: { immediate?: boolean }) => Promise<void>;
   handleVideoError: (errorType: 'ssl' | 'network' | 'other', failedUrl: string) => Promise<void>;
 }
 
@@ -342,7 +342,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     if (existingIntroEndTime) {
       // Clear the time
       set({ introEndTime: undefined });
-      get()._savePlayRecord({ introEndTime: undefined }, { immediate: true });
+      get().savePlayRecord({ introEndTime: undefined }, { immediate: true });
       Toast.show({
         type: "info",
         text1: "已清除片头时间",
@@ -351,7 +351,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       // Set the time
       const newIntroEndTime = status.positionMillis;
       set({ introEndTime: newIntroEndTime });
-      get()._savePlayRecord({ introEndTime: newIntroEndTime }, { immediate: true });
+      get().savePlayRecord({ introEndTime: newIntroEndTime }, { immediate: true });
       Toast.show({
         type: "success",
         text1: "设置成功",
@@ -368,7 +368,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     if (existingOutroStartTime) {
       // Clear the time
       set({ outroStartTime: undefined });
-      get()._savePlayRecord({ outroStartTime: undefined }, { immediate: true });
+      get().savePlayRecord({ outroStartTime: undefined }, { immediate: true });
       Toast.show({
         type: "info",
         text1: "已清除片尾时间",
@@ -378,7 +378,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       if (!status.durationMillis) return;
       const newOutroStartTime = status.durationMillis - status.positionMillis;
       set({ outroStartTime: newOutroStartTime });
-      get()._savePlayRecord({ outroStartTime: newOutroStartTime }, { immediate: true });
+      get().savePlayRecord({ outroStartTime: newOutroStartTime }, { immediate: true });
       Toast.show({
         type: "success",
         text1: "设置成功",
@@ -387,7 +387,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     }
   },
 
-  _savePlayRecord: (updates = {}, options = {}) => {
+  savePlayRecord: async (updates = {}, options = {}) => {
     const { immediate = false } = options;
     if (!immediate) {
       if (get()._isRecordSaveThrottled) {
@@ -406,7 +406,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
         introEndTime,
         outroStartTime,
       };
-      PlayRecordManager.save(detail.source, detail.id.toString(), {
+      await PlayRecordManager.save(detail.source, detail.id.toString(), {
         title: detail.title,
         cover: detail.poster || "",
         index: currentEpisodeIndex + 1,
@@ -445,7 +445,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     }
 
     if (detail && newStatus.durationMillis) {
-      get()._savePlayRecord();
+      get().savePlayRecord();
 
       const isNearEnd = newStatus.positionMillis / newStatus.durationMillis > 0.95;
       if (isNearEnd && currentEpisodeIndex < episodes.length - 1 && !outroStartTime) {

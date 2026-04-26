@@ -172,6 +172,7 @@ export default function PlayScreen() {
     setShowControls,
     togglePlayPause,
     // setShowNextEpisodeOverlay,
+    savePlayRecord,
     reset,
     loadVideo,
     seek,
@@ -388,12 +389,17 @@ export default function PlayScreen() {
   }, []);
 
   useEffect(() => {
+    const handelBack = async() => {
+      // 页面跳转前保存播放记录
+      await savePlayRecord({ }, { immediate: true });
+      router.back();
+    };
     const backAction = () => {
       if (showControls) {
         setShowControls(false);
         return true;
       }
-      router.back();
+      handelBack();
       return true;
     };
 
