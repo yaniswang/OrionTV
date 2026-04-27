@@ -1,5 +1,5 @@
 import React, { useCallback, useRef, useState, useEffect, ReactElement } from "react";
-import { View, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, BackHandler, Platform } from "react-native";
+import { View, StyleSheet, ActivityIndicator, TouchableOpacity, BackHandler, Platform, useWindowDimensions, InteractionManager } from "react-native";
 import { ThemedText } from "@/components/ThemedText";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { getCommonResponsiveStyles } from "@/utils/ResponsiveStyles";
@@ -32,9 +32,26 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
 }) => {
   const scrollViewRef = useRef<any>(null);
   const [showScrollToTop, setShowScrollToTop] = useState(false);
+  const { width, height } = useWindowDimensions();
+  const [isRotating, setIsRotating] = useState(false);
   const responsiveConfig = useResponsiveLayout();
   const commonStyles = getCommonResponsiveStyles(responsiveConfig);
   const { deviceType } = responsiveConfig;
+
+  const orientation = width > height ? 'landscape' : 'portrait';
+
+  useEffect(() => {
+    setIsRotating(true);
+    
+    // 主动探测：等待所有原生动画（旋转、转场等）结束
+    const task = InteractionManager.runAfterInteractions(() => {
+      requestAnimationFrame(() => {
+        setIsRotating(false);
+      });
+    });
+  
+    return () => task.cancel();
+  }, [orientation]); 
 
   // 添加返回键处理逻辑
   useEffect(() => {
@@ -121,7 +138,8 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
   const dynamicStyles = StyleSheet.create({
     listContent: {
       flex: 1,
-      padding: 5,           // 容器内边距
+      backgroundColor: '#000000',
+      opacity: 1
     },
     itemWithMargin: {
       width: responsiveConfig.cardWidth,
@@ -138,8 +156,10 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
     },
   });
 
+  if (isRotating) return <View style={{ flex: 1 }} />;
+
   return (
-    <View style={dynamicStyles.listContent}>
+    <View style={dynamicStyles.listContent} renderToHardwareTextureAndroid={false}>
       <FlashList
         ref={scrollViewRef}
         data={data}
@@ -152,6 +172,9 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
         onEndReached={onEndReached}
         onEndReachedThreshold={0.5}
         onScroll={handleScroll}
+        disableAutoLayout={true}
+        removeClippedSubviews={false}
+        contentContainerStyle={{ padding: 5 }}
       />
       {!Platform.isTV && (
         <TouchableOpacity

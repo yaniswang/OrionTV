@@ -31,7 +31,7 @@
     "@react-native-community/netinfo": "^11.3.2",
     "@react-native-cookies/cookies": "^6.2.1",
     "@react-navigation/native": "^6.0.2",
-    "@shopify/flash-list": "1.6.4",
+    "@shopify/flash-list": "^1.8.3",
     "expo": "~51.0.13",
     "expo-av": "~14.0.7",
     "expo-build-properties": "~0.12.5",
