@@ -72,7 +72,7 @@ export default function SearchScreen() {
         // 聚合搜索
         const mapResults = new Map<string, SearchResult>()
         response.results.map((item: any) => {
-          const key = `${item.title.replaceAll(' ', '')}-${item.year || 'unknown'}-${item.episodes.length === 1 ? 'movie' : 'tv'}`;
+          const key = `${item.title}-${item.year || 'unknown'}-${item.episodes.length === 1 ? 'movie' : 'tv'}`;
           delete item['source'];
           delete item['source_name'];
           const existedItem = mapResults.get(key);
