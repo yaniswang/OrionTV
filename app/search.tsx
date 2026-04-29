@@ -72,9 +72,10 @@ export default function SearchScreen() {
         // 聚合搜索
         const mapResults = new Map<string, SearchResult>()
         response.results.map((item: any) => {
-          const key = `${item.title}-${item.year || 'unknown'}-${item.episodes.length === 1 ? 'movie' : 'tv'}`;
+          const key = `${item.title.replace(' ', '')}-${item.year || 'unknown'}-${item.episodes.length === 1 ? 'movie' : 'tv'}`;
           delete item['source'];
           delete item['source_name'];
+          delete item['id'];
           const existedItem = mapResults.get(key);
           if (!existedItem) {
             // 首个源
@@ -115,8 +116,8 @@ export default function SearchScreen() {
 
   const renderItem = ({ item }: { item: SearchResult; index: number }) => (
     <VideoCard
-      id={item.id.toString()}
       source={item.source}
+      q={keyword}
       title={item.title}
       poster={item.poster}
       year={item.year}

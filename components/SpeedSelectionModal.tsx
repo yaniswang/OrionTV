@@ -64,7 +64,7 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
   },
   modalContent: {
-    width: 500,
+    width: '80%',
     height: "100%",
     backgroundColor: "rgba(0, 0, 0, 0.85)",
     padding: 20,

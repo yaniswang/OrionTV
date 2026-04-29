@@ -25,8 +25,8 @@ export const SourceSelectionModal: React.FC = () => {
   const { searchResults, detail, setDetail, allSourcesLoaded } = useDetailStore();
 
   const onSelectSource = (index: number) => {
-    logger.debug("onSelectSource", index, searchResults[index].source, detail?.source);
-    if (searchResults[index].source !== detail?.source) {
+    logger.debug("onSelectSource", index, searchResults[index].id, detail?.id);
+    if (searchResults[index].id !== detail?.id) {
       const newDetail = searchResults[index];
       setDetail(newDetail);
       
@@ -54,37 +54,40 @@ export const SourceSelectionModal: React.FC = () => {
       <View style={styles.modalContent}>
         <View style={styles.modalTitleContainer}>
           {!allSourcesLoaded && (<ActivityIndicator style={{marginRight: 5}} />)}
-          <Text style={styles.modalTitle}>选择播放源 ({searchResults.length})</Text>
+          <Text style={styles.modalTitle}>换源 ({searchResults.length})</Text>
         </View>
         <FlashList
           data={searchResults}
           numColumns={3}
-          keyExtractor={(item, index) => `source-${item.source}-${index}`}
-          extraData={detail?.source}
+          keyExtractor={(item, index) => `source-${item.id}-${index}`}
+          extraData={detail?.id}
           estimatedItemSize={60}
-          renderItem={({ item, index }) => (
-            <StyledButton
-              onPress={() => onSelectSource(index)}
-              isSelected={detail?.source === item.source}
-              hasTVPreferredFocus={detail?.source === item.source}
-              style={styles.sourceItem}
-              textStyle={dynamicStyles.sourceButton}
-            >
-                <ThemedText style={dynamicStyles.sourceButtonText}>{item.source_name}</ThemedText>
-                {item.episodes.length > 1 && (
-                  <View style={[dynamicStyles.badge, detail?.source === item.source && dynamicStyles.selectedBadge]}>
-                    <Text style={dynamicStyles.badgeText}>
-                      {`${item.episodes.length}`} 集
-                    </Text>
-                  </View>
-                )}
-                {/* {item.resolution && (
-                  <View style={[dynamicStyles.badge, { backgroundColor: "#666" }, detail?.source === item.source && dynamicStyles.selectedBadge]}>
-                    <Text style={dynamicStyles.badgeText}>{item.resolution}</Text>
-                  </View>
-                )} */}
-            </StyledButton>
-          )}
+          renderItem={({ item, index }) => {
+            const isSelected = detail?.source === item.source && detail?.id === item.id;
+            return (
+              <StyledButton
+                onPress={() => onSelectSource(index)}
+                isSelected={isSelected}
+                hasTVPreferredFocus={isSelected}
+                style={styles.sourceItem}
+                textStyle={dynamicStyles.sourceButton}
+              >
+                  <ThemedText style={dynamicStyles.sourceButtonText}>{item.source_name}</ThemedText>
+                  {item.episodes.length > 1 && (
+                    <View style={[dynamicStyles.badge, isSelected && dynamicStyles.selectedBadge]}>
+                      <Text style={dynamicStyles.badgeText}>
+                        {`${item.episodes.length}`} 集
+                      </Text>
+                    </View>
+                  )}
+                  {/* {item.resolution && (
+                    <View style={[dynamicStyles.badge, { backgroundColor: "#666" }, detail?.source === item.source && dynamicStyles.selectedBadge]}>
+                      <Text style={dynamicStyles.badgeText}>{item.resolution}</Text>
+                    </View>
+                  )} */}
+              </StyledButton>
+            );
+          }}
         />
       </View>
     </Modal>
@@ -97,7 +100,7 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
   },
   modalContent: {
-    width: 600,
+    width: '90%',
     height: "100%",
     backgroundColor: "rgba(0, 0, 0, 0.85)",
     padding: 20,

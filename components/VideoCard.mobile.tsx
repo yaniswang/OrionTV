@@ -12,8 +12,9 @@ import Logger from '@/utils/Logger';
 const logger = Logger.withTag('VideoCardMobile');
 
 interface VideoCardMobileProps extends React.ComponentProps<typeof TouchableOpacity> {
-  id: string;
-  source: string;
+  id?: string;
+  source?: string;
+  q?: string;
   title: string;
   poster: string;
   year?: string;
@@ -35,6 +36,7 @@ const VideoCardMobile = forwardRef<View, VideoCardMobileProps>(
     {
       id,
       source,
+      q,
       title,
       poster,
       year,
@@ -69,12 +71,12 @@ const VideoCardMobile = forwardRef<View, VideoCardMobileProps>(
       if (progress !== undefined && episodeIndex !== undefined) {
         router.push({
           pathname: "/play",
-          params: { source, id, episodeIndex: episodeIndex - 1, title, year, stype: videoStype, position: playTime * 1000 },
+          params: { source, id, episodeIndex: episodeIndex - 1, q, title, year, stype: videoStype, position: playTime * 1000 },
         });
       } else {
         router.push({
           pathname: "/detail",
-          params: { source, id, q: title, year, stype: videoStype },
+          params: { source, id, q, title, year, stype: videoStype },
         });
       }
     };

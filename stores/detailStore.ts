@@ -11,6 +11,7 @@ export type SearchResultWithResolution = SearchResult & { resolution?: string | 
 
 interface DetailState {
   q: string | null;
+  title: string | null;
   searchResults: SearchResultWithResolution[];
   sources: { source: string; source_name: string; resolution: string | null | undefined }[];
   detail: SearchResultWithResolution | null;
@@ -21,7 +22,7 @@ interface DetailState {
   isFavorited: boolean;
   failedSources: Set<string>; // 记录失败的source列表
 
-  init: (q: string, year: string, stype: string, preferredSource?: string, id?: string) => Promise<void>;
+  init: (q: string | undefined, title: string, year: string, stype: string, preferredSource?: string, id?: string) => Promise<void>;
   setDetail: (detail: SearchResultWithResolution) => Promise<void>;
   abort: () => void;
   toggleFavorite: () => Promise<void>;
@@ -31,6 +32,7 @@ interface DetailState {
 
 const useDetailStore = create<DetailState>((set, get) => ({
   q: null,
+  title: null,
   searchResults: [],
   sources: [],
   detail: null,
@@ -41,9 +43,9 @@ const useDetailStore = create<DetailState>((set, get) => ({
   isFavorited: false,
   failedSources: new Set(),
 
-  init: async (q, year, stype, preferredSource, id) => {
+  init: async (q, title, year, stype, preferredSource, id) => {
     const perfStart = performance.now();
-    logger.info(`[PERF] DetailStore.init START - q: ${q}, year: ${year}, stype: ${stype}, preferredSource: ${preferredSource}, id: ${id}`);
+    logger.info(`[PERF] DetailStore.init START - q: ${q}, title: ${title}, year: ${year}, stype: ${stype}, preferredSource: ${preferredSource}, id: ${id}`);
     
     const { controller: oldController } = get();
     if (oldController) {
@@ -52,8 +54,11 @@ const useDetailStore = create<DetailState>((set, get) => ({
     const newController = new AbortController();
     const signal = newController.signal;
 
+    title = title.replace(' ', '');
+
     set({
       q,
+      title,
       loading: true,
       searchResults: [],
       detail: null,
@@ -114,18 +119,14 @@ const useDetailStore = create<DetailState>((set, get) => ({
       // Optimization for favorite navigation
       if (preferredSource && id) {
         const searchPreferredStart = performance.now();
-        logger.info(`[PERF] API searchVideo (preferred) START - source: ${preferredSource}, query: "${q}"`);
+        logger.info(`[PERF] API searchVideo (preferred) START - source: ${preferredSource}, title: "${title}"`);
         
         let preferredResult: SearchResult[] = [];
         let preferredSearchError: any = null;
         
         try {
-          const response = await api.searchVideo(q, preferredSource, signal);
-          // 二次过滤year和stype
-          preferredResult = response.results.filter((item: any) => {
-            const itemStype = item.episodes.length > 1 ? 'tv' : 'movie';
-            return item.year == year && (stype !== undefined && itemStype === stype || stype === undefined)
-          });
+          const response = await api.searchVideo(title, preferredSource, signal);
+          preferredResult = response.results;
         } catch (error) {
           preferredSearchError = error;
           logger.error(`[ERROR] API searchVideo (preferred) FAILED - source: ${preferredSource}, error:`, error);
@@ -139,174 +140,72 @@ const useDetailStore = create<DetailState>((set, get) => ({
         // 检查preferred source结果
         if (preferredResult.length > 0) {
           logger.info(`[SUCCESS] Preferred source "${preferredSource}" found ${preferredResult.length} results for "${q}"`);
-          // 拆分为单个请求,实现动态加载的效果
-          let firstResultFound = false;
-          const processPromises = preferredResult.map(async (result) => {
-            await processAndSetResults([result], true);
-            if (!firstResultFound) {
-              set({ loading: false }); // Stop loading indicator on first result
-              firstResultFound = true;
-            }
-          })
-          await Promise.all(processPromises);
-          set({ loading: false });
+          await processAndSetResults(preferredResult, false);
+          if (get().searchResults.length > 0) {
+            set({ loading: false });
+          }
         } else {
-          // 降级策略：preferred source失败时立即尝试所有源
           if (preferredSearchError) {
             logger.warn(`[FALLBACK] Preferred source "${preferredSource}" failed with error, trying all sources immediately`);
           } else {
             logger.warn(`[FALLBACK] Preferred source "${preferredSource}" returned 0 results for "${q}", trying all sources immediately`);
           }
-          
-          // 立即尝试所有源，不再依赖后台搜索
-          const fallbackStart = performance.now();
-          logger.info(`[PERF] FALLBACK search (all sources) START - query: "${q}"`);
-          
-          try {
-            const { results: allResults } = await api.searchVideos(q);
-            const fallbackEnd = performance.now();
-            logger.info(`[PERF] FALLBACK search END - took ${(fallbackEnd - fallbackStart).toFixed(2)}ms, total results: ${allResults.length}`);
-            
-            // 二次过滤year和stype
-            const filteredResults = allResults.filter((item: any) => {
-              const itemStype = item.episodes.length > 1 ? 'tv' : 'movie';
-              return item.title == q && item.year == year && (stype !== undefined && itemStype === stype || stype === undefined)
-            });
-            logger.info(`[FALLBACK] Filtered results: ${filteredResults.length} matches for "${q}"`);
-            
-            if (filteredResults.length > 0) {
-              logger.info(`[SUCCESS] FALLBACK search found results, proceeding with ${filteredResults[0].source_name}`);
-              // 拆分为单个请求,实现动态加载的效果
-              let firstResultFound = false;
-              const processPromises = filteredResults.map(async (result) => {
-                await processAndSetResults([result], true);
-                if (!firstResultFound) {
-                  set({ loading: false }); // Stop loading indicator on first result
-                  firstResultFound = true;
-                }
-              })
-              await Promise.all(processPromises);
-              set({ loading: false });
-            } else {
-              logger.error(`[ERROR] FALLBACK search found no matching results for "${q}"`);
-              set({ 
-                error: `未找到 "${q}" 的播放源，请检查标题或稍后重试`,
-                loading: false 
-              });
-            }
-          } catch (fallbackError) {
-            logger.error(`[ERROR] FALLBACK search FAILED:`, fallbackError);
-            set({ 
-              error: `搜索失败：${fallbackError instanceof Error ? fallbackError.message : '网络错误，请稍后重试'}`,
-              loading: false 
-            });
-          }
         }
-        
-        // 后台搜索（如果preferred source成功的话）
-        if (preferredResult.length > 0) {
-          const searchAllStart = performance.now();
-          logger.info(`[PERF] API searchVideos (background) START`);
-          
-          try {
-            const { results: allResults } = await api.searchVideos(q);
-            
-          // 二次过滤year和stype
-          const filteredResults = allResults.filter((item: any) => {
-            const itemStype = item.episodes.length > 1 ? 'tv' : 'movie';
-            return item.title == q && item.year == year && (stype !== undefined && itemStype === stype || stype === undefined)
-          });
+      }
 
-            const searchAllEnd = performance.now();
-            logger.info(`[PERF] API searchVideos (background) END - took ${(searchAllEnd - searchAllStart).toFixed(2)}ms, results: ${filteredResults.length}`);
-            
-            if (signal.aborted) return;
-            // 拆分为单个请求,实现动态加载的效果
-            const processPromises = filteredResults.map(async (result) => {
-              await processAndSetResults([result], true);
-            })
-            await Promise.all(processPromises);
-          } catch (backgroundError) {
-            logger.warn(`[WARN] Background search failed, but preferred source already succeeded:`, backgroundError);
-          }
-        }
-      } else {
-        // Standard navigation: fetch resources, then fetch details one by one
-        const resourcesStart = performance.now();
-        logger.info(`[PERF] API getResources START - query: "${q}"`);
-        
-        try {
-          const allResources = await api.getResources(signal);
-          
-          const resourcesEnd = performance.now();
-          logger.info(`[PERF] API getResources END - took ${(resourcesEnd - resourcesStart).toFixed(2)}ms, resources: ${allResources.length}`);
-          
-          const enabledResources = videoSource.enabledAll
-            ? allResources
-            : allResources.filter((r) => videoSource.sources[r.key]);
-
-          logger.info(`[PERF] Enabled resources: ${enabledResources.length}/${allResources.length}`);
-          
-          if (enabledResources.length === 0) {
-            logger.error(`[ERROR] No enabled resources available for search`);
-            set({ 
-              error: "没有可用的视频源，请检查设置或联系管理员",
-              loading: false 
-            });
-            return;
-          }
-
-          let firstResultFound = false;
-          let totalResults = 0;
-          const searchPromises = enabledResources.map(async (resource) => {
-            try {
-              const searchStart = performance.now();
-              const { results } = await api.searchVideo(q, resource.key, signal);
-              // 二次过滤year和stype
-              const filteredResults = results.filter((item: any) => {
-                const itemStype = item.episodes.length > 1 ? 'tv' : 'movie';
-                return item.year == year && (stype !== undefined && itemStype === stype || stype === undefined)
-              });
-              const searchEnd = performance.now();
-              logger.info(`[PERF] API searchVideo (${resource.name}) took ${(searchEnd - searchStart).toFixed(2)}ms, results: ${filteredResults.length}`);
-              
-              if (filteredResults.length > 0) {
-                totalResults += filteredResults.length;
-                logger.info(`[SUCCESS] Source "${resource.name}" found ${filteredResults.length} results for "${q}"`);
-                await processAndSetResults(filteredResults, true);
-                if (!firstResultFound) {
-                  set({ loading: false }); // Stop loading indicator on first result
-                  firstResultFound = true;
-                  logger.info(`[SUCCESS] First result found from "${resource.name}", stopping loading indicator`);
-                }
-              } else {
-                logger.warn(`[WARN] Source "${resource.name}" returned 0 results for "${q}"`);
+      // 搜索所有备用源
+      const searchAllStart = performance.now();
+      logger.info(`[PERF] API searchVideos (background) START - query: "${q}", title: "${title}"`);
+      
+      try {
+        let firstResultFound = false;
+        const arrMessages = await api.searchVideosWs(q || title, signal);
+        let resultCount = 0;
+        let processCount = 0;
+        let resultComplete = false;
+        while (true) {
+          if (arrMessages.length > 0) {
+            const message = arrMessages.shift();
+            if (message.type === 'source_result') {
+              if (message.results.length > 0) {
+                // 二次过滤title,year和stype
+                const filteredResults = message.results.filter((item: any) => {
+                  const itemStype = item.episodes.length > 1 ? 'tv' : 'movie';
+                  return item.title.replace(' ', '') == title && item.year == year && (stype !== undefined && itemStype === stype || stype === undefined)
+                });
+                if (filteredResults.length > 0) {
+                  resultCount ++;
+                  processAndSetResults(filteredResults, true).then(() => {
+                    processCount ++;
+                  });  
+                }            
               }
-            } catch (error) {
-              // logger.error(`[ERROR] Failed to fetch from ${resource.name}:`, error);
             }
-          });
-
-          await Promise.all(searchPromises);
-          
-          // 检查是否找到任何结果
-          if (totalResults === 0) {
-            logger.error(`[ERROR] All sources returned 0 results for "${q}"`);
-            set({ 
-              error: `未找到 "${q}" 的播放源，请尝试其他关键词或稍后重试`,
-              loading: false 
-            });
-          } else {
-            logger.info(`[SUCCESS] Standard search completed, total results: ${totalResults}`);
+            else if (message.type === 'complete') {
+              // 搜索结束
+              logger.info(`搜索结束`);
+              resultComplete = true;
+            }
           }
-        } catch (resourceError) {
-          logger.error(`[ERROR] Failed to get resources:`, resourceError);
-          set({ 
-            error: `获取视频源失败：${resourceError instanceof Error ? resourceError.message : '网络错误，请稍后重试'}`,
-            loading: false 
-          });
-          return;
+          if (get().searchResults.length > 0) {
+            if (!firstResultFound) {
+              set({ loading: false }); // 第一个源匹配就取消加载中状态
+              firstResultFound = true;
+            }  
+          }
+          if (resultComplete && processCount === resultCount) {
+            // 全部检测完毕
+            logger.info(`全部检测结束`);
+            break;
+          }
+          await new Promise(resolve => setTimeout(resolve, 10));
         }
+        const searchAllEnd = performance.now();
+        logger.info(`[PERF] API searchVideos (background) END - took ${(searchAllEnd - searchAllStart).toFixed(2)}ms`);
+
+        if (signal.aborted) return;
+      } catch (backgroundError) {
+        logger.warn(`[WARN] Background search failed`);
       }
 
       const favoriteCheckStart = performance.now();
@@ -314,8 +213,8 @@ const useDetailStore = create<DetailState>((set, get) => ({
       
       // 最终检查：如果所有搜索都完成但仍然没有结果
       if (finalState.searchResults.length === 0 && !finalState.error) {
-        logger.error(`[ERROR] All search attempts completed but no results found for "${q}"`);
-        set({ error: `未找到 "${q}" 的播放源，请检查标题拼写或稍后重试` });
+        logger.error(`[ERROR] All search attempts completed but no results found for "${q||title}"`);
+        set({ error: `未找到 "${q||title}" 的播放源，请检查标题拼写或稍后重试` });
       } else if (finalState.searchResults.length > 0) {
         logger.info(`[SUCCESS] DetailStore.init completed successfully with ${finalState.searchResults.length} sources`);
       }
@@ -447,5 +346,5 @@ const useDetailStore = create<DetailState>((set, get) => ({
 
 export const sourcesSelector = (state: DetailState) => state.sources;
 export default useDetailStore;
-export const episodesSelectorBySource = (source: string) => (state: DetailState) =>
-  state.searchResults.find((r) => r.source === source)?.episodes || [];
+export const episodesSelectorBySource = (source: string, id: number) => (state: DetailState) =>
+  state.searchResults.find((r) => r.source === source && r.id === id)?.episodes || [];

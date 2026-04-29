@@ -34,6 +34,7 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
   const [showScrollToTop, setShowScrollToTop] = useState(false);
   const { width, height } = useWindowDimensions();
   const [isRotating, setIsRotating] = useState(false);
+  const lastOrientation = useRef<any>('');
   const responsiveConfig = useResponsiveLayout();
   const commonStyles = getCommonResponsiveStyles(responsiveConfig);
   const { deviceType } = responsiveConfig;
@@ -41,16 +42,20 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
   const orientation = width > height ? 'landscape' : 'portrait';
 
   useEffect(() => {
-    setIsRotating(true);
+    if (lastOrientation.current !== '') {
+      // 首次不等待,二次才等待旋转
+      lastOrientation.current = orientation;
+      setIsRotating(true);
     
-    // 主动探测：等待所有原生动画（旋转、转场等）结束
-    const task = InteractionManager.runAfterInteractions(() => {
-      requestAnimationFrame(() => {
-        setIsRotating(false);
+      // 主动探测：等待所有原生动画（旋转、转场等）结束
+      const task = InteractionManager.runAfterInteractions(() => {
+        requestAnimationFrame(() => {
+          setIsRotating(false);
+        });
       });
-    });
-  
-    return () => task.cancel();
+    
+      return () => task.cancel();
+    }
   }, [orientation]); 
 
   // 添加返回键处理逻辑

@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import EventSource from "react-native-sse";
 
 // region: --- Interface Definitions ---
 export interface DoubanItem {
@@ -42,6 +43,7 @@ export interface VideoDetail {
 
 export interface SearchResult {
   id: number;
+  q?: string;
   title: string;
   poster: string;
   episodes: string[];
@@ -68,6 +70,7 @@ export interface Favorite {
 
 export interface PlayRecord {
   title: string;
+  search_title: string | null;
   source_name: string;
   cover: string;
   index: number;
@@ -277,6 +280,32 @@ export class API {
     const url = `/api/search?q=${encodeURIComponent(query)}`;
     const response = await this._fetch(url);
     return response.json();
+  }
+
+  async searchVideosWs(query: string, signal?: AbortSignal) {
+    const cookies = await AsyncStorage.getItem('authCookies');
+    if(!cookies) {
+      throw new Error("No auth cookie!");
+    }
+    const match = cookies.match(/auth=(.+?);/);
+    if (!match) {
+      throw new Error("Find auth cookie failed!");
+    }
+    const auth = match[1];
+    const arrMessages = [];
+    const es = new EventSource(`${this.baseURL}/api/search/ws?q=${encodeURIComponent(query)}`, {
+      headers: {
+        Cookie: `auth=${auth};`
+      }
+    });
+    es.addEventListener("message", (event) => {
+      const data = JSON.parse(event.data);
+      arrMessages.push(data);
+      if(data.type === 'complete' || signal?.aborted) {
+        es.close();
+      }
+    });
+    return arrMessages;
   }
 
   async searchVideo(query: string, resourceId: string, signal?: AbortSignal): Promise<{ results: SearchResult[] }> {

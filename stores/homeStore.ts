@@ -7,6 +7,7 @@ import { useSettingsStore } from "./settingsStore";
 export type RowItem = (SearchResult | PlayRecord) & {
   id: string;
   source: string;
+  search_title: string;
   title: string;
   poster: string;
   progress?: number;

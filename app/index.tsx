@@ -212,6 +212,7 @@ export default function HomeScreen() {
     <VideoCard
       id={item.id}
       source={item.source}
+      q={item.search_title}
       title={item.title}
       poster={item.poster}
       year={item.year}

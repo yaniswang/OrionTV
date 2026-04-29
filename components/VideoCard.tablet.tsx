@@ -12,8 +12,9 @@ import Logger from '@/utils/Logger';
 const logger = Logger.withTag('VideoCardTablet');
 
 interface VideoCardTabletProps extends React.ComponentProps<typeof TouchableOpacity> {
-  id: string;
-  source: string;
+  id?: string;
+  source?: string;
+  q?: string;
   title: string;
   poster: string;
   year?: string;
@@ -34,6 +35,7 @@ const VideoCardTablet = forwardRef<View, VideoCardTabletProps>(
     {
       id,
       source,
+      q,
       title,
       poster,
       year,
@@ -41,10 +43,12 @@ const VideoCardTablet = forwardRef<View, VideoCardTabletProps>(
       sourceName,
       progress,
       episodeIndex,
+      totalEpisodes,
       onFocus,
       onLongPress,
       api,
       playTime = 0,
+      stype,
     }: VideoCardTabletProps,
     ref
   ) => {
@@ -62,15 +66,17 @@ const VideoCardTablet = forwardRef<View, VideoCardTabletProps>(
         return;
       }
       
+      const videoStype = stype || (totalEpisodes !== undefined ? (totalEpisodes > 1 ? 'tv' : 'movie') : null);
+
       if (progress !== undefined && episodeIndex !== undefined) {
         router.push({
           pathname: "/play",
-          params: { source, id, episodeIndex: episodeIndex - 1, title, position: playTime * 1000 },
+          params: { source, id, episodeIndex: episodeIndex - 1, q, title, year, stype: videoStype, position: playTime * 1000 },
         });
       } else {
         router.push({
           pathname: "/detail",
-          params: { source, id, source, q: title },
+          params: { source, id, q, title, year, stype: videoStype },
         });
       }
     };

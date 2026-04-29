@@ -218,7 +218,7 @@ const VideoLoadingAnimation: React.FC<VideoLoadingAnimationProps> = ({ showProgr
           </View>
         )}
 
-        <Animated.Text style={[styles.loadingText, animatedStyles.textFade]}>正在加载视频</Animated.Text>
+        <Animated.Text style={[styles.loadingText, animatedStyles.textFade]}>正在加载视频详情...</Animated.Text>
       </View>
     </View>
   );

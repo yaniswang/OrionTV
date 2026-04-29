@@ -141,6 +141,7 @@ export default function PlayScreen() {
     position: positionStr,
     source: sourceStr,
     id: videoId,
+    q,
     title: videoTitle,
     year: videoYear,
     stype: videoStype
@@ -149,7 +150,8 @@ export default function PlayScreen() {
     position?: string;
     source?: string;
     id?: string;
-    title?: string;
+    q?: string;
+    title: string;
     year: string;
     stype: string;
   }>();
@@ -233,9 +235,9 @@ export default function PlayScreen() {
     logger.info(`[PERF] PlayScreen useEffect START - source: ${source}, id: ${id}, title: ${title}`);
 
     setVideoRef(videoRef);
-    if (source && id && title && videoYear) {
+    if (source && id && (q || title) && videoYear) {
       logger.info(`[PERF] Calling loadVideo with episodeIndex: ${episodeIndex}, position: ${position}`);
-      loadVideo({ source, id, episodeIndex, position, title, year: videoYear, stype: videoStype });
+      loadVideo({ source, id: parseInt(id), episodeIndex, position, q, title, year: videoYear, stype: videoStype });
     } else {
       logger.info(`[PERF] Missing required params - source: ${!!source}, id: ${!!id}, title: ${!!title}`);
     }
@@ -247,7 +249,7 @@ export default function PlayScreen() {
       logger.info(`[PERF] PlayScreen unmounting - calling reset()`);
       reset(); // Reset state when component unmounts
     };
-  }, [episodeIndex, source, position, setVideoRef, reset, loadVideo, id, title, videoYear, videoStype]);
+  }, [episodeIndex, source, position, setVideoRef, reset, loadVideo, id, q, title, videoYear, videoStype]);
 
   // 1. 调节音量 (右侧)
   const handleVolume = (direction:string) => {

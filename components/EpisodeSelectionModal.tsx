@@ -29,7 +29,7 @@ export const EpisodeSelectionModal: React.FC<EpisodeSelectionModalProps> = () =>
   return (
     <Modal isVisible={showEpisodeModal} statusBarTranslucent={true} onBackButtonPress={onClose} onBackdropPress={onClose} onSwipeComplete={onClose} swipeDirection="down" style={styles.modalContainer}>
       <View style={styles.modalContent}>
-        <Text style={styles.modalTitle}>选择剧集</Text>
+        <Text style={styles.modalTitle}>{'选集'+(episodes.length>1?` (${episodes.length})`:'')}</Text>
         {episodes.length > episodeGroupSize && (
           <View style={styles.episodeGroupContainer}>
             {Array.from({ length: Math.ceil(episodes.length / episodeGroupSize) }, (_, groupIndex) => (
@@ -81,7 +81,7 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
   },
   modalContent: {
-    width: 600,
+    width: '90%',
     height: "100%",
     backgroundColor: "rgba(0, 0, 0, 0.85)",
     padding: 20,
@@ -109,8 +109,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   episodeGroupButton: {
-    paddingHorizontal: 6,
-    margin: 8,
+    paddingHorizontal: 0,
+    margin: 2,
   },
   episodeGroupButtonText: {
     fontSize: 12,

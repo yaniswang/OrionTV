@@ -54,6 +54,7 @@ export default function FavoritesScreen() {
       <VideoCard
         id={id}
         source={source}
+        q={item.search_title}
         title={item.title}
         sourceName={item.source_name}
         poster={item.cover}

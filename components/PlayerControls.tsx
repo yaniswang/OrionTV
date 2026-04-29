@@ -22,6 +22,7 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
     isSeeking,
     seekPosition,
     progressPosition,
+    bufferedPosition,
     playbackRate,
     togglePlayPause,
     playEpisode,
@@ -48,11 +49,11 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
 
   const formatTime = (milliseconds: number) => {
     if (!milliseconds) return "00:00";
-    const seconds = milliseconds / 1000;
+    const seconds = Math.floor(milliseconds / 1000);
 
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
-    const remainingSeconds = Math.round(seconds % 60);
+    const remainingSeconds = seconds % 60;
 
     if (hours === 0) {
       // 不到一小时，格式为 00:00
@@ -82,6 +83,14 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
       <View style={styles.bottomControlsContainer}>
         <View style={styles.progressBarContainer}>
           <View style={styles.progressBarBackground} />
+          <View
+            style={[
+              styles.bufferedBarFilled,
+              {
+                width: `${bufferedPosition * 100}%`,
+              },
+            ]}
+          />
           <View
             style={[
               styles.progressBarFilled,
@@ -201,11 +210,20 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255, 255, 255, 0.3)",
     borderRadius: 4,
   },
-  progressBarFilled: {
+  bufferedBarFilled: {
     position: "absolute",
+    zIndex: 1,
     left: 0,
     height: 8,
-    backgroundColor: "#fff",
+    backgroundColor: "rgba(255,255,255,0.5)",
+    borderRadius: 4,
+  },
+  progressBarFilled: {
+    position: "absolute",
+    zIndex: 2,
+    left: 0,
+    height: 8,
+    backgroundColor: "#00bb5e",
     borderRadius: 4,
   },
   progressBarTouchable: {

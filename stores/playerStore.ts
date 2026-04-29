@@ -27,6 +27,7 @@ interface PlayerState {
   isSeeking: boolean;
   seekPosition: number;
   progressPosition: number;
+  bufferedPosition: number;
   initialPosition: number;
   playbackRate: number;
   introEndTime?: number;
@@ -35,7 +36,8 @@ interface PlayerState {
   setVideoRef: (ref: RefObject<Video>) => void;
   loadVideo: (options: {
     source: string;
-    id: string;
+    id: number;
+    q?: string;
     title: string;
     year: string;
     stype: string;
@@ -78,6 +80,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
   isSeeking: false,
   seekPosition: 0,
   progressPosition: 0,
+  bufferedPosition: 0,
   initialPosition: 0,
   playbackRate: 1.0,
   introEndTime: undefined,
@@ -88,9 +91,9 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
 
   setVideoRef: (ref) => set({ videoRef: ref }),
 
-  loadVideo: async ({ source, id, episodeIndex, position, title, year, stype }) => {
+  loadVideo: async ({ source, id, episodeIndex, position, q, title, year, stype }) => {
     const perfStart = performance.now();
-    logger.info(`[PERF] PlayerStore.loadVideo START - source: ${source}, id: ${id}, title: ${title}, year: ${year}, stype: ${stype}`);
+    logger.info(`[PERF] PlayerStore.loadVideo START - source: ${source}, id: ${id}, q: ${q}, title: ${title}, year: ${year}, stype: ${stype}`);
     
     let detail = useDetailStore.getState().detail;
     let episodes: string[] = [];
@@ -98,10 +101,10 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     // 如果有detail，使用detail的source获取episodes；否则使用传入的source
     if (detail && detail.source) {
       logger.info(`[INFO] Using existing detail source "${detail.source}" to get episodes`);
-      episodes = episodesSelectorBySource(detail.source)(useDetailStore.getState());
+      episodes = episodesSelectorBySource(detail.source, detail.id)(useDetailStore.getState());
     } else {
       logger.info(`[INFO] No existing detail, using provided source "${source}" to get episodes`);
-      episodes = episodesSelectorBySource(source)(useDetailStore.getState());
+      episodes = episodesSelectorBySource(source, id)(useDetailStore.getState());
     }
 
     set({
@@ -114,9 +117,9 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     if (needsDetailInit) {
 
       const detailInitStart = performance.now();
-      logger.info(`[PERF] DetailStore.init START - ${title}`);
+      logger.info(`[PERF] DetailStore.init START - ${q}, ${title}`);
       
-      useDetailStore.getState().init(title, year, stype, source, id);
+      useDetailStore.getState().init(q, title, year, stype, source, id);
 
       while(true) {
         // 第一个结果返回就开始播放
@@ -149,7 +152,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       
       // 使用DetailStore找到的实际source来获取episodes，而不是原始的preferredSource
       logger.info(`[INFO] Using actual source "${detail.source}" instead of preferred source "${source}"`);  
-      episodes = episodesSelectorBySource(detail.source)(useDetailStore.getState());
+      episodes = episodesSelectorBySource(detail.source, detail.id)(useDetailStore.getState());
       
       if (!episodes || episodes.length === 0) {
         logger.error(`[ERROR] No episodes found for "${title}" from source "${detail.source}" (${detail.source_name})`);
@@ -179,11 +182,11 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       // 即使是缓存的数据，也要确保使用正确的source获取episodes
       if (detail && detail.source && detail.source !== source) {
         logger.info(`[INFO] Cached detail source "${detail.source}" differs from provided source "${source}", updating episodes`);
-        episodes = episodesSelectorBySource(detail.source)(useDetailStore.getState());
+        episodes = episodesSelectorBySource(detail.source, detail.id)(useDetailStore.getState());
         
         if (!episodes || episodes.length === 0) {
           logger.warn(`[WARN] Cached detail source "${detail.source}" has no episodes, trying provided source "${source}"`);
-          episodes = episodesSelectorBySource(source)(useDetailStore.getState());
+          episodes = episodesSelectorBySource(source, id)(useDetailStore.getState());
         }
       }
     }
@@ -288,17 +291,18 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   toggleFavorite: async () => {
-    const detail = useDetailStore.getState().detail;
+    const { q, detail } = useDetailStore.getState();
     if (!detail) return;
 
     const { source, id, title, poster, source_name, episodes, year } = detail;
+
     const favoriteItem = {
       cover: poster,
       title,
       poster,
       source_name,
       total_episodes: episodes.length,
-      search_title: title,
+      search_title: q,
       year: year || "",
     };
 
@@ -399,7 +403,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       }, 10000); // 10 seconds
     }
 
-    const { detail } = useDetailStore.getState();
+    const { q, detail } = useDetailStore.getState();
     const { currentEpisodeIndex, episodes, status, introEndTime, outroStartTime } = get();
     if (detail && status?.isLoaded) {
       const existingRecord = {
@@ -408,6 +412,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       };
       await PlayRecordManager.save(detail.source, detail.id.toString(), {
         title: detail.title,
+        search_title: q,
         cover: detail.poster || "",
         index: currentEpisodeIndex + 1,
         total_episodes: episodes.length,
@@ -462,7 +467,8 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     }
 
     const progressPosition = newStatus.durationMillis ? newStatus.positionMillis / newStatus.durationMillis : 0;
-    set({ status: newStatus, progressPosition });
+    const bufferedPosition = newStatus.durationMillis ? newStatus.playableDurationMillis / newStatus.durationMillis : 0;
+    set({ status: newStatus, progressPosition, bufferedPosition });
   },
 
   setLoading: (loading) => set({ isLoading: loading }),

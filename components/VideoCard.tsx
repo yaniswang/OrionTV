@@ -9,8 +9,9 @@ import VideoCardTablet from './VideoCard.tablet';
 import VideoCardTV from './VideoCard.tv';
 
 interface VideoCardProps extends React.ComponentProps<typeof TouchableOpacity> {
-  id: string;
-  source: string;
+  id?: string;
+  source?: string;
+  q?: string;
   title: string;
   poster: string;
   year?: string;

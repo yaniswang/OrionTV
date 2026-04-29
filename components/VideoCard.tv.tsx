@@ -11,8 +11,9 @@ import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 const logger = Logger.withTag('VideoCardTV');
 
 interface VideoCardProps extends React.ComponentProps<typeof TouchableOpacity> {
-  id: string;
-  source: string;
+  id?: string;
+  source?: string;
+  q?: string;
   title: string;
   poster: string;
   year?: string;
@@ -34,6 +35,7 @@ const VideoCard = forwardRef<View, VideoCardProps>(
     {
       id,
       source,
+      q,
       title,
       poster,
       year,
@@ -77,12 +79,12 @@ const VideoCard = forwardRef<View, VideoCardProps>(
       if (progress !== undefined && episodeIndex !== undefined) {
         router.push({
           pathname: "/play",
-          params: { source, id, episodeIndex: episodeIndex - 1, title, year, stype: videoStype , position: playTime * 1000 },
+          params: { source, id, episodeIndex: episodeIndex - 1, q, title, year, stype: videoStype, position: playTime * 1000 },
         });
       } else {
         router.push({
           pathname: "/detail",
-          params: { source, id, q: title, year, stype: videoStype  },
+          params: { source, id, q, title, year, stype: videoStype },
         });
       }
     };

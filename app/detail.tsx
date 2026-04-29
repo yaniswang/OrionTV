@@ -13,7 +13,7 @@ import ResponsiveNavigation from "@/components/navigation/ResponsiveNavigation";
 import ResponsiveHeader from "@/components/navigation/ResponsiveHeader";
 
 export default function DetailScreen() {
-  const { source, id, q, year, stype } = useLocalSearchParams<{ source: string; id: string; q: string; year: string, stype: string }>();
+  const { source, id, q, title, year, stype } = useLocalSearchParams<{ source: string; id: string; q: string; title: string; year: string, stype: string }>();
   const router = useRouter();
 
   // 响应式布局配置
@@ -37,13 +37,13 @@ export default function DetailScreen() {
   } = useDetailStore();
 
   useEffect(() => {
-    if (q) {
-      init(q, year, stype, source, id);
+    if (title) {
+      init(q, title, year, stype, source, id);
     }
     return () => {
       abort();
     };
-  }, [abort, init, q, year, stype, source, id]);
+  }, [abort, init, q, title, year, stype, source, id]);
 
   const handlePlay = (episodeIndex: number) => {
     if (!detail) return;
@@ -145,7 +145,7 @@ export default function DetailScreen() {
           {/* Tabs切换 */}
           <View style={dynamicStyles.tabButtonContainer}>
             <StyledButton
-              text={'选集'}
+              text={'选集'+(detail.episodes.length>1?` (${detail.episodes.length})`:'')}
               onPress={() => setSelectedTab('episodes')}
               isSelected={selectedTab==='episodes'}
               style={dynamicStyles.tabButton}
@@ -183,7 +183,7 @@ export default function DetailScreen() {
             <View style={dynamicStyles.sourcesContainer}>
               <View style={dynamicStyles.sourceList}>
                 {searchResults.map((item, index) => {
-                  const isSelected = detail?.source === item.source;
+                  const isSelected = detail?.source === item.source && detail?.id === item.id;
                   return (
                     <StyledButton
                       key={index}
@@ -246,7 +246,7 @@ export default function DetailScreen() {
             {/* Tabs切换 */}
             <View style={dynamicStyles.tabButtonContainer}>
               <StyledButton
-                text={'选集'}
+                text={'选集'+(detail.episodes.length>1?` (${detail.episodes.length})`:'')}
                 onPress={() => setSelectedTab('episodes')}
                 isSelected={selectedTab==='episodes'}
                 style={dynamicStyles.tabButton}
@@ -281,7 +281,7 @@ export default function DetailScreen() {
               <View style={dynamicStyles.sourcesContainer}>
                 <View style={dynamicStyles.sourceList}>
                   {searchResults.map((item, index) => {
-                    const isSelected = detail?.source === item.source;
+                    const isSelected = detail?.source === item.source && detail?.id === item.id;
                     return (
                       <StyledButton
                         key={index}

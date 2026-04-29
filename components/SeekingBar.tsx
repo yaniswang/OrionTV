@@ -4,11 +4,11 @@ import usePlayerStore from "@/stores/playerStore";
 
 const formatTime = (milliseconds: number) => {
   if (!milliseconds) return "00:00";
-  const seconds = milliseconds / 1000;
+  const seconds = Math.floor(milliseconds / 1000);
 
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
-  const remainingSeconds = Math.round(seconds % 60);
+  const remainingSeconds = seconds % 60;
 
   if (hours === 0) {
     // 不到一小时，格式为 00:00
@@ -84,7 +84,7 @@ const styles = StyleSheet.create({
   },
   seekingBarFilled: {
     height: "100%",
-    backgroundColor: "#fff",
+    backgroundColor: "#00bb5e",
     borderRadius: 2.5,
   },
 });
