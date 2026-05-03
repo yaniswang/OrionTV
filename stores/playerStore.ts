@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import Toast from "react-native-toast-message";
-import { AVPlaybackStatus, Video } from "expo-av";
+import { VideoRef, OnLoadData, OnProgressData, OnPlaybackStateChangedData } from 'react-native-video';
 import { RefObject } from "react";
 import { PlayRecord, PlayRecordManager, PlayerSettingsManager, FavoriteManager } from "@/services/storage";
 import useDetailStore, { episodesSelectorBySource } from "./detailStore";
@@ -13,12 +13,22 @@ interface Episode {
   title: string;
 }
 
+interface VideoStatus {
+  isLoaded: boolean;
+  isPlaying: boolean;
+  durationMillis: number;
+  positionMillis: number;
+  playableDurationMillis: number;
+  didJustFinish: boolean;
+}
+
 interface PlayerState {
-  videoRef: RefObject<Video> | null;
+  videoRef: RefObject<VideoRef> | null;
   currentEpisodeIndex: number;
   episodes: Episode[];
-  status: AVPlaybackStatus | null;
-  isLoading: boolean;
+  status: VideoStatus;
+  isDetialLoading: boolean;
+  isVideoLoading: boolean;
   showControls: boolean;
   showEpisodeModal: boolean;
   showSourceModal: boolean;
@@ -30,10 +40,11 @@ interface PlayerState {
   bufferedPosition: number;
   initialPosition: number;
   playbackRate: number;
+  isLandscapeMode: boolean | null;
   introEndTime?: number;
   outroStartTime?: number;
   isFavorited: boolean;
-  setVideoRef: (ref: RefObject<Video>) => void;
+  setVideoRef: (ref: RefObject<VideoRef>) => void;
   loadVideo: (options: {
     source: string;
     id: number;
@@ -47,7 +58,6 @@ interface PlayerState {
   playEpisode: (index: number) => void;
   togglePlayPause: () => void;
   seek: (duration: number) => void;
-  handlePlaybackStatusUpdate: (newStatus: AVPlaybackStatus) => void;
   setLoading: (loading: boolean) => void;
   setShowControls: (show: boolean) => void;
   setShowEpisodeModal: (show: boolean) => void;
@@ -64,14 +74,26 @@ interface PlayerState {
   // Internal helper
   savePlayRecord: (updates?: Partial<PlayRecord>, options?: { immediate?: boolean }) => Promise<void>;
   handleVideoError: (errorType: 'ssl' | 'network' | 'other', failedUrl: string) => Promise<void>;
+  handleVideoLoad: (data: OnLoadData) => void;
+  handleVideoProgress: (data: OnProgressData) => void;
+  handleVideoPlaybackStateChanged : (data: OnPlaybackStateChangedData) => void;
+  handleVideoEnd: () => void;
 }
 
 const usePlayerStore = create<PlayerState>((set, get) => ({
   videoRef: null,
   episodes: [],
   currentEpisodeIndex: -1,
-  status: null,
-  isLoading: true,
+  status: {
+    isLoaded: false,
+    isPlaying: false,
+    durationMillis: 0,
+    positionMillis: 0,
+    playableDurationMillis: 0,
+    didJustFinish: false,
+  },
+  isDetialLoading: true,
+  isVideoLoading: false,
   showControls: false,
   showEpisodeModal: false,
   showSourceModal: false,
@@ -83,6 +105,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
   bufferedPosition: 0,
   initialPosition: 0,
   playbackRate: 1.0,
+  isLandscapeMode: null,
   introEndTime: undefined,
   outroStartTime: undefined,
   _seekTimeout: undefined,
@@ -108,7 +131,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     }
 
     set({
-      isLoading: true,
+      isDetialLoading: true,
     });
     
     const needsDetailInit = !detail || !episodes || episodes.length === 0 || detail.title !== title;
@@ -140,12 +163,12 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
         if (detailStoreState.error) {
           logger.error(`[ERROR] DetailStore error: ${detailStoreState.error}`);
           set({ 
-            isLoading: false,
+            isDetialLoading: false,
             // 可以选择在这里设置一个错误状态，但playerStore可能没有error字段
           });
         } else {
           logger.error(`[ERROR] DetailStore init completed but no detail found and no error reported`);
-          set({ isLoading: false });
+          set({ isDetialLoading: false });
         }
         return;
       }
@@ -170,7 +193,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
           detail = sourceWithEpisodes;
         } else {
           logger.error(`[ERROR] No source with episodes found in searchResults`);
-          set({ isLoading: false });
+          set({ isDetialLoading: false });
           return;
         }
       }
@@ -194,13 +217,13 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     // 最终验证：确保我们有有效的detail和episodes数据
     if (!detail) {
       logger.error(`[ERROR] Final check failed: detail is null`);
-      set({ isLoading: false });
+      set({ isDetialLoading: false });
       return;
     }
     
     if (!episodes || episodes.length === 0) {
       logger.error(`[ERROR] Final check failed: no episodes available for source "${detail.source}" (${detail.source_name})`);
-      set({ isLoading: false });
+      set({ isDetialLoading: false });
       return;
     }
     
@@ -233,7 +256,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       const isFavorited = await FavoriteManager.isFavorited(source, id.toString());
 
       set({
-        isLoading: false,
+        isDetialLoading: false,
         currentEpisodeIndex: episodeIndex,
         initialPosition: position || initialPositionFromRecord,
         playbackRate: savedPlaybackRate,
@@ -248,7 +271,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       
     } catch (error) {
       logger.debug("Failed to load play record", error);
-      set({ isLoading: false });
+      set({ isDetialLoading: false });
       
       const perfEnd = performance.now();
       logger.info(`[PERF] PlayerStore.loadVideo ERROR - total time: ${(perfEnd - perfStart).toFixed(2)}ms`);
@@ -266,7 +289,9 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
         seekPosition: 0,
       });
       try {
-        await videoRef?.current?.replayAsync();
+        await videoRef?.current?.seek(0);
+        await videoRef?.current?.resume();
+        
       } catch (error) {
         logger.debug("Failed to replay video:", error);
         Toast.show({ type: "error", text1: "播放失败" });
@@ -278,10 +303,11 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     const { status, videoRef } = get();
     if (status?.isLoaded) {
       try {
-        if (status.isPlaying) {
-          await videoRef?.current?.pauseAsync();
-        } else {
-          await videoRef?.current?.playAsync();
+        if (status?.isPlaying) {
+          await videoRef?.current?.pause();
+        }
+        else {
+          await videoRef?.current?.resume();
         }
       } catch (error) {
         logger.debug("Failed to toggle play/pause:", error);
@@ -328,7 +354,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     }
     const timeoutId = setTimeout(async () => {
       try {
-        await videoRef?.current?.setPositionAsync(newPosition);
+        await videoRef?.current?.seek(newPosition / 1000);
       } catch (error) {
         logger.debug("Failed to seek video:", error);
         Toast.show({ type: "error", text1: "快进/快退失败" });
@@ -426,52 +452,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     }
   },
 
-  handlePlaybackStatusUpdate: (newStatus) => {
-    if (!newStatus.isLoaded) {
-      if (newStatus.error) {
-        logger.debug(`Playback Error: ${newStatus.error}`);
-      }
-      set({ status: newStatus });
-      return;
-    }
-
-    const { currentEpisodeIndex, episodes, outroStartTime, playEpisode } = get();
-    const detail = useDetailStore.getState().detail;
-
-    if (
-      outroStartTime &&
-      newStatus.durationMillis &&
-      newStatus.positionMillis >= newStatus.durationMillis - outroStartTime
-    ) {
-      if (currentEpisodeIndex < episodes.length - 1) {
-        playEpisode(currentEpisodeIndex + 1);
-        return; // Stop further processing for this update
-      }
-    }
-
-    if (detail && newStatus.durationMillis) {
-      get().savePlayRecord();
-
-      const isNearEnd = newStatus.positionMillis / newStatus.durationMillis > 0.95;
-      if (isNearEnd && currentEpisodeIndex < episodes.length - 1 && !outroStartTime) {
-        set({ showNextEpisodeOverlay: true });
-      } else {
-        set({ showNextEpisodeOverlay: false });
-      }
-    }
-
-    if (newStatus.didJustFinish) {
-      if (currentEpisodeIndex < episodes.length - 1) {
-        playEpisode(currentEpisodeIndex + 1);
-      }
-    }
-
-    const progressPosition = newStatus.durationMillis ? newStatus.positionMillis / newStatus.durationMillis : 0;
-    const bufferedPosition = newStatus.durationMillis ? newStatus.playableDurationMillis / newStatus.durationMillis : 0;
-    set({ status: newStatus, progressPosition, bufferedPosition });
-  },
-
-  setLoading: (loading) => set({ isLoading: loading }),
+  setLoading: (loading) => set({ isDetialLoading: loading }),
   setShowControls: (show) => set({ showControls: show }),
   setShowEpisodeModal: (show) => set({ showEpisodeModal: show }),
   setShowSourceModal: (show) => set({ showSourceModal: show }),
@@ -479,11 +460,9 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
   setShowNextEpisodeOverlay: (show) => set({ showNextEpisodeOverlay: show }),
 
   setPlaybackRate: async (rate) => {
-    const { videoRef } = get();
     const detail = useDetailStore.getState().detail;
     
     try {
-      await videoRef?.current?.setRateAsync(rate, true);
       set({ playbackRate: rate });
       
       // Save the playback rate preference
@@ -499,8 +478,15 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     set({
       episodes: [],
       currentEpisodeIndex: 0,
-      status: null,
-      isLoading: true,
+      status: {
+        isLoaded: false,
+        isPlaying: false,
+        durationMillis: 0,
+        positionMillis: 0,
+        playableDurationMillis: 0,
+        didJustFinish: false,
+      },
+      isDetialLoading: true,
       showControls: false,
       showEpisodeModal: false,
       showSourceModal: false,
@@ -510,7 +496,42 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       playbackRate: 1.0,
       introEndTime: undefined,
       outroStartTime: undefined,
+      isLandscapeMode: null,
     });
+  },
+
+  handleVideoLoad: async (data: OnLoadData) => {
+    try {
+      const { videoRef, initialPosition, introEndTime, status  } = get();
+      // 1. 先设置位置（如果需要）
+      const jumpPosition = initialPosition || introEndTime || 0;
+      if (jumpPosition > 0) {
+        logger.info(`[PERF] Setting initial position to ${jumpPosition}ms`);
+        await videoRef?.current?.seek(jumpPosition / 1000);
+        await videoRef?.current?.resume();
+      }
+      
+      // 根据视频高宽比, 决定是否切换为横屏
+      const { width, height } = data.naturalSize;
+
+      const newStatus = {
+        ...status,
+        isLoaded: true
+      }
+
+      set({
+        status: newStatus,
+        isLandscapeMode: width > height,
+        isVideoLoading: false,
+      });
+      logger.info(`[PERF] Video loading complete - isDetialLoading set to false`);
+
+    } catch (error) {
+      logger.warn(`[AUTOPLAY] Failed to auto-play after onLoad:`, error);
+      // 即使自动播放失败，也要设置加载完成状态
+      set({ isVideoLoading: false });
+      // 不显示错误提示，因为自动播放失败是常见且预期的情况
+    }
   },
 
   handleVideoError: async (errorType: 'ssl' | 'network' | 'other', failedUrl: string) => {
@@ -523,7 +544,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     
     if (!detail) {
       logger.error(`[VIDEO_ERROR] Cannot fallback - no detail available`);
-      set({ isLoading: false });
+      set({ isDetialLoading: false });
       return;
     }
     
@@ -542,7 +563,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
         text1: "播放失败", 
         text2: "所有播放源都不可用，请稍后重试" 
       });
-      set({ isLoading: false });
+      set({ isDetialLoading: false });
       return;
     }
     
@@ -562,7 +583,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
         
         set({
           episodes: mappedEpisodes,
-          isLoading: false, // 让Video组件重新渲染
+          isDetialLoading: false, // 让Video组件重新渲染
         });
         
         const perfEnd = performance.now();
@@ -576,13 +597,81 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
         });
       } else {
         logger.error(`[VIDEO_ERROR] Fallback source doesn't have episode ${currentEpisodeIndex + 1}`);
-        set({ isLoading: false });
+        set({ isDetialLoading: false });
       }
     } catch (error) {
       logger.error(`[VIDEO_ERROR] Failed to switch to fallback source:`, error);
-      set({ isLoading: false });
+      set({ isDetialLoading: false });
     }
   },
+  
+  // 播放进度更新
+  handleVideoProgress: (data) => {
+    const positionMillis = data.currentTime * 1000;
+    const durationMillis = data.seekableDuration * 1000;
+    const playableDurationMillis = data.playableDuration * 1000;
+    
+    const { currentEpisodeIndex, episodes, outroStartTime, playEpisode, status } = get();
+    const detail = useDetailStore.getState().detail;
+
+    if (
+      outroStartTime &&
+      durationMillis &&
+      positionMillis >= durationMillis - outroStartTime
+    ) {
+      if (currentEpisodeIndex < episodes.length - 1) {
+        playEpisode(currentEpisodeIndex + 1);
+        return; // Stop further processing for this update
+      }
+    }
+
+    if (detail && durationMillis) {
+      get().savePlayRecord();
+
+      const isNearEnd = positionMillis / durationMillis > 0.95;
+      if (isNearEnd && currentEpisodeIndex < episodes.length - 1 && !outroStartTime) {
+        set({ showNextEpisodeOverlay: true });
+      } else {
+        set({ showNextEpisodeOverlay: false });
+      }
+    }
+
+    const newStatus = {
+      ...status,
+      durationMillis,
+      positionMillis,
+      playableDurationMillis
+    };
+
+    const progressPosition = durationMillis ? positionMillis / durationMillis : 0;
+    const bufferedPosition = durationMillis ? playableDurationMillis / durationMillis : 0;
+
+    // logger.info(''+(playableDurationMillis-positionMillis)/1000+'秒')
+
+    set({ status : newStatus, progressPosition, bufferedPosition });
+  },
+
+  // 视频播放结束
+  handleVideoEnd: () => {
+    const { currentEpisodeIndex, episodes, playEpisode } = get();
+    if (currentEpisodeIndex < episodes.length - 1) {
+      playEpisode(currentEpisodeIndex + 1);
+    }
+  },
+
+  handleVideoPlaybackStateChanged: (data) => {
+    const { isPlaying } = data;
+    const { status } = get();
+    const newStatus = {
+      ...status,
+      isPlaying,
+    };
+
+    set({
+      status: newStatus
+    });
+  }
+
 }));
 
 export default usePlayerStore;
@@ -593,9 +682,13 @@ export const selectCurrentEpisode = (state: PlayerState) => {
     state.episodes &&
     Array.isArray(state.episodes) &&
     state.episodes.length > 0 &&
-    state.currentEpisodeIndex >= 0 &&
-    state.currentEpisodeIndex < state.episodes.length
+    state.currentEpisodeIndex >= 0
   ) {
+    if (state.currentEpisodeIndex >= state.episodes.length) {
+      // 超过当前源的最大集数，跳转最后一集
+      state.playEpisode(state.episodes.length - 1);
+      return undefined;
+    }
     const episode = state.episodes[state.currentEpisodeIndex];
     // 确保episode有有效的URL
     if (episode && episode.url && episode.url.trim() !== "") {

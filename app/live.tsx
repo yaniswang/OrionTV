@@ -156,8 +156,7 @@ export default function LiveScreen() {
     <>
       <LivePlayer 
         streamUrl={selectedChannelUrl} 
-        channelTitle={channelTitle} 
-        onPlaybackStatusUpdate={() => {}} 
+        channelTitle={channelTitle}
         onScreenPress={onScreenPress}
         onScreenGesture={onScreenGesture}
       />

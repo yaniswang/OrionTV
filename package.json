@@ -26,6 +26,7 @@
     "react-native": "npm:react-native-tvos@~0.74.2-0"
   },
   "dependencies": {
+    "@brightlayer-ui/react-native-progress-icons": "^2.2.2",
     "@expo/vector-icons": "^14.0.0",
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-native-community/netinfo": "^11.3.2",
@@ -33,7 +34,7 @@
     "@react-navigation/native": "^6.0.2",
     "@shopify/flash-list": "^1.8.3",
     "expo": "~51.0.13",
-    "expo-av": "~14.0.7",
+    "expo-battery": "~8.0.1",
     "expo-build-properties": "~0.12.5",
     "expo-constants": "~16.0.2",
     "expo-font": "~12.0.7",
@@ -66,6 +67,7 @@
     "react-native-system-setting": "^1.7.6",
     "react-native-tcp-socket": "^6.0.6",
     "react-native-toast-message": "^2.3.3",
+    "react-native-video": "6.18.0",
     "react-native-web": "~0.19.10",
     "zustand": "^5.0.6"
   },

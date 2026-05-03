@@ -16,8 +16,9 @@ const SPEED_OPTIONS: SpeedOption[] = [
   { rate: 1.0, label: "1x" },
   { rate: 1.25, label: "1.25x" },
   { rate: 1.5, label: "1.5x" },
-  { rate: 1.75, label: "1.75x" },
   { rate: 2.0, label: "2x" },
+  { rate: 4.0, label: "4x" },
+  { rate: 8.0, label: "8x" },
 ];
 
 export const SpeedSelectionModal: React.FC = () => {
@@ -38,7 +39,7 @@ export const SpeedSelectionModal: React.FC = () => {
         <Text style={styles.modalTitle}>播放速度</Text>
         <FlashList
           data={SPEED_OPTIONS}
-          numColumns={3}
+          numColumns={4}
           keyExtractor={(item) => `speed-${item.rate}`}
           extraData={playbackRate}
           estimatedItemSize={77}

@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef, memo, useMemo, useCallback } from "react";
-import { StyleSheet, BackHandler, AppState, AppStateStatus, View, Dimensions, Platform, Text } from "react-native";
+import React, { useState, useEffect, useRef, memo, useMemo } from "react";
+import { StyleSheet, BackHandler, View, Dimensions, Platform, ActivityIndicator } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Audio, Video } from "expo-av";
+import Video, { VideoRef } from 'react-native-video';
 import { useKeepAwake } from "expo-keep-awake";
 import { ThemedView } from "@/components/ThemedView";
 import { PlayerControls } from "@/components/PlayerControls";
@@ -89,40 +89,24 @@ const createResponsiveStyles = (deviceType: string) => {
       transform: [{ translateY: -75 }],
       width: 15,
     },
-    topTitleContainer: {
+    topRightContainer: {
       position: "absolute",
       top:20,
-      width: '100%',
-      justifyContent: "space-between",
-      alignItems: "center",
-    },
-    topTitleText: {
-      color: "white",
-      fontSize: 16,
-      fontWeight: "bold",
-      flex: 1,
-      textAlign: "center",
-      marginHorizontal: 10,
-    },
+      right: 10,
+    }
   });
 };
 
 export default function PlayScreen() {
-  const videoRef = useRef<Video>(null);
+  const videoRef = useRef<VideoRef>(null);
   const router = useRouter();
   const [volume, setVolume] = useState(-1);
   const [volumeBarShow, setVolumeBarShow] = useState(-1);
   const [brightness, setBrightness] = useState(-1);
   const [brightnessBarShow, setBrightnessBarShow] = useState(-1);
   const [gestureMode, setGestureMode] = useState('');
-  const [landscape, setLandscape] = useState(-1);
-  useKeepAwake();
 
-  useEffect(() => {
-    Audio.setAudioModeAsync({
-      staysActiveInBackground: true,
-    }); 
-  }, []);
+  useKeepAwake();
 
   // 响应式布局配置
   const { deviceType } = useResponsiveLayout();
@@ -163,14 +147,17 @@ export default function PlayScreen() {
   const id = videoId || detail?.id.toString();
   const title = videoTitle || detail?.title;
   const {
-    isLoading,
+    isDetialLoading,
+    isVideoLoading,
     showControls,
     // showNextEpisodeOverlay,
-    initialPosition,
-    introEndTime,
     playbackRate,
+    isLandscapeMode,
     setVideoRef,
-    handlePlaybackStatusUpdate,
+    handleVideoProgress,
+    handleVideoLoad,
+    handleVideoEnd,
+    handleVideoPlaybackStateChanged,
     setShowControls,
     togglePlayPause,
     // setShowNextEpisodeOverlay,
@@ -180,33 +167,21 @@ export default function PlayScreen() {
     seek,
   } = usePlayerStore();
   const currentEpisode = usePlayerStore(selectCurrentEpisode);
-  const resources = useSources();
-  
-  const currentEpisodeTitle = currentEpisode?.title;
-
-  const currentSource = resources.find((r) => r.source === detail?.source);
-  const currentSourceName = currentSource?.source_name;
-
-  const handleVideoSize = useCallback((naturalSize) => {
-    const { width, height } = naturalSize;
-    setLandscape(width > height ? 1 : 0);
-  }, []);
 
   // 使用Video事件处理hook
   const { videoProps } = useVideoHandlers({
-    videoRef,
     currentEpisode,
-    initialPosition,
-    introEndTime,
     playbackRate,
-    handlePlaybackStatusUpdate,
-    handleVideoSize,
+    handleVideoProgress,
+    handleVideoLoad,
+    handleVideoEnd,
+    handleVideoPlaybackStateChanged,
     deviceType,
     detail: detail || undefined,
   });
 
   useEffect(() => {
-    if(deviceType == 'mobile' && landscape === 1) {
+    if(deviceType == 'mobile' && isLandscapeMode) {
       // 手机并且视频为横屏模式，切换为横屏
       setOrientation(true);
     }
@@ -215,14 +190,14 @@ export default function PlayScreen() {
       Immersive.on();
     }
     return () => {
-      if(deviceType == 'mobile' && landscape === 1) {
+      if(deviceType == 'mobile' && isLandscapeMode) {
         setOrientation(false);
       }
       if (!Platform.isTV) {
         Immersive.off();
       }
     }
-  }, [landscape]);
+  }, [isLandscapeMode]);
 
   // TV遥控器处理 - 总是调用hook，但根据设备类型决定是否使用结果
   const tvRemoteHandler = useTVRemoteHandler();
@@ -377,20 +352,6 @@ export default function PlayScreen() {
   const composedGesture = Gesture.Race(panGesture, taps);
 
   useEffect(() => {
-    const handleAppStateChange = (nextAppState: AppStateStatus) => {
-      if (nextAppState === "background" || nextAppState === "inactive") {
-        videoRef.current?.pauseAsync();
-      }
-    };
-
-    const subscription = AppState.addEventListener("change", handleAppStateChange);
-
-    return () => {
-      subscription.remove();
-    };
-  }, []);
-
-  useEffect(() => {
     const handelBack = async() => {
       // 页面跳转前保存播放记录
       await savePlayRecord({ }, { immediate: true });
@@ -413,10 +374,10 @@ export default function PlayScreen() {
   useEffect(() => {
     let timeoutId: NodeJS.Timeout | null = null;
 
-    if (isLoading) {
+    if (isDetialLoading) {
       timeoutId = setTimeout(() => {
-        if (usePlayerStore.getState().isLoading) {
-          usePlayerStore.setState({ isLoading: false });
+        if (usePlayerStore.getState().isDetialLoading) {
+          usePlayerStore.setState({ isDetialLoading: false });
           Toast.show({ type: "error", text1: "播放超时，请重试" });
         }
       }, 60000); // 1 minute
@@ -427,10 +388,10 @@ export default function PlayScreen() {
         clearTimeout(timeoutId);
       }
     };
-  }, [isLoading]);
+  }, [isDetialLoading]);
 
   if (!detail) {
-    return <VideoLoadingAnimation showProgressBar />;
+    return <VideoLoadingAnimation showProgressBar loadingText="加载视频详情中，请稍等..." />;
   }
 
   return (
@@ -451,28 +412,20 @@ export default function PlayScreen() {
       {showControls && (
         <PlayerControls showControls={showControls} setShowControls={setShowControls} />
       )}
-      {showControls && (
-        <View style={dynamicStyles.topTitleContainer}>
-          <Text style={dynamicStyles.topTitleText}>
-            {title} {videoStype === 'tv' && currentEpisodeTitle ? `- ${currentEpisodeTitle}` : ""}{" "}
-            {currentSourceName ? `(${currentSourceName})` : ""}
-          </Text>
-        </View>
-      )}
 
       {!showControls && (<SeekingBar />)}
 
       {/* 只在Video组件存在且正在加载时显示加载动画覆盖层 */}
-      {currentEpisode?.url && isLoading && (
+      {currentEpisode?.url && isVideoLoading && (
         <View style={dynamicStyles.loadingContainer}>
-          <VideoLoadingAnimation showProgressBar />
+          <VideoLoadingAnimation showProgressBar loadingText="拼命加载视频中..." />
         </View>
       )}
 
       {/* <NextEpisodeOverlay visible={showNextEpisodeOverlay} onCancel={() => setShowNextEpisodeOverlay(false)} /> */}
-      <EpisodeSelectionModal />
-      <SourceSelectionModal />
-      <SpeedSelectionModal />
+      {currentEpisode?.url && (<EpisodeSelectionModal />)}
+      {currentEpisode?.url && (<SourceSelectionModal />)}
+      {currentEpisode?.url && (<SpeedSelectionModal />)}
       
       <View style={dynamicStyles.brightnessBar}>
         <AnimatedVerticalProgress progress={brightness} forceShow={brightnessBarShow} />

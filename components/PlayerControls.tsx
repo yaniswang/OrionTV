@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, StyleSheet, Pressable } from "react-native";
+import { View, Text, StyleSheet, Pressable, Platform } from "react-native";
 import { Pause, Play, SkipForward, List, Tv, ArrowDownToDot, ArrowUpFromDot, Gauge } from "lucide-react-native";
 import { ThemedText } from "@/components/ThemedText";
 import { MediaButton } from "@/components/MediaButton";
@@ -9,12 +9,17 @@ import usePlayerStore from "@/stores/playerStore";
 import useDetailStore from "@/stores/detailStore";
 import { useSources } from "@/stores/sourceStore";
 
+import {Battery} from '@brightlayer-ui/react-native-progress-icons';
+import { useBatteryLevel, useBatteryState, BatteryState } from 'expo-battery';
+
 interface PlayerControlsProps {
   showControls: boolean;
   setShowControls: (show: boolean) => void;
 }
 
 export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, setShowControls }) => {
+  const batteryLevel = useBatteryLevel();
+  const batteryState = useBatteryState();
   const {
     currentEpisodeIndex,
     episodes,
@@ -78,84 +83,99 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
   const seekPositionMillis = seekPosition * durationMillis;
 
   return (
-    <View style={styles.controlsOverlay}>
+    <View style={styles.controlContainer}>
+      <View style={styles.topTitleContainer}>
+        <Text style={styles.topTitleText}>
+          {videoTitle} {episodes.length > 1 && currentEpisodeTitle ? `- ${currentEpisodeTitle}` : ""}{" "}
+          {currentSourceName ? `(${currentSourceName})` : ""}
+        </Text>
+      </View>
+      <View style={styles.topLeftContainer}>
+        <Text style={styles.topLeftText}>
+          {new Intl.DateTimeFormat('en-GB', {hour: '2-digit',minute: '2-digit',hour12: false}).format(new Date())}
+        </Text>
+      </View>
+      <View style={styles.topRightContainer}>
+        {!Platform.isTV && (<Battery percent={batteryLevel*100} size={30} color={'#00bb5ea0'} charging={batteryState === BatteryState.CHARGING} outlined={false}/>)}
+      </View>
+      <View style={styles.controlsOverlay}>
+        <View style={styles.bottomControlsContainer}>
+          <View style={styles.progressBarContainer}>
+            <View style={styles.progressBarBackground} />
+            <View
+              style={[
+                styles.bufferedBarFilled,
+                {
+                  width: `${bufferedPosition * 100}%`,
+                },
+              ]}
+            />
+            <View
+              style={[
+                styles.progressBarFilled,
+                {
+                  width: `${(isSeeking ? seekPosition : progressPosition) * 100}%`,
+                },
+              ]}
+            />
+            <Pressable style={styles.progressBarTouchable} />
+          </View>
 
-      <View style={styles.bottomControlsContainer}>
-        <View style={styles.progressBarContainer}>
-          <View style={styles.progressBarBackground} />
-          <View
-            style={[
-              styles.bufferedBarFilled,
-              {
-                width: `${bufferedPosition * 100}%`,
-              },
-            ]}
-          />
-          <View
-            style={[
-              styles.progressBarFilled,
-              {
-                width: `${(isSeeking ? seekPosition : progressPosition) * 100}%`,
-              },
-            ]}
-          />
-          <Pressable style={styles.progressBarTouchable} />
-        </View>
+          <ThemedText style={{ color: "white", marginTop: 5 }}>
+            {status?.isLoaded
+              ? `${formatTime(isSeeking ? seekPositionMillis : status.positionMillis)} / ${formatTime(status.durationMillis || 0)}`
+              : "00:00 / 00:00"}
+          </ThemedText>
 
-        <ThemedText style={{ color: "white", marginTop: 5 }}>
-          {status?.isLoaded
-            ? `${formatTime(isSeeking ? seekPositionMillis : status.positionMillis)} / ${formatTime(status.durationMillis || 0)}`
-            : "00:00 / 00:00"}
-        </ThemedText>
-
-        <View style={styles.bottomControls}>
-          {episodes.length > 1 && (
-            <MediaButton onPress={setIntroEndTime} timeLabel={introEndTime ? formatTime(introEndTime) : undefined}>
-              <ArrowDownToDot color="white" size={24} />
-            </MediaButton>
-          )}
-
-          <MediaButton onPress={togglePlayPause} hasTVPreferredFocus={showControls}>
-            {status?.isLoaded && status.isPlaying ? (
-              <Pause color="white" size={24} />
-            ) : (
-              <Play color="white" size={24} />
+          <View style={styles.bottomControls}>
+            {episodes.length > 1 && (
+              <MediaButton onPress={setIntroEndTime} timeLabel={introEndTime ? formatTime(introEndTime) : undefined}>
+                <ArrowDownToDot color="white" size={24} />
+              </MediaButton>
             )}
-          </MediaButton>
 
-          {episodes.length > 1 && (
-            <MediaButton onPress={onPlayNextEpisode} disabled={!hasNextEpisode}>
-              <SkipForward color={hasNextEpisode ? "white" : "#666"} size={24} />
+            <MediaButton onPress={togglePlayPause} hasTVPreferredFocus={showControls}>
+              {status?.isLoaded && status.isPlaying ? (
+                <Pause color="white" size={24} />
+              ) : (
+                <Play color="white" size={24} />
+              )}
             </MediaButton>
-          )}
 
-          {episodes.length > 1 && (
-            <MediaButton onPress={setOutroStartTime} timeLabel={outroStartTime ? formatTime(outroStartTime) : undefined}>
-              <ArrowUpFromDot color="white" size={24} />
+            {episodes.length > 1 && (
+              <MediaButton onPress={onPlayNextEpisode} disabled={!hasNextEpisode}>
+                <SkipForward color={hasNextEpisode ? "white" : "#666"} size={24} />
+              </MediaButton>
+            )}
+
+            {episodes.length > 1 && (
+              <MediaButton onPress={setOutroStartTime} timeLabel={outroStartTime ? formatTime(outroStartTime) : undefined}>
+                <ArrowUpFromDot color="white" size={24} />
+              </MediaButton>
+            )}
+
+            {episodes.length > 1 && (
+              <MediaButton onPress={() => setShowEpisodeModal(true)}>
+                <List color="white" size={24} />
+              </MediaButton>
+            )}
+
+            <MediaButton onPress={() => setShowSourceModal(true)}>
+              <Tv color="white" size={24} />
             </MediaButton>
-          )}
 
-          {episodes.length > 1 && (
-            <MediaButton onPress={() => setShowEpisodeModal(true)}>
-              <List color="white" size={24} />
+            <MediaButton onPress={() => setShowSpeedModal(true)} timeLabel={playbackRate !== 1.0 ? `${playbackRate}x` : undefined}>
+              <Gauge color="white" size={24} />
             </MediaButton>
-          )}
 
-          <MediaButton onPress={() => setShowSourceModal(true)}>
-            <Tv color="white" size={24} />
-          </MediaButton>
-
-          <MediaButton onPress={() => setShowSpeedModal(true)} timeLabel={playbackRate !== 1.0 ? `${playbackRate}x` : undefined}>
-            <Gauge color="white" size={24} />
-          </MediaButton>
-
-          <MediaButton onPress={toggleFavorite}>
-            <FontAwesome
-                name={isFavorited ? "heart" : "heart-o"}
-                size={20}
-                color={isFavorited ? "#feff5f" : "#ccc"}
-              />
-          </MediaButton>
+            <MediaButton onPress={toggleFavorite}>
+              <FontAwesome
+                  name={isFavorited ? "heart" : "heart-o"}
+                  size={20}
+                  color={isFavorited ? "#feff5f" : "#ccc"}
+                />
+            </MediaButton>
+          </View>
         </View>
       </View>
     </View>
@@ -163,6 +183,13 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
 };
 
 const styles = StyleSheet.create({
+  controlContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
   controlsOverlay: {
     position: 'absolute',
     bottom: 0,
@@ -170,19 +197,6 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0, 0, 0, 0.4)",
     justifyContent: "space-between",
     padding: 20,
-  },
-  topControls: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  controlTitle: {
-    color: "white",
-    fontSize: 16,
-    fontWeight: "bold",
-    flex: 1,
-    textAlign: "center",
-    marginHorizontal: 10,
   },
   bottomControlsContainer: {
     width: "100%",
@@ -239,12 +253,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
-  topRightContainer: {
-    padding: 10,
-    alignItems: "center",
-    justifyContent: "center",
-    minWidth: 44, // Match TouchableOpacity default size for alignment
-  },
   resolutionText: {
     color: "white",
     fontSize: 16,
@@ -253,5 +261,35 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
+  },
+  topTitleContainer: {
+    position: "absolute",
+    top:20,
+    width: '100%',
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  topTitleText: {
+    color: "white",
+    fontSize: 16,
+    fontWeight: "bold",
+    flex: 1,
+    textAlign: "center",
+    marginHorizontal: 10,
+  },
+  topLeftContainer: {
+    position: "absolute",
+    top:20,
+    left: 10,
+  },
+  topLeftText: {
+    color: "white",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  topRightContainer: {
+    position: "absolute",
+    top:20,
+    right: 10,
   },
 });

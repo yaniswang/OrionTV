@@ -99,7 +99,14 @@ const useDetailStore = create<DetailState>((set, get) => ({
 
       set((state) => {
         const existingSources = new Set(state.searchResults.map((r) => r.source));
-        resultsWithResolution = resultsWithResolution.filter((r) => r.pingTime); // 丢充无法获取M3U8的数据
+        const mapExistsIds = {};
+        resultsWithResolution = resultsWithResolution.filter((r) => {
+          const firstId = !mapExistsIds[r.id]
+          if (firstId) {
+            mapExistsIds[r.id] = true;
+          }
+          return firstId && r.pingTime;
+        }); // 丢充无法获取M3U8的数据或者重复的ID
         const newResults = resultsWithResolution.filter((r) => !existingSources.has(r.source));
         const finalResults = merge ? [...state.searchResults, ...newResults] : resultsWithResolution;
 

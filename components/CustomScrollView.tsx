@@ -32,31 +32,9 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
 }) => {
   const scrollViewRef = useRef<any>(null);
   const [showScrollToTop, setShowScrollToTop] = useState(false);
-  const { width, height } = useWindowDimensions();
-  const [isRotating, setIsRotating] = useState(false);
-  const lastOrientation = useRef<any>('');
   const responsiveConfig = useResponsiveLayout();
   const commonStyles = getCommonResponsiveStyles(responsiveConfig);
   const { deviceType } = responsiveConfig;
-
-  const orientation = width > height ? 'landscape' : 'portrait';
-
-  useEffect(() => {
-    if (lastOrientation.current !== '') {
-      // 首次不等待,二次才等待旋转
-      lastOrientation.current = orientation;
-      setIsRotating(true);
-    
-      // 主动探测：等待所有原生动画（旋转、转场等）结束
-      const task = InteractionManager.runAfterInteractions(() => {
-        requestAnimationFrame(() => {
-          setIsRotating(false);
-        });
-      });
-    
-      return () => task.cancel();
-    }
-  }, [orientation]); 
 
   // 添加返回键处理逻辑
   useEffect(() => {
@@ -144,7 +122,8 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
     listContent: {
       flex: 1,
       backgroundColor: '#000000',
-      opacity: 1
+      opacity: 1,
+      margin:0,
     },
     itemWithMargin: {
       width: responsiveConfig.cardWidth,
@@ -161,10 +140,8 @@ const CustomScrollView: React.FC<CustomScrollViewProps> = ({
     },
   });
 
-  if (isRotating) return <View style={{ flex: 1 }} />;
-
   return (
-    <View style={dynamicStyles.listContent} renderToHardwareTextureAndroid={false}>
+    <View style={dynamicStyles.listContent} renderToHardwareTextureAndroid={false} collapsable={false}>
       <FlashList
         ref={scrollViewRef}
         data={data}

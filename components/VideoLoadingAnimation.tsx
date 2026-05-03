@@ -4,9 +4,10 @@ import { LinearGradient } from "expo-linear-gradient";
 
 interface VideoLoadingAnimationProps {
   showProgressBar?: boolean;
+  loadingText: string
 }
 
-const VideoLoadingAnimation: React.FC<VideoLoadingAnimationProps> = ({ showProgressBar = true }) => {
+const VideoLoadingAnimation: React.FC<VideoLoadingAnimationProps> = ({ showProgressBar = true, loadingText = '正在加载视频详情...' }) => {
   const floatAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(0)).current;
   const bounceAnims = [
@@ -218,7 +219,7 @@ const VideoLoadingAnimation: React.FC<VideoLoadingAnimationProps> = ({ showProgr
           </View>
         )}
 
-        <Animated.Text style={[styles.loadingText, animatedStyles.textFade]}>正在加载视频详情...</Animated.Text>
+        <Animated.Text style={[styles.loadingText, animatedStyles.textFade]}>{loadingText}</Animated.Text>
       </View>
     </View>
   );

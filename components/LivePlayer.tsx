@@ -1,6 +1,6 @@
-import React, { useRef, useState, useEffect, useCallback } from "react";
-import { View, StyleSheet, Text, ActivityIndicator, Dimensions } from "react-native";
-import { Audio, Video, ResizeMode, AVPlaybackStatus } from "expo-av";
+import React, { useRef, useState, useEffect } from "react";
+import { View, StyleSheet, Text, ActivityIndicator, Dimensions, AppState, AppStateStatus } from "react-native";
+import Video, { VideoRef, ResizeMode, OnPlaybackStateChangedData, ViewType } from 'react-native-video';
 import { useKeepAwake } from "expo-keep-awake";
 import { GestureDetector, Gesture, GestureHandlerRootView } from 'react-native-gesture-handler';
 import SystemSetting from 'react-native-system-setting'
@@ -9,7 +9,6 @@ import { AnimatedVerticalProgress } from "@/components/AnimatedVerticalProgress"
 interface LivePlayerProps {
   streamUrl: string | null;
   channelTitle?: string | null;
-  onPlaybackStatusUpdate: (status: AVPlaybackStatus) => void;
   onScreenPress: () => void;
   onScreenGesture: (direction: string) => void;
 }
@@ -18,15 +17,9 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const PLAYBACK_TIMEOUT = 15000; // 15 seconds
 
-export default function LivePlayer({ streamUrl, channelTitle, onPlaybackStatusUpdate, onScreenPress, onScreenGesture }: LivePlayerProps) {
+export default function LivePlayer({ streamUrl, channelTitle, onScreenPress, onScreenGesture }: LivePlayerProps) {
 
-  useEffect(() => {
-    Audio.setAudioModeAsync({
-      staysActiveInBackground: true,
-    });
-  }, []);
-
-  const video = useRef<Video>(null);
+  const video = useRef<VideoRef>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isTimeout, setIsTimeout] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -39,15 +32,41 @@ export default function LivePlayer({ streamUrl, channelTitle, onPlaybackStatusUp
 
   const lastT_Y = useRef(0);
   const accumulativeY = useRef(0);
+
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
   
   useKeepAwake();
 
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState: AppStateStatus) => {
+      if (nextAppState === "background" || nextAppState === "inactive") {
+        // 切换到后台，重置视频播放
+        setVideoUrl(null);
+      }
+      else if (nextAppState === 'active') {
+        // 切换回前台，重新开始播放
+        setVideoUrl(streamUrl || '');
+      }
+    };
+    const subscription = AppState.addEventListener("change", handleAppStateChange);
+    return () => {
+      subscription.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    setVideoUrl(streamUrl || '');
+    return () => {
+      setVideoUrl(null);
+    };
+  }, [streamUrl]);
+  
   useEffect(() => {
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
     }
 
-    if (streamUrl) {
+    if (videoUrl) {
       setIsLoading(true);
       setIsTimeout(false);
       timeoutRef.current = setTimeout(() => {
@@ -64,32 +83,22 @@ export default function LivePlayer({ streamUrl, channelTitle, onPlaybackStatusUp
         clearTimeout(timeoutRef.current);
       }
     };
-  }, [streamUrl]);
+  }, [videoUrl]);
 
-  const handlePlaybackStatusUpdate = (status: AVPlaybackStatus) => {
-    if (status.isLoaded) {
-      if (status.isPlaying) {
-        if (timeoutRef.current) {
-          clearTimeout(timeoutRef.current);
-        }
-        setIsLoading(false);
-        setIsTimeout(false);
-      } else if (status.isBuffering) {
-        setIsLoading(true);
+  const handlePlaybackStateChanged = (data: OnPlaybackStateChangedData) => {
+    const { isPlaying } = data;
+    if (isPlaying) {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
       }
+      setIsLoading(false);
+      setIsTimeout(false);
     } else {
-      if (status.error) {
-        setIsLoading(false);
-        setIsTimeout(true);
-        if (timeoutRef.current) {
-          clearTimeout(timeoutRef.current);
-        }
-      }
+      setIsLoading(true);
     }
-    onPlaybackStatusUpdate(status);
-  };
+  }
 
-  if (!streamUrl) {
+  if (!videoUrl) {
     return (
       <View style={styles.container}>
         <Text style={styles.messageText}>按中键选择频道</Text>
@@ -205,12 +214,36 @@ export default function LivePlayer({ streamUrl, channelTitle, onPlaybackStatusUp
               ref={video}
               style={styles.video}
               source={{
-                uri: streamUrl,
+                uri: videoUrl,
+                bufferConfig: {
+                  minBufferMs: 5000, // 最小缓冲
+                  maxBufferMs: 20000, // 最大缓冲
+                  bufferForPlaybackMs: 1500, // 首次起播缓冲量
+                  bufferForPlaybackAfterRebufferMs: 3000, // 卡顿后恢复缓冲量
+                  backBufferDurationMs: 0, // 保留已播放的缓存
+                  cacheSizeMB: 0,
+                  live: {
+                    targetOffsetMs: 10000,
+                    minOffsetMs: 5000,
+                    maxOffsetMs: 20000,
+                    maxPlaybackSpeed: 1.1,
+                    minPlaybackSpeed: 0.95,
+                  }
+                }
               }}
               resizeMode={ResizeMode.CONTAIN}
-              shouldPlay
-              onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
+              paused={false}
+              muted={false}
+              disableAudioSessionManagement={false}
+              playWhenInactive={false}
+              progressUpdateInterval={1000}
+              playInBackground={false}
+              viewType={ViewType.SURFACE}
+              disableFocus={true}
+              reportBandwidth={true}
+              onPlaybackStateChanged={handlePlaybackStateChanged}
               onError={(e) => {
+                console.log(JSON.stringify(e))
                 setIsTimeout(true);
                 setIsLoading(false);
               }}

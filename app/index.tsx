@@ -27,7 +27,6 @@ export default function HomeScreen() {
   const colorScheme = "dark";
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [forceReload, setForceReload] = useState(new Date().getTime());
-  const fadeAnim = useRef(new Animated.Value(0)).current;
   const insets = useSafeAreaInsets();
   
   // 响应式布局配置
@@ -135,18 +134,6 @@ export default function HomeScreen() {
       clearError();
     }
   }, [apiConfigStatus.needsConfiguration, error, clearError]);
-
-  useEffect(() => {
-    if (!loading && contentData.length > 0) {
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-    } else if (loading) {
-      fadeAnim.setValue(0);
-    }
-  }, [loading, contentData.length, fadeAnim]);
 
   const handleCategorySelect = (category: Category) => {
     setSelectedTag(null);
@@ -321,6 +308,7 @@ export default function HomeScreen() {
     },
     contentContainer: {
       flex: 1,
+      paddingHorizontal: spacing,
     },
   });
   
@@ -407,7 +395,7 @@ export default function HomeScreen() {
           </ThemedText>
         </View>
       ) : (
-        <Animated.View style={[dynamicStyles.contentContainer, { opacity: fadeAnim }]}>
+        <View style={dynamicStyles.contentContainer}>
           <CustomScrollView
             data={contentData}
             renderItem={renderContentItem}
@@ -419,7 +407,7 @@ export default function HomeScreen() {
             emptyMessage={selectedCategory?.tags ? "请选择一个子分类" : "该分类下暂无内容"}
             ListFooterComponent={renderFooter}
           />
-        </Animated.View>
+        </View>
       )}
     </ThemedView>
   );
