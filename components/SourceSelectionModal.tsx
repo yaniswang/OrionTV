@@ -58,7 +58,7 @@ export const SourceSelectionModal: React.FC = () => {
         </View>
         <FlashList
           data={searchResults}
-          numColumns={3}
+          numColumns={Math.floor((responsiveConfig.screenWidth * 0.9) / 175)}
           keyExtractor={(item, index) => `source-${item.id}-${index}`}
           extraData={detail?.id}
           estimatedItemSize={60}
@@ -122,7 +122,6 @@ const styles = StyleSheet.create({
     margin: 4,
     marginLeft: 10,
     marginRight: 8,
-    width: "30%",
   },
   sourceItemText: {
     fontSize: 14,

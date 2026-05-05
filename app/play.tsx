@@ -12,7 +12,6 @@ import { SeekingBar } from "@/components/SeekingBar";
 // import { NextEpisodeOverlay } from "@/components/NextEpisodeOverlay";
 import VideoLoadingAnimation from "@/components/VideoLoadingAnimation";
 import useDetailStore from "@/stores/detailStore";
-import { useSources } from "@/stores/sourceStore";
 import { useTVRemoteHandler } from "@/hooks/useTVRemoteHandler";
 import Toast from "react-native-toast-message";
 import usePlayerStore, { selectCurrentEpisode } from "@/stores/playerStore";
@@ -27,8 +26,6 @@ import { AnimatedVerticalProgress } from "@/components/AnimatedVerticalProgress"
 
 const logger = Logger.withTag('PlayScreen');
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
 // 优化的加载动画组件
 const LoadingContainer = memo(
   ({ style, currentEpisode }: { style: any; currentEpisode: { url: string; title: string } | undefined }) => {
@@ -39,7 +36,7 @@ const LoadingContainer = memo(
     );
     return (
       <View style={style}>
-        <VideoLoadingAnimation showProgressBar />
+        <VideoLoadingAnimation showProgressBar loadingText="加载视频详情中，请稍等..." />
       </View>
     );
   }
@@ -109,7 +106,7 @@ export default function PlayScreen() {
   useKeepAwake();
 
   // 响应式布局配置
-  const { deviceType } = useResponsiveLayout();
+  const { deviceType, screenWidth } = useResponsiveLayout();
 
   // 处理屏幕旋转
   const setOrientation = async (fullscreen: boolean) => {
@@ -150,6 +147,7 @@ export default function PlayScreen() {
     isDetialLoading,
     isVideoLoading,
     showControls,
+    showLockControls,
     // showNextEpisodeOverlay,
     playbackRate,
     isLandscapeMode,
@@ -264,8 +262,20 @@ export default function PlayScreen() {
   const doubleTap = Gesture.Tap()
     .numberOfTaps(2)
     .runOnJS(true)
-    .onEnd(() => {
-      togglePlayPause()
+    .onEnd((event) => {
+      if (showLockControls) return;
+      const { x } = event;
+      if (x < screenWidth * 0.1) {
+        // 快退
+        seek(-5000);
+      }
+      else if(x > screenWidth * 0.9) {
+        // 快进
+        seek(5000);
+      }
+      else {
+        togglePlayPause()
+      }      
     });
 
   const lastT_X = useRef(0);
@@ -285,6 +295,7 @@ export default function PlayScreen() {
       lastT_Y.current = 0;
     })
     .onUpdate((e) => {
+      if (showLockControls) return;
       const { x, translationX, translationY, velocityX, velocityY } = e;
 
       const deltaX = translationX - lastT_X.current;
@@ -295,7 +306,7 @@ export default function PlayScreen() {
       lastT_Y.current = translationY;
       accumulativeY.current += deltaY;
 
-      const isRightSide = x > SCREEN_WIDTH / 2;
+      const isRightSide = x > screenWidth / 2;
       
       const absX = Math.abs(accumulativeX.current);
       const absY = Math.abs(accumulativeY.current);

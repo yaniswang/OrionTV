@@ -31,7 +31,8 @@
           }
         }
       ],
-      "expo-router"
+      "expo-router",
+      "./withAndroidShortEdges"
     ],
     "experiments": {
       "typedRoutes": true

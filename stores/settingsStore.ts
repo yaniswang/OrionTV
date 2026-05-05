@@ -10,6 +10,7 @@ const logger = Logger.withTag('SettingsStore');
 interface SettingsState {
   apiBaseUrl: string;
   m3uUrl: string;
+  m3uUa: string;
   remoteInputEnabled: boolean;
   videoSource: {
     enabledAll: boolean;
@@ -34,6 +35,7 @@ interface SettingsState {
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   apiBaseUrl: "",
   m3uUrl: "",
+  m3uUa: '',
   remoteInputEnabled: false,
   isModalVisible: false,
   serverConfig: null,
@@ -77,9 +79,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const ret = await api.getLiveSource();
     const sources = ret.data;
     if (sources.length>0) {
-      const sourceUrl = sources[0].url;
-      set({ m3uUrl: sourceUrl });
-      logger.info("Live source url:", sourceUrl);
+      const source = sources[0];
+      set({ 
+        m3uUrl: source.url,
+        m3uUa: source.ua
+      });
+      logger.info(`Live source url: ${source.url}, ua: ${source.ua}`);
     }
   },
   setApiBaseUrl: (url) => set({ apiBaseUrl: url }),

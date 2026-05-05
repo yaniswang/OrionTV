@@ -30,6 +30,7 @@ interface PlayerState {
   isDetialLoading: boolean;
   isVideoLoading: boolean;
   showControls: boolean;
+  showLockControls: boolean;
   showEpisodeModal: boolean;
   showSourceModal: boolean;
   showSpeedModal: boolean;
@@ -69,6 +70,7 @@ interface PlayerState {
   setOutroStartTime: () => void;
   reset: () => void;
   toggleFavorite:  () => void;
+  toggleLock:  () => void;
   _seekTimeout?: NodeJS.Timeout;
   _isRecordSaveThrottled: boolean;
   // Internal helper
@@ -95,6 +97,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
   isDetialLoading: true,
   isVideoLoading: false,
   showControls: false,
+  showLockControls: false,
   showEpisodeModal: false,
   showSourceModal: false,
   showSpeedModal: false,
@@ -336,6 +339,14 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     set({ isFavorited: newIsFavorited });
   },
 
+  // 切换锁定状态
+  toggleLock: async () => {
+    const { showLockControls } = get();
+    set({
+      showLockControls: !showLockControls
+    });
+  },
+
   seek: async (duration) => {
     const { isSeeking, status, videoRef, seekPosition } = get();
     if (!status?.isLoaded || !status.durationMillis) return;
@@ -488,6 +499,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       },
       isDetialLoading: true,
       showControls: false,
+      showLockControls: false,
       showEpisodeModal: false,
       showSourceModal: false,
       showSpeedModal: false,

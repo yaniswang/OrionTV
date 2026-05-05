@@ -1,9 +1,10 @@
 import React from "react";
 import { View, Text, StyleSheet, Pressable, Platform } from "react-native";
-import { Pause, Play, SkipForward, List, Tv, ArrowDownToDot, ArrowUpFromDot, Gauge } from "lucide-react-native";
+import { Pause, Play, SkipForward, List, Tv, ArrowDownToDot, ArrowUpFromDot, Gauge, Unlock, Lock } from "lucide-react-native";
 import { ThemedText } from "@/components/ThemedText";
 import { MediaButton } from "@/components/MediaButton";
 import { FontAwesome } from "@expo/vector-icons";
+import { StyledButton } from "./StyledButton";
 
 import usePlayerStore from "@/stores/playerStore";
 import useDetailStore from "@/stores/detailStore";
@@ -24,6 +25,8 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
     currentEpisodeIndex,
     episodes,
     status,
+    showLockControls,
+    toggleLock,
     isSeeking,
     seekPosition,
     progressPosition,
@@ -98,9 +101,99 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
       <View style={styles.topRightContainer}>
         {!Platform.isTV && (<Battery percent={batteryLevel*100} size={30} color={'#00bb5ea0'} charging={batteryState === BatteryState.CHARGING} outlined={false}/>)}
       </View>
-      <View style={styles.controlsOverlay}>
-        <View style={styles.bottomControlsContainer}>
-          <View style={styles.progressBarContainer}>
+      {!Platform.isTV && (
+        <View style={styles.lockContainer}>
+          <StyledButton onPress={toggleLock} variant="ghost">
+            {showLockControls && (<Lock color="white" size={20} />)}
+            {!showLockControls && (<Unlock color="white" size={20} />)}
+          </StyledButton>
+        </View>
+      )}
+      {!showLockControls && (
+        <View style={styles.controlsOverlay}>
+          <View style={styles.bottomControlsContainer}>
+            <View style={styles.progressBarContainer}>
+              <View style={styles.progressBarBackground} />
+              <View
+                style={[
+                  styles.bufferedBarFilled,
+                  {
+                    width: `${bufferedPosition * 100}%`,
+                  },
+                ]}
+              />
+              <View
+                style={[
+                  styles.progressBarFilled,
+                  {
+                    width: `${(isSeeking ? seekPosition : progressPosition) * 100}%`,
+                  },
+                ]}
+              />
+              <Pressable style={styles.progressBarTouchable} />
+            </View>
+
+            <ThemedText style={{ color: "white", marginTop: 5 }}>
+              {status?.isLoaded
+                ? `${formatTime(isSeeking ? seekPositionMillis : status.positionMillis)} / ${formatTime(status.durationMillis || 0)}`
+                : "00:00 / 00:00"}
+            </ThemedText>
+
+            <View style={styles.bottomControls}>
+              {episodes.length > 1 && (
+                <MediaButton onPress={setIntroEndTime} timeLabel={introEndTime ? formatTime(introEndTime) : undefined}>
+                  <ArrowDownToDot color="white" size={24} />
+                </MediaButton>
+              )}
+
+              <MediaButton onPress={togglePlayPause} hasTVPreferredFocus={showControls}>
+                {status?.isLoaded && status.isPlaying ? (
+                  <Pause color="white" size={24} />
+                ) : (
+                  <Play color="white" size={24} />
+                )}
+              </MediaButton>
+
+              {episodes.length > 1 && (
+                <MediaButton onPress={onPlayNextEpisode} disabled={!hasNextEpisode}>
+                  <SkipForward color={hasNextEpisode ? "white" : "#666"} size={24} />
+                </MediaButton>
+              )}
+
+              {episodes.length > 1 && (
+                <MediaButton onPress={setOutroStartTime} timeLabel={outroStartTime ? formatTime(outroStartTime) : undefined}>
+                  <ArrowUpFromDot color="white" size={24} />
+                </MediaButton>
+              )}
+
+              {episodes.length > 1 && (
+                <MediaButton onPress={() => setShowEpisodeModal(true)}>
+                  <List color="white" size={24} />
+                </MediaButton>
+              )}
+
+              <MediaButton onPress={() => setShowSourceModal(true)}>
+                <Tv color="white" size={24} />
+              </MediaButton>
+
+              <MediaButton onPress={() => setShowSpeedModal(true)} timeLabel={playbackRate !== 1.0 ? `${playbackRate}x` : undefined}>
+                <Gauge color="white" size={24} />
+              </MediaButton>
+
+              <MediaButton onPress={toggleFavorite}>
+                <FontAwesome
+                    name={isFavorited ? "heart" : "heart-o"}
+                    size={20}
+                    color={isFavorited ? "#feff5f" : "#ccc"}
+                  />
+              </MediaButton>
+            </View>
+          </View>
+        </View>
+      )}
+      {showLockControls && (
+        <View style={styles.lockBottomBarContainer}>
+          <View style={{...styles.progressBarContainer, marginTop: 0}}>
             <View style={styles.progressBarBackground} />
             <View
               style={[
@@ -120,64 +213,8 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
             />
             <Pressable style={styles.progressBarTouchable} />
           </View>
-
-          <ThemedText style={{ color: "white", marginTop: 5 }}>
-            {status?.isLoaded
-              ? `${formatTime(isSeeking ? seekPositionMillis : status.positionMillis)} / ${formatTime(status.durationMillis || 0)}`
-              : "00:00 / 00:00"}
-          </ThemedText>
-
-          <View style={styles.bottomControls}>
-            {episodes.length > 1 && (
-              <MediaButton onPress={setIntroEndTime} timeLabel={introEndTime ? formatTime(introEndTime) : undefined}>
-                <ArrowDownToDot color="white" size={24} />
-              </MediaButton>
-            )}
-
-            <MediaButton onPress={togglePlayPause} hasTVPreferredFocus={showControls}>
-              {status?.isLoaded && status.isPlaying ? (
-                <Pause color="white" size={24} />
-              ) : (
-                <Play color="white" size={24} />
-              )}
-            </MediaButton>
-
-            {episodes.length > 1 && (
-              <MediaButton onPress={onPlayNextEpisode} disabled={!hasNextEpisode}>
-                <SkipForward color={hasNextEpisode ? "white" : "#666"} size={24} />
-              </MediaButton>
-            )}
-
-            {episodes.length > 1 && (
-              <MediaButton onPress={setOutroStartTime} timeLabel={outroStartTime ? formatTime(outroStartTime) : undefined}>
-                <ArrowUpFromDot color="white" size={24} />
-              </MediaButton>
-            )}
-
-            {episodes.length > 1 && (
-              <MediaButton onPress={() => setShowEpisodeModal(true)}>
-                <List color="white" size={24} />
-              </MediaButton>
-            )}
-
-            <MediaButton onPress={() => setShowSourceModal(true)}>
-              <Tv color="white" size={24} />
-            </MediaButton>
-
-            <MediaButton onPress={() => setShowSpeedModal(true)} timeLabel={playbackRate !== 1.0 ? `${playbackRate}x` : undefined}>
-              <Gauge color="white" size={24} />
-            </MediaButton>
-
-            <MediaButton onPress={toggleFavorite}>
-              <FontAwesome
-                  name={isFavorited ? "heart" : "heart-o"}
-                  size={20}
-                  color={isFavorited ? "#feff5f" : "#ccc"}
-                />
-            </MediaButton>
-          </View>
         </View>
-      </View>
+      )}
     </View>
   );
 };
@@ -292,4 +329,17 @@ const styles = StyleSheet.create({
     top:20,
     right: 10,
   },
+  lockContainer: {
+    position: "absolute",
+    left:0,
+    top: '50%',
+    marginTop: -35,
+    zIndex: 999,
+  },
+  lockBottomBarContainer: {
+    position: 'absolute',
+    bottom: 0,
+    width: '100%',
+    justifyContent: "space-between",
+  }
 });

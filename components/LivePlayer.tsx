@@ -8,6 +8,7 @@ import { AnimatedVerticalProgress } from "@/components/AnimatedVerticalProgress"
 
 interface LivePlayerProps {
   streamUrl: string | null;
+  streamUa: string;
   channelTitle?: string | null;
   onScreenPress: () => void;
   onScreenGesture: (direction: string) => void;
@@ -17,7 +18,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const PLAYBACK_TIMEOUT = 15000; // 15 seconds
 
-export default function LivePlayer({ streamUrl, channelTitle, onScreenPress, onScreenGesture }: LivePlayerProps) {
+export default function LivePlayer({ streamUrl, streamUa, channelTitle, onScreenPress, onScreenGesture }: LivePlayerProps) {
 
   const video = useRef<VideoRef>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -204,7 +205,6 @@ export default function LivePlayer({ streamUrl, channelTitle, onScreenPress, onS
     });
 
   const composedGesture = Gesture.Race(panGesture, singleTap);
-
   return (
     <View style={styles.container}>
       <GestureHandlerRootView style={{ flex: 1 }}>
@@ -215,6 +215,10 @@ export default function LivePlayer({ streamUrl, channelTitle, onScreenPress, onS
               style={styles.video}
               source={{
                 uri: videoUrl,
+                type: 'm3u8',
+                headers: {
+                  'User-Agent': streamUa
+                },
                 bufferConfig: {
                   minBufferMs: 5000, // 最小缓冲
                   maxBufferMs: 20000, // 最大缓冲

@@ -4,6 +4,7 @@ import { FlashList } from "@shopify/flash-list";
 import Modal from "react-native-modal";
 import { StyledButton } from "./StyledButton";
 import usePlayerStore from "@/stores/playerStore";
+import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 
 interface SpeedOption {
   rate: number;
@@ -23,6 +24,7 @@ const SPEED_OPTIONS: SpeedOption[] = [
 
 export const SpeedSelectionModal: React.FC = () => {
   const { showSpeedModal, setShowSpeedModal, playbackRate, setPlaybackRate } = usePlayerStore();
+  const responsiveConfig = useResponsiveLayout();
 
   const onSelectSpeed = (rate: number) => {
     setPlaybackRate(rate);
@@ -39,7 +41,7 @@ export const SpeedSelectionModal: React.FC = () => {
         <Text style={styles.modalTitle}>播放速度</Text>
         <FlashList
           data={SPEED_OPTIONS}
-          numColumns={4}
+          numColumns={Math.floor((responsiveConfig.screenWidth * 0.9) / 170)}
           keyExtractor={(item) => `speed-${item.rate}`}
           extraData={playbackRate}
           estimatedItemSize={77}
@@ -83,7 +85,6 @@ const styles = StyleSheet.create({
     margin: 4,
     marginLeft: 10,
     marginRight: 8,
-    width: "30%",
   },
   speedItemText: {
     fontSize: 16,

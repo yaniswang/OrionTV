@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
 import { View, Text, StyleSheet } from "react-native";
-import { FlashList, Flash } from "@shopify/flash-list";
+import { FlashList } from "@shopify/flash-list";
 import Modal from "react-native-modal";
 import { StyledButton } from "./StyledButton";
 import usePlayerStore from "@/stores/playerStore";
+import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 
 interface EpisodeSelectionModalProps {}
 
@@ -18,6 +19,7 @@ export const EpisodeSelectionModal: React.FC<EpisodeSelectionModalProps> = () =>
   const [episodeGroupSize] = useState(30);
   const [selectedEpisodeGroup, setSelectedEpisodeGroup] = useState(Math.floor(currentEpisodeIndex / episodeGroupSize));
 
+  const responsiveConfig = useResponsiveLayout();
   const onSelectEpisode = (index: number) => {
     playEpisode(index);
     setShowEpisodeModal(false);
@@ -59,7 +61,7 @@ export const EpisodeSelectionModal: React.FC<EpisodeSelectionModalProps> = () =>
             (selectedEpisodeGroup + 1) * episodeGroupSize
           )}
           initialScrollIndex={currentEpisodeIndex % episodeGroupSize}
-          numColumns={5}
+          numColumns={Math.floor((responsiveConfig.screenWidth * 0.9) / 120)}
           keyExtractor={(_, index) => `episode-${selectedEpisodeGroup * episodeGroupSize + index}`}
           extraData={currentEpisodeIndex} 
           estimatedItemSize={60}
@@ -104,7 +106,6 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 2,
     margin: 4,
-    width: "18%",
   },
   episodeItemText: {
     fontSize: 14,

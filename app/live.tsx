@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { View, StyleSheet, ActivityIndicator, useTVEventHandler, HWEvent, Text, Platform } from "react-native";
+import { View, StyleSheet, ActivityIndicator, useTVEventHandler, HWEvent, Text, Image, Platform } from "react-native";
 import { FlashList } from "@shopify/flash-list";
 import LivePlayer from "@/components/LivePlayer";
 import { fetchAndParseM3u, getPlayableUrl, Channel } from "@/services/m3u";
@@ -16,7 +16,7 @@ import Modal from "react-native-modal";
 import { Immersive } from 'react-native-immersive';
 
 export default function LiveScreen() {
-  const { m3uUrl } = useSettingsStore();
+  const { m3uUrl, m3uUa } = useSettingsStore();
   
   // 处理屏幕旋转
   const setOrientation = async (fullscreen: boolean) => {
@@ -67,6 +67,7 @@ export default function LiveScreen() {
   useEffect(() => {
     const loadChannels = async () => {
       if (!m3uUrl) return;
+
       setIsLoading(true);
       const parsedChannels = await fetchAndParseM3u(m3uUrl);
       setChannels(parsedChannels);
@@ -155,7 +156,8 @@ export default function LiveScreen() {
   const renderLiveContent = () => (
     <>
       <LivePlayer 
-        streamUrl={selectedChannelUrl} 
+        streamUrl={selectedChannelUrl}
+        streamUa={m3uUa}
         channelTitle={channelTitle}
         onScreenPress={onScreenPress}
         onScreenGesture={onScreenGesture}
@@ -194,13 +196,16 @@ export default function LiveScreen() {
                   estimatedItemSize={65}
                   renderItem={({ item }) => (
                     <StyledButton
-                      text={item.name || "Unknown Channel"}
                       onPress={() => handleSelectChannel(item)}
                       isSelected={channels[currentChannelIndex]?.id === item.id}
                       hasTVPreferredFocus={channels[currentChannelIndex]?.id === item.id}
                       style={dynamicStyles.channelItem}
-                      textStyle={dynamicStyles.channelItemText}
-                    />
+                    >
+                      {item.logo && (<Image source={{ uri: item.logo }} style={dynamicStyles.channelLogo} />)}
+                      <Text style={dynamicStyles.channelItemText}>
+                        {item.name || "Unknown Channel"}
+                      </Text>
+                    </StyledButton>
                   )}
                 />
               )}
@@ -234,7 +239,7 @@ const createResponsiveStyles = (deviceType: string, spacing: number) => {
       alignItems: "flex-end",
     },
     modalContent: {
-      width: isMobile ? '90%' : isTablet ? 400 : 450,
+      width: 450,
       height: "100%",
       backgroundColor: "rgba(0, 0, 0, 0.85)",
     },
@@ -247,22 +252,20 @@ const createResponsiveStyles = (deviceType: string, spacing: number) => {
     },
     listContainer: {
       flex: 1,
-      flexDirection: isMobile ? "column" : "row",
+      flexDirection: "row",
     },
     groupColumn: {
-      flex: isMobile ? 0 : 1,
+      flex: 1,
       marginRight: isMobile ? 0 : spacing / 2,
       marginBottom: isMobile ? spacing : 0,
-      maxHeight: isMobile ? 120 : undefined,
     },
     channelColumn: {
-      flex: isMobile ? 1 : 2,
+      flex: 2,
     },
     groupButton: {
       paddingVertical: isMobile ? minTouchTarget / 4 : 8,
       paddingHorizontal: spacing / 2,
       marginVertical: isMobile ? 2 : 4,
-      minHeight: isMobile ? minTouchTarget * 0.7 : undefined,
     },
     groupButtonText: {
       fontSize: isMobile ? 14 : 13,
@@ -273,8 +276,16 @@ const createResponsiveStyles = (deviceType: string, spacing: number) => {
       marginVertical: isMobile ? 2 : 3,
       minHeight: isMobile ? minTouchTarget * 0.8 : undefined,
     },
+    channelLogo: {
+      width: 20,
+      height: 20,
+      borderRadius: 4,
+      marginRight: 5,
+      resizeMode: 'cover'
+    },
     channelItemText: {
       fontSize: isMobile ? 14 : 12,
+      color: '#ffffff',
     },
   });
 };

@@ -17,7 +17,8 @@ export interface DoubanResponse {
 export interface LiveSourceItem {
   key: string;
   name: string;
-  url: string
+  url: string;
+  ua: string;
 }
 
 export interface LiveSourceResponse {
