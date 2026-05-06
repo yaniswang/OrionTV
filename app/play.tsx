@@ -361,13 +361,14 @@ export default function PlayScreen() {
 
   const taps = Gesture.Exclusive(doubleTap, singleTap);
   const composedGesture = Gesture.Race(panGesture, taps);
-
+  
+  const handelBack = async() => {
+    // 页面跳转前保存播放记录
+    await savePlayRecord({ }, { immediate: true });
+    router.back();
+  };
+  
   useEffect(() => {
-    const handelBack = async() => {
-      // 页面跳转前保存播放记录
-      await savePlayRecord({ }, { immediate: true });
-      router.back();
-    };
     const backAction = () => {
       if (showControls) {
         setShowControls(false);
@@ -421,7 +422,7 @@ export default function PlayScreen() {
       )}
 
       {showControls && (
-        <PlayerControls showControls={showControls} setShowControls={setShowControls} />
+        <PlayerControls showControls={showControls} setShowControls={setShowControls} handelBack={handelBack} />
       )}
 
       {!showControls && (<SeekingBar />)}

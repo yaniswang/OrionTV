@@ -1,6 +1,6 @@
 import React from "react";
 import { View, Text, StyleSheet, Pressable, Platform } from "react-native";
-import { Pause, Play, SkipForward, List, Tv, ArrowDownToDot, ArrowUpFromDot, Gauge, Unlock, Lock } from "lucide-react-native";
+import { Pause, Play, SkipForward, List, Tv, ArrowDownToDot, ArrowUpFromDot, Gauge, Unlock, Lock, ChevronLeft } from "lucide-react-native";
 import { ThemedText } from "@/components/ThemedText";
 import { MediaButton } from "@/components/MediaButton";
 import { FontAwesome } from "@expo/vector-icons";
@@ -16,9 +16,10 @@ import { useBatteryLevel, useBatteryState, BatteryState } from 'expo-battery';
 interface PlayerControlsProps {
   showControls: boolean;
   setShowControls: (show: boolean) => void;
+  handelBack: () => Promise<void>;
 }
 
-export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, setShowControls }) => {
+export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, setShowControls, handelBack }) => {
   const batteryLevel = useBatteryLevel();
   const batteryState = useBatteryState();
   const {
@@ -87,18 +88,21 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
 
   return (
     <View style={styles.controlContainer}>
-      <View style={styles.topTitleContainer}>
+      <View style={styles.topLeftContainer}>
+        {!Platform.isTV && !showLockControls && (
+          <Pressable onPress={handelBack} style={styles.topBackButton}>
+            <ChevronLeft color="white" size={26} />
+          </Pressable>
+        )}
         <Text style={styles.topTitleText}>
           {videoTitle} {episodes.length > 1 && currentEpisodeTitle ? `- ${currentEpisodeTitle}` : ""}{" "}
           {currentSourceName ? `(${currentSourceName})` : ""}
         </Text>
       </View>
-      <View style={styles.topLeftContainer}>
-        <Text style={styles.topLeftText}>
+      <View style={styles.topRightContainer}>
+        <Text style={styles.topTimeText}>
           {new Intl.DateTimeFormat('en-GB', {hour: '2-digit',minute: '2-digit',hour12: false}).format(new Date())}
         </Text>
-      </View>
-      <View style={styles.topRightContainer}>
         {!Platform.isTV && (<Battery percent={batteryLevel*100} size={30} color={'#00bb5ea0'} charging={batteryState === BatteryState.CHARGING} outlined={false}/>)}
       </View>
       {!Platform.isTV && (
@@ -112,6 +116,14 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
       {!showLockControls && (
         <View style={styles.controlsOverlay}>
           <View style={styles.bottomControlsContainer}>
+            <View style={styles.bottomTimesContainer}>
+              <ThemedText style={{ color: "white", marginTop: 5 }}>
+                {status?.isLoaded
+                  ? `${formatTime(isSeeking ? seekPositionMillis : status.positionMillis)} / ${formatTime(status.durationMillis || 0)}`
+                  : "00:00 / 00:00"}
+              </ThemedText>
+            </View>
+
             <View style={styles.progressBarContainer}>
               <View style={styles.progressBarBackground} />
               <View
@@ -132,12 +144,6 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
               />
               <Pressable style={styles.progressBarTouchable} />
             </View>
-
-            <ThemedText style={{ color: "white", marginTop: 5 }}>
-              {status?.isLoaded
-                ? `${formatTime(isSeeking ? seekPositionMillis : status.positionMillis)} / ${formatTime(status.durationMillis || 0)}`
-                : "00:00 / 00:00"}
-            </ThemedText>
 
             <View style={styles.bottomControls}>
               {episodes.length > 1 && (
@@ -239,6 +245,9 @@ const styles = StyleSheet.create({
     width: "100%",
     alignItems: "center",
   },
+  bottomTimesContainer: {
+    width: '100%',
+  },
   bottomControls: {
     flexDirection: "row",
     justifyContent: "center",
@@ -299,33 +308,33 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 6,
   },
-  topTitleContainer: {
-    position: "absolute",
-    top:20,
-    width: '100%',
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
   topTitleText: {
     color: "white",
     fontSize: 16,
     fontWeight: "bold",
-    flex: 1,
-    textAlign: "center",
-    marginHorizontal: 10,
   },
   topLeftContainer: {
     position: "absolute",
     top:20,
     left: 10,
+    display: 'flex',
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  topLeftText: {
+  topBackButton: {
+    padding: 5,
+  },
+  topTimeText: {
     color: "white",
     fontSize: 16,
     fontWeight: "bold",
+    marginRight: 5,
   },
   topRightContainer: {
     position: "absolute",
+    display: 'flex',
+    flexDirection: 'row',
+    alignItems: 'center',
     top:20,
     right: 10,
   },

@@ -57,10 +57,13 @@ export default function LiveScreen() {
   const [selectedGroup, setSelectedGroup] = useState<string>("");
 
   const [currentChannelIndex, setCurrentChannelIndex] = useState(0);
+  const [currentIndexInGroup, setCurrentIndexInGroup] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [isChannelListVisible, setIsChannelListVisible] = useState(false);
   const [channelTitle, setChannelTitle] = useState<string | null>(null);
   const titleTimer = useRef<NodeJS.Timeout | null>(null);
+
+  const channelListRef = useRef(null);
 
   const selectedChannelUrl = channels.length > 0 ? getPlayableUrl(channels[currentChannelIndex].url) : null;
 
@@ -100,12 +103,13 @@ export default function LiveScreen() {
     titleTimer.current = setTimeout(() => setChannelTitle(null), 3000);
   };
 
-  const handleSelectChannel = (channel: Channel) => {
+  const handleSelectChannel = (channel: Channel, index : number) => {
     const globalIndex = channels.findIndex((c) => c.id === channel.id);
     if (globalIndex !== -1) {
       setCurrentChannelIndex(globalIndex);
       showChannelTitle(channel.name);
       setIsChannelListVisible(false);
+      setCurrentIndexInGroup(index);
     }
   };
 
@@ -152,7 +156,13 @@ export default function LiveScreen() {
   const onClose = () => {
     setIsChannelListVisible(false);
   };
-
+  
+  const onModalShow = () => {
+    setTimeout(() => {
+      channelListRef.current?.scrollToIndex({ index: currentIndexInGroup, animated: false });
+    }, 100)
+    
+  }
   const renderLiveContent = () => (
     <>
       <LivePlayer 
@@ -163,7 +173,7 @@ export default function LiveScreen() {
         onScreenGesture={onScreenGesture}
       />
       <Modal
-        isVisible={isChannelListVisible} statusBarTranslucent={true} onBackButtonPress={onClose} onBackdropPress={onClose} onSwipeComplete={onClose} swipeDirection="down" style={dynamicStyles.modalContainer}
+        isVisible={isChannelListVisible} statusBarTranslucent={true} onBackButtonPress={onClose} onBackdropPress={onClose} onSwipeComplete={onClose} onModalShow={onModalShow} swipeDirection="down" style={dynamicStyles.modalContainer}
       >
         <View style={dynamicStyles.modalContent}>
           <Text style={dynamicStyles.modalTitle}>选择频道</Text>
@@ -190,13 +200,16 @@ export default function LiveScreen() {
                 <ActivityIndicator size="large" />
               ) : (
                 <FlashList
+                  ref={channelListRef}
                   data={groupedChannels[selectedGroup] || []}
                   keyExtractor={(item, index) => `${item.id}-${item.group}-${index}`}
                   extraData={channels[currentChannelIndex]?.id}
-                  estimatedItemSize={65}
-                  renderItem={({ item }) => (
+                  drawDistance={2000}
+                  // initialScrollIndex={currentIndexInGroup}
+                  estimatedItemSize={61}
+                  renderItem={({ item, index }) => (
                     <StyledButton
-                      onPress={() => handleSelectChannel(item)}
+                      onPress={() => handleSelectChannel(item, index)}
                       isSelected={channels[currentChannelIndex]?.id === item.id}
                       hasTVPreferredFocus={channels[currentChannelIndex]?.id === item.id}
                       style={dynamicStyles.channelItem}

@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { View, StyleSheet, TouchableOpacity, Text, Platform } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
-import { Home, Search, Heart, Settings, Tv } from 'lucide-react-native';
+import { Home, Search, Heart, Settings, Tv, LogOut } from 'lucide-react-native';
 import { Colors } from '@/constants/Colors';
 import { useResponsiveLayout } from '@/hooks/useResponsiveLayout';
 import { DeviceUtils } from '@/utils/DeviceUtils';
+import useAuthStore from "@/stores/authStore";
 
 interface TabItem {
   key: string;
@@ -19,6 +20,7 @@ const tabs: TabItem[] = [
   { key: 'favorites', label: '收藏', icon: Heart, route: '/favorites' },
   { key: 'live', label: '直播', icon: Tv, route: '/live' },
   { key: 'settings', label: '设置', icon: Settings, route: '/settings' },
+  { key: 'logout', label: '登出', icon: LogOut, route: '/logout' },
 ];
 
 interface MobileTabContainerProps {
@@ -30,13 +32,20 @@ const MobileTabContainer: React.FC<MobileTabContainerProps> = ({ children }) => 
   const pathname = usePathname();
   const { spacing, deviceType } = useResponsiveLayout();
   
+  const { isLoggedIn, logout } = useAuthStore();
   // 在手机端过滤掉直播 tab
-  const filteredTabs = tabs;
+  const filteredTabs = tabs.filter(item => {
+    return !(!isLoggedIn && item.key === 'logout');
+  });
   
   const handleTabPress = (route: string) => {
     if (route == '/live') {
       router.push(route as any);
-    } else {
+    }
+    else if (route === '/logout') {
+      logout();
+    }
+    else {
       router.replace(route as any);
     }
   };
