@@ -8,6 +8,7 @@
 - **现代化前端**: 使用 Expo、React Native TVOS 和 TypeScript 构建，性能卓越。
 - **Expo Router**: 基于文件系统的路由，使导航逻辑清晰简单。
 - **TV 优化的 UI**: 专为电视遥控器交互设计的用户界面。
+- **支持M3u8代理**: 支持M3U8代理，解决晚高峰源播放比较卡的问题，结合此项目使用：https://github.com/yaniswang/m3u8-proxy
 
 ## 🛠️ 技术栈
 

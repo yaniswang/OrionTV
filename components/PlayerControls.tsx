@@ -1,6 +1,6 @@
 import React from "react";
 import { View, Text, StyleSheet, Pressable, Platform } from "react-native";
-import { Pause, Play, SkipForward, List, Tv, ArrowDownToDot, ArrowUpFromDot, Gauge, Unlock, Lock, ChevronLeft } from "lucide-react-native";
+import { Pause, Play, SkipForward, List, Tv, ArrowDownToDot, ArrowUpFromDot, Gauge, Unlock, Lock, ChevronLeft, Rocket } from "lucide-react-native";
 import { ThemedText } from "@/components/ThemedText";
 import { MediaButton } from "@/components/MediaButton";
 import { FontAwesome } from "@expo/vector-icons";
@@ -9,6 +9,7 @@ import { StyledButton } from "./StyledButton";
 import usePlayerStore from "@/stores/playerStore";
 import useDetailStore from "@/stores/detailStore";
 import { useSources } from "@/stores/sourceStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 
 import {Battery} from '@brightlayer-ui/react-native-progress-icons';
 import { useBatteryLevel, useBatteryState, BatteryState } from 'expo-battery';
@@ -20,6 +21,7 @@ interface PlayerControlsProps {
 }
 
 export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, setShowControls, handelBack }) => {
+  const { m3u8Proxy } = useSettingsStore.getState();
   const batteryLevel = useBatteryLevel();
   const batteryState = useBatteryState();
   const {
@@ -98,6 +100,9 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
           {videoTitle} {episodes.length > 1 && currentEpisodeTitle ? `- ${currentEpisodeTitle}` : ""}{" "}
           {currentSourceName ? `(${currentSourceName})` : ""}
         </Text>
+        {/^http/.test(m3u8Proxy) && (
+          <Rocket color="#00bb5e" size={18}/>
+        )}
       </View>
       <View style={styles.topRightContainer}>
         <Text style={styles.topTimeText}>
@@ -312,6 +317,7 @@ const styles = StyleSheet.create({
     color: "white",
     fontSize: 16,
     fontWeight: "bold",
+    marginRight: 5,
   },
   topLeftContainer: {
     position: "absolute",

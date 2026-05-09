@@ -247,7 +247,6 @@ export default function LivePlayer({ streamUrl, streamUa, channelTitle, onScreen
               reportBandwidth={true}
               onPlaybackStateChanged={handlePlaybackStateChanged}
               onError={(e) => {
-                console.log(JSON.stringify(e))
                 setIsTimeout(true);
                 setIsLoading(false);
               }}

@@ -31,6 +31,7 @@ export interface PlayerSettings {
 
 export interface AppSettings {
   apiBaseUrl: string;
+  m3u8Proxy: string;
   remoteInputEnabled: boolean;
   videoSource: {
     enabledAll: boolean;
@@ -316,6 +317,7 @@ export class SettingsManager {
   static async get(): Promise<AppSettings> {
     const defaultSettings: AppSettings = {
       apiBaseUrl: "",
+      m3u8Proxy: '',
       remoteInputEnabled: true,
       videoSource: {
         enabledAll: true,

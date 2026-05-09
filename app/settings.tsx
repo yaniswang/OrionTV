@@ -10,6 +10,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 // import useAuthStore from "@/stores/authStore";
 import { useRemoteControlStore } from "@/stores/remoteControlStore";
 import { APIConfigSection } from "@/components/settings/APIConfigSection";
+import { M3u8ProxySection } from "@/components/settings/M3u8ProxySection";
 import { RemoteInputSection } from "@/components/settings/RemoteInputSection";
 import { UpdateSection } from "@/components/settings/UpdateSection";
 // import { VideoSourceSection } from "@/components/settings/VideoSourceSection";
@@ -34,7 +35,7 @@ function isSectionItem(
 }
 
 export default function SettingsScreen() {
-  const { loadSettings, saveSettings, setApiBaseUrl } = useSettingsStore();
+  const { loadSettings, saveSettings, setApiBaseUrl, setM3u8Proxy } = useSettingsStore();
   const { lastMessage, targetPage, clearMessage } = useRemoteControlStore();
   const backgroundColor = useThemeColor({}, "background");
   const insets = useSafeAreaInsets();
@@ -51,6 +52,7 @@ export default function SettingsScreen() {
 
   const saveButtonRef = useRef<any>(null);
   const apiSectionRef = useRef<any>(null);
+  const m3u8ProxySectionRef = useRef<any>(null);
 
   useEffect(() => {
     loadSettings();
@@ -71,6 +73,10 @@ export default function SettingsScreen() {
     if (currentSection === "api" && apiSectionRef.current) {
       // API Config Section
       setApiBaseUrl(message);
+    }
+    else if (currentSection === "m3u8_proxy" && m3u8ProxySectionRef.current) {
+      // M3u8 proxy Config Section
+      setM3u8Proxy(message);
     }
   };
 
@@ -165,6 +171,20 @@ export default function SettingsScreen() {
         />
       ),
       key: "api",
+    },
+    {
+      component: (
+        <M3u8ProxySection
+          ref={m3u8ProxySectionRef}
+          onChanged={markAsChanged}
+          hideDescription={deviceType === "mobile"}
+          onFocus={() => {
+            setCurrentFocusIndex(1);
+            setCurrentSection("m3u8_proxy");
+          }}
+        />
+      ),
+      key: "m3u8_proxy",
     },
     Platform.OS === "android" && {
       component: <UpdateSection />,

@@ -126,7 +126,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     
     // 如果有detail，使用detail的source获取episodes；否则使用传入的source
     if (detail && detail.source) {
-      logger.info(`[INFO] Using existing detail source "${detail.source}" to get episodes`);
+      logger.info(`[INFO] Using existing detail source "${detail.source}" and id "${detail.id}" to get episodes`);
       episodes = episodesSelectorBySource(detail.source, detail.id)(useDetailStore.getState());
     } else {
       logger.info(`[INFO] No existing detail, using provided source "${source}" to get episodes`);
@@ -204,7 +204,6 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       logger.info(`[SUCCESS] Detail and episodes loaded - source: ${detail.source_name}, episodes: ${episodes.length}`);
     } else {
       logger.info(`[PERF] Skipping DetailStore.init - using cached data`);
-      
       // 即使是缓存的数据，也要确保使用正确的source获取episodes
       if (detail && detail.source && detail.source !== source) {
         logger.info(`[INFO] Cached detail source "${detail.source}" differs from provided source "${source}", updating episodes`);

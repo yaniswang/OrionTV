@@ -9,21 +9,20 @@ import { useButtonAnimation } from "@/hooks/useAnimation";
 import { Colors } from "@/constants/Colors";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 
-interface APIConfigSectionProps {
+interface M3u8ProxySectionProps {
   onChanged: () => void;
   onFocus?: () => void;
   onBlur?: () => void;
   onPress?: () => void;
-  hideDescription?: boolean;
 }
 
-export interface APIConfigSectionRef {
+export interface M3u8ProxySectionRef {
   setInputValue: (value: string) => void;
 }
 
-export const APIConfigSection = forwardRef<APIConfigSectionRef, APIConfigSectionProps>(
-  ({ onChanged, onFocus, onBlur, onPress, hideDescription = false }, ref) => {
-    const { apiBaseUrl, setApiBaseUrl, remoteInputEnabled } = useSettingsStore();
+export const M3u8ProxySection = forwardRef<M3u8ProxySectionRef, M3u8ProxySectionProps>(
+  ({ onChanged, onFocus, onBlur, onPress }, ref) => {
+    const { m3u8Proxy, setM3u8Proxy, remoteInputEnabled } = useSettingsStore();
     const { serverUrl } = useRemoteControlStore();
     const [isInputFocused, setIsInputFocused] = useState(false);
     const [isSectionFocused, setIsSectionFocused] = useState(false);
@@ -32,13 +31,13 @@ export const APIConfigSection = forwardRef<APIConfigSectionRef, APIConfigSection
     const deviceType = useResponsiveLayout().deviceType;
 
     const handleUrlChange = (url: string) => {
-      setApiBaseUrl(url);
+      setM3u8Proxy(url);
       onChanged();
     };
 
     useImperativeHandle(ref, () => ({
       setInputValue: (value: string) => {
-        setApiBaseUrl(value);
+        setM3u8Proxy(value);
         onChanged();
       },
     }));
@@ -53,7 +52,11 @@ export const APIConfigSection = forwardRef<APIConfigSectionRef, APIConfigSection
       onBlur?.();
     };
 
-    // TV遥控器事件处理
+    const handlePress = () => {
+      inputRef.current?.focus();
+      onPress?.();
+    }
+
     const handleTVEvent = React.useCallback(
       (event: any) => {
         if (isSectionFocused && event.eventType === "select") {
@@ -63,32 +66,28 @@ export const APIConfigSection = forwardRef<APIConfigSectionRef, APIConfigSection
       [isSectionFocused]
     );
 
-    const handlePress = () => {
-      inputRef.current?.focus();
-      onPress?.();
-    }
-
     useTVEventHandler(handleTVEvent);
 
-    const [selection, setSelection] = useState<{ start: number; end: number }>({
-      start: 0,
-      end: 0,
-    });
-    // 当用户手动移动光标或选中文本时，同步到 state（可选）
-    const onSelectionChange = ({
-      nativeEvent: { selection },
-    }: any) => {
-      setSelection(selection);
-    };
+
+        const [selection, setSelection] = useState<{ start: number; end: number }>({
+          start: 0,
+          end: 0,
+        });
+        // 当用户手动移动光标或选中文本时，同步到 state（可选）
+        const onSelectionChange = ({
+          nativeEvent: { selection },
+        }: any) => {
+          setSelection(selection);
+        };
 
     return (
       <SettingsSection focusable onFocus={handleSectionFocus} onBlur={handleSectionBlur}
-        {...Platform.isTV || deviceType !== 'tv' ? undefined : { onPress: handlePress }}
+        onPress={Platform.isTV || deviceType !== 'tv' ? undefined : handlePress}
       >
         <View style={styles.inputContainer}>
           <View style={styles.titleContainer}>
-            <ThemedText style={styles.sectionTitle}>服务器 地址</ThemedText>
-            {!hideDescription && remoteInputEnabled && serverUrl && (
+            <ThemedText style={styles.sectionTitle}>M3U8代理</ThemedText>
+            {remoteInputEnabled && serverUrl && (
               <ThemedText style={styles.subtitle}>用手机访问 {serverUrl}，可远程输入</ThemedText>
             )}
           </View>
@@ -96,16 +95,16 @@ export const APIConfigSection = forwardRef<APIConfigSectionRef, APIConfigSection
             <TextInput
               ref={inputRef}
               style={[styles.input, isInputFocused && styles.inputFocused]}
-              value={apiBaseUrl}
+              value={m3u8Proxy}
               onChangeText={handleUrlChange}
-              placeholder="输入服务器地址"
+              placeholder="输入 m3u8代理地址 加速视频播放"
               placeholderTextColor="#888"
               autoCapitalize="none"
               autoCorrect={false}
               onFocus={() => {
                 setIsInputFocused(true);
                 // 将光标移动到文本末尾
-                const end = apiBaseUrl.length;
+                const end = m3u8Proxy.length;
                 setSelection({ start: end, end: end });
                 // 有时需要延迟一下，让系统先完成 focus 再设置 selection
                 //（在 Android 上更可靠）
@@ -118,6 +117,7 @@ export const APIConfigSection = forwardRef<APIConfigSectionRef, APIConfigSection
               onSelectionChange={onSelectionChange} // 可选
 
               onBlur={() => setIsInputFocused(false)}
+            // onPress={handlePress}
             />
           </Animated.View>
         </View>
@@ -126,7 +126,7 @@ export const APIConfigSection = forwardRef<APIConfigSectionRef, APIConfigSection
   }
 );
 
-APIConfigSection.displayName = "APIConfigSection";
+M3u8ProxySection.displayName = "M3u8ProxySection";
 
 const styles = StyleSheet.create({
   titleContainer: {
@@ -146,11 +146,6 @@ const styles = StyleSheet.create({
   },
   inputContainer: {
     marginBottom: 12,
-  },
-  label: {
-    fontSize: 16,
-    marginBottom: 8,
-    color: "#ccc",
   },
   input: {
     height: 50,

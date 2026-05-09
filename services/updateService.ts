@@ -129,7 +129,7 @@ class UpdateService {
             // 这里不使用系统下载管理器，因为我们想自己控制进度回调。
           },
           progress => {
-            if (onProgress && progress.totalBytesExpectedToWrite) {
+            if (onProgress && progress.totalBytesExpectedToWrite > 0) {
               const percent = Math.floor(
                 (progress.totalBytesWritten / progress.totalBytesExpectedToWrite) * 100,
               );
@@ -137,12 +137,16 @@ class UpdateService {
             }
           },
         );
-
-        const result = await downloadResumable.downloadAsync();
-        if (result && result.uri) {
-          logger.debug(`APK downloaded to ${result.uri}`);
-          return result.uri;
-        } else {
+        const { uri, status } = await downloadResumable.downloadAsync();
+        if (status !== 200) {
+          await FileSystem.deleteAsync(uri, { idempotent: true }); 
+          throw new Error('更新失败，没有发现有效APK文件！');
+        }
+        else if (uri) {
+          logger.debug(`APK downloaded to ${uri}`);
+          return uri;
+        }
+        else {
           throw new Error('Download failed: No URI available');
         }
       } catch (e) {

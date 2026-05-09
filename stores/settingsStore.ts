@@ -4,11 +4,13 @@ import { api, ServerConfig } from "@/services/api";
 import { storageConfig } from "@/services/storageConfig";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Logger from "@/utils/Logger";
+import useDetailStore from "./detailStore";
 
 const logger = Logger.withTag('SettingsStore');
 
 interface SettingsState {
   apiBaseUrl: string;
+  m3u8Proxy: string;
   m3uUrl: string;
   m3uUa: string;
   remoteInputEnabled: boolean;
@@ -25,6 +27,7 @@ interface SettingsState {
   fetchServerConfig: () => Promise<void>;
   fetchLiveSource: () => Promise<void>;
   setApiBaseUrl: (url: string) => void;
+  setM3u8Proxy: (url: string) => void;
   setRemoteInputEnabled: (enabled: boolean) => void;
   saveSettings: () => Promise<void>;
   setVideoSource: (config: { enabledAll: boolean; sources: { [key: string]: boolean } }) => void;
@@ -34,6 +37,7 @@ interface SettingsState {
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   apiBaseUrl: "",
+  m3u8Proxy: '',
   m3uUrl: "",
   m3uUa: '',
   remoteInputEnabled: false,
@@ -48,6 +52,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const settings = await SettingsManager.get();
     set({
       apiBaseUrl: settings.apiBaseUrl,
+      m3u8Proxy: settings.m3u8Proxy,
       remoteInputEnabled: settings.remoteInputEnabled || false,
       videoSource: settings.videoSource || {
         enabledAll: true,
@@ -88,12 +93,15 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }
   },
   setApiBaseUrl: (url) => set({ apiBaseUrl: url }),
+  setM3u8Proxy: (url) => set({ m3u8Proxy: url }),
   setRemoteInputEnabled: (enabled) => set({ remoteInputEnabled: enabled }),
   setVideoSource: (config) => set({ videoSource: config }),
   saveSettings: async () => {
-    const { apiBaseUrl, remoteInputEnabled, videoSource } = get();
+    const { apiBaseUrl, m3u8Proxy, remoteInputEnabled, videoSource } = get();
+
     const currentSettings = await SettingsManager.get()
     const currentApiBaseUrl = currentSettings.apiBaseUrl;
+    const currentM3u8Proxy = currentSettings.m3u8Proxy;
     let processedApiBaseUrl = apiBaseUrl.trim();
     if (processedApiBaseUrl.endsWith("/")) {
       processedApiBaseUrl = processedApiBaseUrl.slice(0, -1);
@@ -113,17 +121,24 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       }
     }
 
+    const processedM3u8Proxy = m3u8Proxy && m3u8Proxy + (m3u8Proxy.endsWith('/') ? '' : '/') || '';
+
     await SettingsManager.save({
       apiBaseUrl: processedApiBaseUrl,
+      m3u8Proxy: processedM3u8Proxy,
       remoteInputEnabled,
       videoSource,
     });
     if ( currentApiBaseUrl !== processedApiBaseUrl) {
       await AsyncStorage.setItem('authCookies', '');
     }
+    if (currentM3u8Proxy !== processedM3u8Proxy) {
+      // 重置detail信息
+      useDetailStore.setState({detail: null});
+    }
     api.setBaseUrl(processedApiBaseUrl);
     // Also update the URL in the state so the input field shows the processed URL
-    set({ isModalVisible: false, apiBaseUrl: processedApiBaseUrl });
+    set({ isModalVisible: false, apiBaseUrl: processedApiBaseUrl, m3u8Proxy: processedM3u8Proxy });
     await get().fetchServerConfig();
   },
   showModal: () => set({ isModalVisible: true }),

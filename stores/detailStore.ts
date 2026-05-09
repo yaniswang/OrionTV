@@ -67,7 +67,7 @@ const useDetailStore = create<DetailState>((set, get) => ({
       controller: newController,
     });
 
-    const { videoSource } = useSettingsStore.getState();
+    const { m3u8Proxy } = useSettingsStore.getState();
 
     const processAndSetResults = async (results: SearchResult[], merge = false) => {
       const resolutionStart = performance.now();
@@ -79,6 +79,11 @@ const useDetailStore = create<DetailState>((set, get) => ({
           const m3u8Start = performance.now();
           try {
             if (searchResult.episodes && searchResult.episodes.length > 0) {
+              if (m3u8Proxy && /^https:\/\//.test(m3u8Proxy)) {
+                searchResult.episodes = searchResult.episodes.map((url)=> {
+                  return m3u8Proxy + url;
+                })
+              }
               videoInfo = await getResolutionFromM3U8(searchResult.episodes[0], signal);
             }
           } catch (e) {

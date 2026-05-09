@@ -37,7 +37,7 @@ export const useVideoHandlers = ({
   const onError = useCallback((error: any) => {
     if (!currentEpisode?.url) return;
     
-    logger.error(`[ERROR] Video playback error:`, error);
+    logger.error(`[ERROR] Video playback error:`, JSON.stringify(error));
     
     // 检测SSL证书错误和其他网络错误
     const errorString = (error as any)?.error?.toString() || error?.toString() || '';
