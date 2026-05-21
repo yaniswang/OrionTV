@@ -183,9 +183,7 @@ class UpdateService {
     // ③ 只在 Android 里执行
     if (Platform.OS === 'android') {
       try {
-        // FLAG_ACTIVITY_NEW_TASK = 0x10000000 (1)
-        // FLAG_GRANT_READ_URI_PERMISSION = 0x00000010
-        const flags = 1 | 0x00000010;   // 1 | 16
+        const flags = 1 | 0x10000000;
 
         await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
           data: contentUri,          // 必须是 content://
