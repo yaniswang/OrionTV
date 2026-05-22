@@ -178,40 +178,56 @@ class UpdateService {
     }
 
     // ② 把 file:// 转成 content://，Expo‑FileSystem 已经实现了 FileProvider
-    const contentUri = await FileSystem.getContentUriAsync(fileUri);
+    let contentUri = await FileSystem.getContentUriAsync(fileUri);
+
+    if (Platform.OS === 'android' && Platform.Version < 24) {
+      contentUri = fileUri; // 老版本安卓使用file路径
+    }
 
     // ③ 只在 Android 里执行
     if (Platform.OS === 'android') {
+      const flags = 1 | 0x10000000;
       try {
-        const flags = 1 | 0x10000000;
-
+        // 尝试标准安装
         await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
-          data: contentUri,          // 必须是 content://
+          data: contentUri,
           type: ANDROID_MIME_TYPE,   // application/vnd.android.package-archive
           flags,
         });
       } catch (e: any) {
-        // 统一错误提示
-        if (e.message?.includes('Activity not found')) {
-          Toast.show({
-            type: 'error',
-            text1: '安装失败',
-            text2: '系统没有找到可以打开 APK 的应用，请检查系统设置',
-          });
-        } else if (e.message?.includes('permission')) {
-          Toast.show({
-            type: 'error',
-            text1: '安装失败',
-            text2: '请在设置里允许“未知来源”安装',
-          });
-        } else {
-          Toast.show({
-            type: 'error',
-            text1: '安装失败',
-            text2: '未知错误，请稍后重试',
+        try {
+          // 失败后尝试使用老版本专用的安装 Action
+          await IntentLauncher.startActivityAsync('android.intent.action.INSTALL_PACKAGE', {
+            data: contentUri,
+            type: ANDROID_MIME_TYPE,
+            flags,
+            packageName: 'com.android.packageinstaller',
+            className: 'com.android.packageinstaller.PackageInstallerActivity'
           });
         }
-        throw e;
+        catch(e: any) {
+          // 统一错误提示
+          if (e.message?.includes('Activity not found')) {
+            Toast.show({
+              type: 'error',
+              text1: '安装失败',
+              text2: '系统没有找到可以打开 APK 的应用，请检查系统设置',
+            });
+          } else if (e.message?.includes('permission')) {
+            Toast.show({
+              type: 'error',
+              text1: '安装失败',
+              text2: '请在设置里允许“未知来源”安装',
+            });
+          } else {
+            Toast.show({
+              type: 'error',
+              text1: '安装失败',
+              text2: '未知错误，请稍后重试',
+            });
+          }
+          throw e;
+        }
       }
     } else {
       // iOS 设备不支持直接安装 APK
