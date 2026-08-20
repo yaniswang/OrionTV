@@ -79,7 +79,7 @@ const useDetailStore = create<DetailState>((set, get) => ({
           const m3u8Start = performance.now();
           try {
             if (searchResult.episodes && searchResult.episodes.length > 0) {
-              if (m3u8Proxy && /^https:\/\//.test(m3u8Proxy)) {
+              if (m3u8Proxy && /^https?:\/\//.test(m3u8Proxy)) {
                 searchResult.episodes = searchResult.episodes.map((url)=> {
                   return m3u8Proxy + url;
                 })
@@ -235,7 +235,7 @@ const useDetailStore = create<DetailState>((set, get) => ({
         const { source, id } = finalState.detail;
         logger.info(`[INFO] Checking favorite status for source: ${source}, id: ${id}`);
         try {
-          const isFavorited = await FavoriteManager.isFavorited(source, id.toString());
+          const isFavorited = await FavoriteManager.isFavorited(q || title, stype + year);
           set({ isFavorited });
           logger.info(`[INFO] Favorite status: ${isFavorited}`);
         } catch (favoriteError) {
@@ -283,17 +283,21 @@ const useDetailStore = create<DetailState>((set, get) => ({
     if (!detail) return;
 
     const { source, id, title, poster, source_name, episodes, year } = detail;
+    const q = get().q!;
     const favoriteItem = {
       cover: poster,
       title,
       poster,
       source_name,
       total_episodes: episodes.length,
-      search_title: get().q!,
+      search_title: q,
       year: year || "",
+      source,
+      id
     };
+    const itemStype = episodes.length > 1 ? 'tv' : 'movie';
 
-    const newIsFavorited = await FavoriteManager.toggle(source, id.toString(), favoriteItem);
+    const newIsFavorited = await FavoriteManager.toggle(q || title, itemStype + year, favoriteItem);
     set({ isFavorited: newIsFavorited });
   },
 

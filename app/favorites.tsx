@@ -27,7 +27,7 @@ export default function FavoritesScreen() {
     }, [fetchFavorites])
   );
 
-  const onLongPress = async (title: string, source: string, id: string) => {
+  const onLongPress = async (title: string, rowKey: string) => {
     Alert.alert("删除收藏记录", `确定要删除"${title}"的收藏记录吗？`, [
       {
         text: "取消",
@@ -38,7 +38,7 @@ export default function FavoritesScreen() {
         style: "destructive",
         onPress: async () => {
           try {
-            await FavoriteManager.remove(source, id);
+            await FavoriteManager.remove(rowKey);
             fetchFavorites();
           } catch (error) {
             Alert.alert("错误", "删除收藏记录失败，请重试");
@@ -49,14 +49,14 @@ export default function FavoritesScreen() {
   }
 
   const renderItem = ({ item }: { item: Favorite & { key: string }; index: number }) => {
-    const [source, id] = item.key.split("+");
     return (
       <VideoCard
-        id={id}
-        source={source}
+        rowKey={item.key}
+        id={item.id || ''}
+        source={item.source || ''}
+        sourceName={item.source_name}
         q={item.search_title}
         title={item.title}
-        sourceName={item.source_name}
         poster={item.cover}
         year={item.year}
         api={api}

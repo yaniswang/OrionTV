@@ -173,7 +173,7 @@ export default function HomeScreen() {
     stype = 'tv';
   }
 
-  const onLongPress = async (title: string, source: string, id: string) => {
+  const onLongPress = async (title: string, rowKey: string) => {
     if (selectedCategory.type !== 'record') return;
     Alert.alert("删除观看记录", `确定要删除"${title}"的观看记录吗？`, [
       {
@@ -185,7 +185,7 @@ export default function HomeScreen() {
         style: "destructive",
         onPress: async () => {
           try {
-            await PlayRecordManager.remove(source, id);
+            await PlayRecordManager.remove(rowKey);
             fetchInitialData();
           } catch (error) {
             Alert.alert("错误", "删除观看记录失败，请重试");
@@ -197,6 +197,7 @@ export default function HomeScreen() {
 
   const renderContentItem = ({ item }: { item: RowItem; index: number }) => (
     <VideoCard
+      rowKey={`${item.source}+${item.id}`}
       id={item.id}
       source={item.source}
       q={item.search_title}

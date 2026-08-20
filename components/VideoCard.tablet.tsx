@@ -12,6 +12,7 @@ import Logger from '@/utils/Logger';
 const logger = Logger.withTag('VideoCardTablet');
 
 interface VideoCardTabletProps extends React.ComponentProps<typeof TouchableOpacity> {
+  rowKey: string;
   id?: string;
   source?: string;
   q?: string;
@@ -25,7 +26,7 @@ interface VideoCardTabletProps extends React.ComponentProps<typeof TouchableOpac
   episodeIndex?: number;
   totalEpisodes?: number;
   onFocus?: () => void;
-  onLongPress?: (title: string, source: string, id: string) => void;
+  onLongPress?: (title: string, key: string) => void;
   api: API;
   stype?: string | null;
 }
@@ -33,6 +34,7 @@ interface VideoCardTabletProps extends React.ComponentProps<typeof TouchableOpac
 const VideoCardTablet = forwardRef<View, VideoCardTabletProps>(
   (
     {
+      rowKey,
       id,
       source,
       q,
@@ -112,7 +114,7 @@ const VideoCardTablet = forwardRef<View, VideoCardTabletProps>(
 
     const handleLongPress = () => {
       longPressTriggered.current = true;
-      onLongPress?.(title, source, id);
+      onLongPress?.(title, rowKey);
     };
 
     const isContinueWatching = progress !== undefined && progress > 0 && progress < 1;

@@ -17,14 +17,24 @@ const useFavoritesStore = create<FavoritesState>((set) => ({
     set({ loading: true, error: null });
     try {
       const favoritesData = await FavoriteManager.getAll();
-      const playRecords = await PlayRecordManager.getAll();
+      let playRecords = await PlayRecordManager.getAll();
+      playRecords = Object.entries(playRecords).map(([key, record]) => {
+        return {...record}
+      }).sort((a, b) => (b.save_time || 0) - (a.save_time || 0));
       const favoritesArray = [];
       Object.entries(favoritesData).map(([key, value]) => {
         const favoriteObj = { ...value, key }
-        const playRecord = playRecords[key];
+        const { title, total_episodes, year } = favoriteObj;
+        const stype = total_episodes > 1 ? 'tv' : 'movie';
+        let playRecord = playRecords.find((item: any) => {
+          const itemStype = item.total_episodes > 1 ? 'tv' : 'movie';
+          return item.title.replace(' ', '') == title && item.year == year && (stype !== undefined && itemStype === stype || stype === undefined)
+        });
         if(playRecord) {
           favoriteObj['episode_index'] = playRecord['index'];
           favoriteObj['progress'] = playRecord.play_time / playRecord.total_time;
+          favoriteObj['source'] = playRecord['source'];
+          favoriteObj['source_name'] = playRecord['source_name'];
         }
         favoritesArray.push(favoriteObj);
       });

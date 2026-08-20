@@ -9,6 +9,7 @@ import VideoCardTablet from './VideoCard.tablet';
 import VideoCardTV from './VideoCard.tv';
 
 interface VideoCardProps extends React.ComponentProps<typeof TouchableOpacity> {
+  rowKey: string;
   id?: string;
   source?: string;
   q?: string;
@@ -23,7 +24,7 @@ interface VideoCardProps extends React.ComponentProps<typeof TouchableOpacity> {
   episodeIndex?: number;
   totalEpisodes?: number;
   onFocus?: () => void;
-  onLongPress?: (title: string, source: string, id: string) => void;
+  onLongPress?: (title: string, key: string) => void;
   api: API;
   stype?: string | null;
 }

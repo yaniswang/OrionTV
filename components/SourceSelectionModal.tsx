@@ -22,7 +22,7 @@ export const SourceSelectionModal: React.FC = () => {
   const dynamicStyles = createResponsiveStyles(deviceType, spacing);
   
   const { showSourceModal, setShowSourceModal, loadVideo, currentEpisodeIndex, status } = usePlayerStore();
-  const { searchResults, detail, setDetail, allSourcesLoaded } = useDetailStore();
+  const { q, searchResults, detail, setDetail, allSourcesLoaded } = useDetailStore();
 
   const onSelectSource = (index: number) => {
     logger.debug("onSelectSource", index, searchResults[index].id, detail?.id);
@@ -36,6 +36,7 @@ export const SourceSelectionModal: React.FC = () => {
         source: newDetail.source,
         id: newDetail.id.toString(),
         episodeIndex: currentEpisodeIndex,
+        q,
         title: newDetail.title,
         year: newDetail.year,
         stype: newDetail.episodes.length > 1 ? 'tv' : 'movie',

@@ -12,6 +12,7 @@ import Logger from '@/utils/Logger';
 const logger = Logger.withTag('VideoCardMobile');
 
 interface VideoCardMobileProps extends React.ComponentProps<typeof TouchableOpacity> {
+  rowKey: string;
   id?: string;
   source?: string;
   q?: string;
@@ -26,7 +27,7 @@ interface VideoCardMobileProps extends React.ComponentProps<typeof TouchableOpac
   episodeIndex?: number;
   totalEpisodes?: number;
   onFocus?: () => void;
-  onLongPress?: (title: string, source: string, id: string) => void;
+  onLongPress?: (title: string, key: string) => void;
   api: API;
   stype?: string | null;
 }
@@ -34,6 +35,7 @@ interface VideoCardMobileProps extends React.ComponentProps<typeof TouchableOpac
 const VideoCardMobile = forwardRef<View, VideoCardMobileProps>(
   (
     {
+      rowKey,
       id,
       source,
       q,
@@ -57,7 +59,6 @@ const VideoCardMobile = forwardRef<View, VideoCardMobileProps>(
     const router = useRouter();
     const { cardWidth, cardHeight, spacing } = useResponsiveLayout();
     const [fadeAnim] = useState(new Animated.Value(0));
-
     const longPressTriggered = useRef(false);
 
     const handlePress = () => {
@@ -67,7 +68,6 @@ const VideoCardMobile = forwardRef<View, VideoCardMobileProps>(
       }
 
       const videoStype = stype || (totalEpisodes !== undefined ? (totalEpisodes > 1 ? 'tv' : 'movie') : null);
-
       if (progress !== undefined && episodeIndex !== undefined) {
         router.push({
           pathname: "/play",
@@ -92,7 +92,7 @@ const VideoCardMobile = forwardRef<View, VideoCardMobileProps>(
 
     const handleLongPress = () => {
       longPressTriggered.current = true;
-      onLongPress?.(title, source, id);
+      onLongPress?.(title, rowKey);
     };
 
     const isContinueWatching = progress !== undefined && progress > 0 && progress < 1;

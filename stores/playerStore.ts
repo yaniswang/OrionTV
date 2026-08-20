@@ -137,7 +137,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       isDetialLoading: true,
     });
     
-    const needsDetailInit = !detail || !episodes || episodes.length === 0 || detail.title !== title;
+    const needsDetailInit = !detail || !episodes || episodes.length === 0 || detail.title !== title || detail.source !== source;
     logger.info(`[PERF] Detail check - needsInit: ${needsDetailInit}, hasDetail: ${!!detail}, episodesCount: ${episodes?.length || 0}`);
     
     if (needsDetailInit) {
@@ -254,8 +254,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       }));
       const episodesMappingEnd = performance.now();
       logger.info(`[PERF] Episodes mapping (${episodes.length} episodes) took ${(episodesMappingEnd - episodesMappingStart).toFixed(2)}ms`);
-      
-      const isFavorited = await FavoriteManager.isFavorited(source, id.toString());
+      const isFavorited = await FavoriteManager.isFavorited(q || title, stype + year);
 
       set({
         isDetialLoading: false,
@@ -332,9 +331,12 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       total_episodes: episodes.length,
       search_title: q,
       year: year || "",
+      source,
+      id
     };
+    const itemStype = episodes.length > 1 ? 'tv' : 'movie';
 
-    const newIsFavorited = await FavoriteManager.toggle(source, id.toString(), favoriteItem);
+    const newIsFavorited = await FavoriteManager.toggle(q || title, itemStype + year, favoriteItem);
     set({ isFavorited: newIsFavorited });
   },
 

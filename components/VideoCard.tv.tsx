@@ -11,6 +11,7 @@ import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 const logger = Logger.withTag('VideoCardTV');
 
 interface VideoCardProps extends React.ComponentProps<typeof TouchableOpacity> {
+  rowKey: string;
   id?: string;
   source?: string;
   q?: string;
@@ -25,7 +26,7 @@ interface VideoCardProps extends React.ComponentProps<typeof TouchableOpacity> {
   episodeIndex?: number; // 剧集索引
   totalEpisodes?: number; // 总集数
   onFocus?: () => void;
-  onLongPress?: (title: string, source: string, id: string) => void;
+  onLongPress?: (title: string, key: string) => void;
   api: API;
   stype?: string | null;
 }
@@ -33,6 +34,7 @@ interface VideoCardProps extends React.ComponentProps<typeof TouchableOpacity> {
 const VideoCard = forwardRef<View, VideoCardProps>(
   (
     {
+      rowKey,
       id,
       source,
       q,
@@ -119,7 +121,7 @@ const VideoCard = forwardRef<View, VideoCardProps>(
 
     const handleLongPress = () => {
       longPressTriggered.current = true;
-      onLongPress?.(title, source, id);
+      onLongPress?.(title, rowKey);
     };
 
     // 是否是继续观看的视频

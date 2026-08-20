@@ -67,6 +67,8 @@ export interface Favorite {
   search_title: string;
   year: string;
   save_time?: number;
+  source: string;
+  id: string;
 }
 
 export interface PlayRecord {

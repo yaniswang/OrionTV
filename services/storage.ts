@@ -88,9 +88,9 @@ export class PlayerSettingsManager {
     await AsyncStorage.setItem(STORAGE_KEYS.PLAYER_SETTINGS, JSON.stringify(allSettings));
   }
 
-  static async remove(source: string, id: string): Promise<void> {
+  static async remove(key: string): Promise<void> {
     const allSettings = await this.getAll();
-    delete allSettings[generateKey(source, id)];
+    delete allSettings[key];
     await AsyncStorage.setItem(STORAGE_KEYS.PLAYER_SETTINGS, JSON.stringify(allSettings));
   }
 
@@ -129,8 +129,7 @@ export class FavoriteManager {
     await api.addFavorite(key, item);
   }
 
-  static async remove(source: string, id: string): Promise<void> {
-    const key = generateKey(source, id);
+  static async remove(key: string): Promise<void> {
     if (this.getStorageType() === "localstorage") {
       const allFavorites = await this.getAll();
       delete allFavorites[key];
@@ -247,9 +246,8 @@ export class PlayRecordManager {
     return result;
   }
 
-  static async remove(source: string, id: string): Promise<void> {
-    const key = generateKey(source, id);
-    await PlayerSettingsManager.remove(source, id); // Always remove local settings
+  static async remove(key: string): Promise<void> {
+    await PlayerSettingsManager.remove(key); // Always remove local settings
 
     if (this.getStorageType() === "localstorage") {
       const allRecords = await this.getAll();
