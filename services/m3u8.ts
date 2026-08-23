@@ -10,7 +10,7 @@ interface CacheEntry {
 }
 
 const m3u8InfoCache: { [url: string]: CacheEntry } = {};
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+const CACHE_DURATION = 10 * 60 * 1000;
 
 export const getInfoFromM3U8 = async (
   url: string,
@@ -44,8 +44,9 @@ export const getInfoFromM3U8 = async (
     let pingTime = 0, firstTsUrl = ''
     const fetchStart = performance.now();
     timerId = setTimeout(() => controller.abort(), 5000);
-    let m3u8Url = url;
-    let response = await fetch(m3u8Url, { signal: controller.signal });
+    let m3u8Url = new URL(url);
+    m3u8Url.searchParams.set('_t123789', Date.now().toString());
+    let response = await fetch(m3u8Url.href, { signal: controller.signal });
     clearTimeout(timerId);
     
     const fetchEnd = performance.now();
@@ -61,9 +62,9 @@ export const getInfoFromM3U8 = async (
     let match = playlist.match(/#EXT-X-STREAM-INF:PROGRAM-ID=\d[^\n]+\n([^\n]+)/)
     if(match) {
       // 需要进一步解析子文件
-      m3u8Url = new URL(match[1], m3u8Url).href;
+      const subM3u8Url = new URL(match[1], url);
       timerId = setTimeout(() => controller.abort(), 5000);
-      response = await fetch(m3u8Url, { signal: controller.signal });
+      response = await fetch(subM3u8Url.href, { signal: controller.signal });
       clearTimeout(timerId);
       if (!response.ok) {
         return null;
@@ -112,13 +113,20 @@ export const getTsSpeed = async (
   try {
     const cachedEntry = m3u8InfoCache[url];
     const downloadStart = performance.now();
-    const response = await fetch(cachedEntry.firstTsUrl, { signal });
-    if (!response.ok) {
-      return null;
+    let allBytes = 0;
+    for(let i=0;i<3;i++) {
+      // 重复测3次,提升测试精度
+      const firstTsUrl = new URL(cachedEntry.firstTsUrl);
+      firstTsUrl.searchParams.set('_t123789', Date.now().toString());
+      const response = await fetch(firstTsUrl.href, { signal });
+      if (!response.ok) {
+        return null;
+      }
+      const buf = await response.arrayBuffer();
+      allBytes += buf.byteLength;
     }
     const downloadEnd = performance.now();
-    const buf = await response.arrayBuffer();
-    const speed = Math.round(buf.byteLength / (downloadEnd - downloadStart) * 1000 / 1024);
+    const speed = Math.round(allBytes / (downloadEnd - downloadStart) * 1000 / 1024);
     cachedEntry.speed = speed;
     return cachedEntry;
   } catch (error) {

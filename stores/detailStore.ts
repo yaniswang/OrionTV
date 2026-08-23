@@ -78,7 +78,7 @@ const useDetailStore = create<DetailState>((set, get) => ({
           const m3u8Start = performance.now();
           try {
             if (searchResult.episodes && searchResult.episodes.length > 0) {
-              if (m3u8Proxy && /^https:\/\//.test(m3u8Proxy)) {
+              if (m3u8Proxy && /^https?:\/\//.test(m3u8Proxy)) {
                 // 添加m3u8代理到URL
                 searchResult.episodes = searchResult.episodes.map((url)=> {
                   return m3u8Proxy + url;
