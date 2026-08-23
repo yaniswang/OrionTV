@@ -12,6 +12,13 @@ import { getCommonResponsiveStyles } from "@/utils/ResponsiveStyles";
 
 const logger = Logger.withTag('SourceSelectionModal');
 
+const formatSpeed = (speed: number) => {
+  if (speed >= 1024) {
+    return `${(speed/1024).toFixed(1)} MB/s`;
+  }
+  return `${speed} KB/s`;
+}
+
 export const SourceSelectionModal: React.FC = () => {
   // 响应式布局配置
   const responsiveConfig = useResponsiveLayout();
@@ -58,8 +65,8 @@ export const SourceSelectionModal: React.FC = () => {
         </View>
         <FlashList
           data={searchResults}
-          numColumns={Math.floor((responsiveConfig.screenWidth * 0.9) / 175)}
-          keyExtractor={(item, index) => `source-${item.id}-${index}`}
+          numColumns={Math.floor((responsiveConfig.screenWidth * 0.9) / 250)}
+          // keyExtractor={(item, index) => `source-${item.id}-${index}`}
           extraData={detail?.id}
           estimatedItemSize={60}
           renderItem={({ item, index }) => {
@@ -80,11 +87,13 @@ export const SourceSelectionModal: React.FC = () => {
                       </Text>
                     </View>
                   )}
-                  {/* {item.resolution && (
-                    <View style={[dynamicStyles.badge, { backgroundColor: "#666" }, detail?.source === item.source && dynamicStyles.selectedBadge]}>
-                      <Text style={dynamicStyles.badgeText}>{item.resolution}</Text>
+                  {item.speed > 0 && (
+                    <View style={[dynamicStyles.badge, isSelected && dynamicStyles.selectedBadge]}>
+                      <Text style={dynamicStyles.badgeText}>
+                        {formatSpeed(item.speed)}
+                      </Text>
                     </View>
-                  )} */}
+                  )}
               </StyledButton>
             );
           }}

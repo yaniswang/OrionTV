@@ -1,3 +1,4 @@
+import 'react-native-url-polyfill/auto';
 import React, { useEffect, useCallback, useRef, useState } from "react";
 import { View, StyleSheet, ActivityIndicator, Pressable, Animated, StatusBar, Platform, BackHandler, ToastAndroid, Alert, LogBox } from "react-native";
 import { FlashList } from "@shopify/flash-list";

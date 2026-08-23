@@ -12,7 +12,7 @@ const CONTROLS_TIMEOUT = 5000;
  * @returns onScreenPress - 一个函数，用于处理屏幕点击事件，以显示控件并重置定时器。
  */
 export const useTVRemoteHandler = () => {
-  const { showControls, setShowControls, showEpisodeModal, showSourceModal, showSpeedModal, setShowEpisodeModal, setShowSourceModal, setShowSpeedModal, togglePlayPause, seek } = usePlayerStore();
+  const { showControls, setShowControls, showEpisodeModal, showSourceModal, showSpeedModal, setShowEpisodeModal, setShowSourceModal, setShowSpeedModal, togglePlayPause, seek, setPlaybackRate } = usePlayerStore();
 
   const controlsTimer = useRef<NodeJS.Timeout | null>(null);
   const fastForwardIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -85,6 +85,14 @@ export const useTVRemoteHandler = () => {
         case "select":
           togglePlayPause();
           setShowControls(true);
+          break;
+        case 'longSelect':
+          if (event.eventKeyAction === 0) {
+            setPlaybackRate(2);
+          }
+          else if(event.eventKeyAction === 1) {
+            setPlaybackRate(1);
+          }
           break;
         case "left":
           seek(-SEEK_STEP); // 快退15秒

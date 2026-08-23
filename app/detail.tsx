@@ -12,6 +12,13 @@ import { getCommonResponsiveStyles } from "@/utils/ResponsiveStyles";
 import ResponsiveNavigation from "@/components/navigation/ResponsiveNavigation";
 import ResponsiveHeader from "@/components/navigation/ResponsiveHeader";
 
+const formatSpeed = (speed: number) => {
+  if (speed >= 1024) {
+    return `${(speed/1024).toFixed(1)} MB/s`;
+  }
+  return `${speed} KB/s`;
+}
+
 export default function DetailScreen() {
   const { source, id, q, title, year, stype } = useLocalSearchParams<{ source: string; id: string; q: string; title: string; year: string, stype: string }>();
   const router = useRouter();
@@ -199,11 +206,11 @@ export default function DetailScreen() {
                           </Text>
                         </View>
                       )}
-                      {/* {item.resolution && (
+                      {item.speed > 0 && (
                         <View style={[dynamicStyles.badge, { backgroundColor: "#666" }, isSelected && dynamicStyles.selectedBadge]}>
-                          <Text style={dynamicStyles.badgeText}>{item.resolution}</Text>
+                          <Text style={dynamicStyles.badgeText}>{formatSpeed(item.speed)}</Text>
                         </View>
-                      )} */}
+                      )}
                     </StyledButton>
                   );
                 })}
@@ -298,11 +305,11 @@ export default function DetailScreen() {
                             </Text>
                           </View>
                         )}
-                        {/* {item.resolution && (
+                        {item.speed > 0 && (
                           <View style={[dynamicStyles.badge, { backgroundColor: "#666" }, isSelected && dynamicStyles.selectedBadge]}>
-                            <Text style={dynamicStyles.badgeText}>{item.resolution}</Text>
+                            <Text style={dynamicStyles.badgeText}>{formatSpeed(item.speed)}</Text>
                           </View>
-                        )} */}
+                        )}
                       </StyledButton>
                     );
                   })}

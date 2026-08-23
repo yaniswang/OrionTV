@@ -444,7 +444,7 @@ export default function PlayScreen() {
       {/* 只在Video组件存在且正在加载时显示加载动画覆盖层 */}
       {currentEpisode?.url && isVideoLoading && (
         <View style={dynamicStyles.loadingContainer}>
-          <VideoLoadingAnimation showProgressBar loadingText="拼命加载视频中..." />
+          <VideoLoadingAnimation showProgressBar loadingText="加载视频中..." />
         </View>
       )}
 

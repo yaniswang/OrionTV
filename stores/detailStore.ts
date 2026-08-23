@@ -1,13 +1,13 @@
 import { create } from "zustand";
 import { SearchResult, api } from "@/services/api";
-import { getResolutionFromM3U8 } from "@/services/m3u8";
+import { getInfoFromM3U8, getTsSpeed } from "@/services/m3u8";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { FavoriteManager } from "@/services/storage";
 import Logger from "@/utils/Logger";
 
 const logger = Logger.withTag('DetailStore');
 
-export type SearchResultWithResolution = SearchResult & { resolution?: string | null, pingTime: number };
+export type SearchResultWithResolution = SearchResult & { resolution?: string | null, pingTime: number, firstTsUrl: string, speed: number };
 
 interface DetailState {
   q: string | null;
@@ -68,10 +68,9 @@ const useDetailStore = create<DetailState>((set, get) => ({
     });
 
     const { m3u8Proxy } = useSettingsStore.getState();
-
     const processAndSetResults = async (results: SearchResult[], merge = false) => {
       const resolutionStart = performance.now();
-      logger.info(`[PERF] Resolution detection START - processing ${results.length} sources`);
+      logger.info(`[PERF] M3U8 detection START - processing ${results.length} sources`);
       
       let resultsWithResolution = await Promise.all(
         results.map(async (searchResult) => {
@@ -80,11 +79,12 @@ const useDetailStore = create<DetailState>((set, get) => ({
           try {
             if (searchResult.episodes && searchResult.episodes.length > 0) {
               if (m3u8Proxy && /^https:\/\//.test(m3u8Proxy)) {
+                // 添加m3u8代理到URL
                 searchResult.episodes = searchResult.episodes.map((url)=> {
                   return m3u8Proxy + url;
                 })
               }
-              videoInfo = await getResolutionFromM3U8(searchResult.episodes[0], signal);
+              videoInfo = await getInfoFromM3U8(searchResult.episodes[0], signal);
             }
           } catch (e) {
             if ((e as Error).name !== "AbortError") {
@@ -98,7 +98,7 @@ const useDetailStore = create<DetailState>((set, get) => ({
       );
       
       const resolutionEnd = performance.now();
-      logger.info(`[PERF] Resolution detection COMPLETE - took ${(resolutionEnd - resolutionStart).toFixed(2)}ms`);
+      logger.info(`[PERF] M3U8 detection COMPLETE - took ${(resolutionEnd - resolutionStart).toFixed(2)}ms`);
 
       if (signal.aborted) return;
 
@@ -120,7 +120,6 @@ const useDetailStore = create<DetailState>((set, get) => ({
           sources: finalResults.map((r) => ({
             source: r.source,
             source_name: r.source_name,
-            resolution: r.resolution,
           })),
           detail: state.detail ?? finalResults[0] ?? null,
         };
@@ -228,6 +227,32 @@ const useDetailStore = create<DetailState>((set, get) => ({
         logger.error(`[ERROR] All search attempts completed but no results found for "${q||title}"`);
         set({ error: `未找到 "${q||title}" 的播放源，请检查标题拼写或稍后重试` });
       } else if (finalState.searchResults.length > 0) {
+        console.log('开始源测速')
+        const searchResults = finalState.searchResults;
+        for(const i in searchResults) {
+          const result = searchResults[i];
+          if(result.speed == 0) {
+            const m3u8Info = await getTsSpeed(result.episodes[0]);
+            if (m3u8Info) {
+              result.speed = m3u8Info.speed;
+              searchResults.sort((a, b) => b.speed - a.speed)
+              set({
+                searchResults
+              });
+              console.log(`源:${result.source_name} 测速结束, 速度: ${result.speed} KB/s`)
+            } else {
+              console.log(`源:${result.source_name} 测速失败`)
+            }
+          } else {
+            console.log(`源:${result.source_name} 命中缓存, 速度: ${result.speed} KB/s`)
+          }
+          if (signal.aborted) return;
+        }
+        searchResults.sort((a, b) => b.speed - a.speed)
+        set({
+          searchResults
+        });
+        console.log('结束源测速')
         logger.info(`[SUCCESS] DetailStore.init completed successfully with ${finalState.searchResults.length} sources`);
       }
 
