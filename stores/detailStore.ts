@@ -3,6 +3,7 @@ import { SearchResult, api } from "@/services/api";
 import { getInfoFromM3U8, getTsSpeed } from "@/services/m3u8";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { FavoriteManager } from "@/services/storage";
+import NetInfo from '@react-native-community/netinfo';
 import Logger from "@/utils/Logger";
 
 const logger = Logger.withTag('DetailStore');
@@ -44,6 +45,7 @@ const useDetailStore = create<DetailState>((set, get) => ({
   failedSources: new Set(),
 
   init: async (q, title, year, stype, preferredSource, id) => {
+    const netInfo = await NetInfo.fetch();
     const perfStart = performance.now();
     logger.info(`[PERF] DetailStore.init START - q: ${q}, title: ${title}, year: ${year}, stype: ${stype}, preferredSource: ${preferredSource}, id: ${id}`);
     
@@ -227,29 +229,32 @@ const useDetailStore = create<DetailState>((set, get) => ({
         logger.error(`[ERROR] All search attempts completed but no results found for "${q||title}"`);
         set({ error: `未找到 "${q||title}" 的播放源，请检查标题拼写或稍后重试` });
       } else if (finalState.searchResults.length > 0) {
-        logger.info('开始源测速')
-        const searchResults = finalState.searchResults;
-        searchResults.sort((a, b) => b.speed - a.speed);
-        for(const i in searchResults) {
-          const result = searchResults[i];
-          logger.info(`源:${result.source_name} 测速开始`)
-          const m3u8Info = await getTsSpeed(result.episodes[0], result.firstTsUrl, signal);
-          if (m3u8Info) {
-            result.speed = m3u8Info.speed;
-            searchResults.sort((a, b) => b.speed - a.speed)
-            set({
-              searchResults
-            });
-            logger.info(`源:${result.source_name} 测速结束, 速度: ${result.speed} KB/s`)
-          } else {
-            logger.info(`源:${result.source_name} 测速失败`)
+        if (netInfo.type !== 'cellular') {
+          // 非移动网络才会开启测速
+          logger.info('开始源测速')
+          const searchResults = finalState.searchResults;
+          searchResults.sort((a, b) => b.speed - a.speed);
+          for(const i in searchResults) {
+            const result = searchResults[i];
+            logger.info(`源:${result.source_name} 测速开始`)
+            const m3u8Info = await getTsSpeed(result.episodes[0], result.firstTsUrl, signal);
+            if (m3u8Info) {
+              result.speed = m3u8Info.speed;
+              searchResults.sort((a, b) => b.speed - a.speed)
+              set({
+                searchResults
+              });
+              logger.info(`源:${result.source_name} 测速结束, 速度: ${result.speed} KB/s`)
+            } else {
+              logger.info(`源:${result.source_name} 测速失败`)
+            }
+            if (signal.aborted) return;
           }
-          if (signal.aborted) return;
+          set({
+            searchResults
+          });
+          logger.info('结束源测速')
         }
-        set({
-          searchResults
-        });
-        logger.info('结束源测速')
         logger.info(`[SUCCESS] DetailStore.init completed successfully with ${finalState.searchResults.length} sources`);
       }
 

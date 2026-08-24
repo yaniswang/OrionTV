@@ -2,7 +2,7 @@
   "name": "OrionTV",
   "private": true,
   "main": "expo-router/entry",
-  "version": "1.3.25",
+  "version": "1.3.26",
   "scripts": {
     "start": "cross-env EXPO_TV=1 EXPO_USE_METRO_WORKSPACE_ROOT=1 expo start",
     "android": "cross-env EXPO_TV=1 EXPO_USE_METRO_WORKSPACE_ROOT=1 expo run:android",
@@ -29,7 +29,7 @@
     "@brightlayer-ui/react-native-progress-icons": "^2.2.2",
     "@expo/vector-icons": "^14.0.0",
     "@react-native-async-storage/async-storage": "^2.2.0",
-    "@react-native-community/netinfo": "^11.3.2",
+    "@react-native-community/netinfo": "^12.0.1",
     "@react-native-cookies/cookies": "^6.2.1",
     "@react-navigation/native": "^6.0.2",
     "@shopify/flash-list": "^1.8.3",

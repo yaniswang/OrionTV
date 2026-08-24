@@ -24,7 +24,7 @@ const formatTime = (milliseconds: number) => {
 };
 
 export const SeekingBar = () => {
-  const { isSeeking, seekPosition, progressPosition, status, playbackRate } = usePlayerStore();
+  const { isSeeking, seekPosition, progressPosition, bufferedPosition, status, playbackRate } = usePlayerStore();
   
   if (!((isSeeking && status?.isLoaded) || playbackRate != 1)) {
     return null;
@@ -40,6 +40,14 @@ export const SeekingBar = () => {
       </Text>
       <View style={styles.seekingBarContainer}>
         <View style={styles.seekingBarBackground} />
+          <View
+                  style={[
+                    styles.bufferedBarFilled,
+                    {
+                      width: `${bufferedPosition * 100}%`,
+                    },
+                  ]}
+                />
         <View
           style={[
             styles.seekingBarFilled,
@@ -82,7 +90,18 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255, 255, 255, 0.3)",
     borderRadius: 2.5,
   },
+  bufferedBarFilled: {
+    position: "absolute",
+    zIndex: 1,
+    left: 0,
+    height: "100%",
+    backgroundColor: "rgba(255,255,255,0.5)",
+    borderRadius: 2.5,
+  },
   seekingBarFilled: {
+    position: "absolute",
+    zIndex: 2,
+    left: 0,
     height: "100%",
     backgroundColor: "#00bb5e",
     borderRadius: 2.5,
