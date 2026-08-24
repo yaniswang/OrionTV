@@ -194,7 +194,10 @@ export default function DetailScreen() {
                   return (
                     <StyledButton
                       key={index}
-                      onPress={() => setDetail(item)}
+                      onPress={() => {
+                        setSelectedTab('episodes');
+                        setDetail(item);
+                      }}
                       isSelected={isSelected}
                       style={dynamicStyles.sourceButton}
                     >
@@ -292,7 +295,10 @@ export default function DetailScreen() {
                     return (
                       <StyledButton
                         key={index}
-                        onPress={() => setDetail(item)}
+                        onPress={() => {
+                          setSelectedTab('episodes');
+                          setDetail(item);
+                        }}
                         hasTVPreferredFocus={index === 0}
                         isSelected={isSelected}
                         style={dynamicStyles.sourceButton}

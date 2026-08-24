@@ -227,32 +227,29 @@ const useDetailStore = create<DetailState>((set, get) => ({
         logger.error(`[ERROR] All search attempts completed but no results found for "${q||title}"`);
         set({ error: `未找到 "${q||title}" 的播放源，请检查标题拼写或稍后重试` });
       } else if (finalState.searchResults.length > 0) {
-        console.log('开始源测速')
+        logger.info('开始源测速')
         const searchResults = finalState.searchResults;
+        searchResults.sort((a, b) => b.speed - a.speed);
         for(const i in searchResults) {
           const result = searchResults[i];
-          if(result.speed == 0) {
-            const m3u8Info = await getTsSpeed(result.episodes[0]);
-            if (m3u8Info) {
-              result.speed = m3u8Info.speed;
-              searchResults.sort((a, b) => b.speed - a.speed)
-              set({
-                searchResults
-              });
-              console.log(`源:${result.source_name} 测速结束, 速度: ${result.speed} KB/s`)
-            } else {
-              console.log(`源:${result.source_name} 测速失败`)
-            }
+          logger.info(`源:${result.source_name} 测速开始`)
+          const m3u8Info = await getTsSpeed(result.episodes[0], result.firstTsUrl, signal);
+          if (m3u8Info) {
+            result.speed = m3u8Info.speed;
+            searchResults.sort((a, b) => b.speed - a.speed)
+            set({
+              searchResults
+            });
+            logger.info(`源:${result.source_name} 测速结束, 速度: ${result.speed} KB/s`)
           } else {
-            console.log(`源:${result.source_name} 命中缓存, 速度: ${result.speed} KB/s`)
+            logger.info(`源:${result.source_name} 测速失败`)
           }
           if (signal.aborted) return;
         }
-        searchResults.sort((a, b) => b.speed - a.speed)
         set({
           searchResults
         });
-        console.log('结束源测速')
+        logger.info('结束源测速')
         logger.info(`[SUCCESS] DetailStore.init completed successfully with ${finalState.searchResults.length} sources`);
       }
 

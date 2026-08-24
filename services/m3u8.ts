@@ -1,16 +1,15 @@
 import Logger from '@/utils/Logger';
+import { useSettingsStore } from "@/stores/settingsStore";
 
 const logger = Logger.withTag('M3U8');
 
 interface CacheEntry {
-  pingTime: number,
-  firstTsUrl: string,
   speed: number,
   timestamp: number;
 }
 
 const m3u8InfoCache: { [url: string]: CacheEntry } = {};
-const CACHE_DURATION = 10 * 60 * 1000;
+const CACHE_DURATION = 60 * 60 * 1000;
 
 export const getInfoFromM3U8 = async (
   url: string,
@@ -24,18 +23,11 @@ export const getInfoFromM3U8 = async (
   signal.addEventListener("abort", () => controller.abort());
 
   const perfStart = performance.now();
-  logger.info(`[PERF] M3U8 resolution detection START - url: ${url.substring(0, 100)}...`);
+  logger.info(`M3U8检测开始 - url: ${url.substring(0, 100)}...`);
   
-  // 1. Check cache first
-  const cachedEntry = m3u8InfoCache[url];
-  if (cachedEntry && Date.now() - cachedEntry.timestamp < CACHE_DURATION) {
-    const perfEnd = performance.now();
-    logger.info(`[PERF] M3U8 resolution detection CACHED - took ${(perfEnd - perfStart).toFixed(2)}ms, pingTime: ${cachedEntry.pingTime}`);
-    return cachedEntry;
-  }
 
   if (!url.toLowerCase().endsWith(".m3u8")) {
-    logger.info(`[PERF] M3U8 resolution detection SKIPPED - not M3U8 file`);
+    logger.info(`M3U8检测 跳过 - 非M3U8文件`);
     return null;
   }
 
@@ -44,20 +36,19 @@ export const getInfoFromM3U8 = async (
     let pingTime = 0, firstTsUrl = ''
     const fetchStart = performance.now();
     timerId = setTimeout(() => controller.abort(), 5000);
-    let m3u8Url = new URL(url);
+    const m3u8Url = new URL(url);
     m3u8Url.searchParams.set('_t123789', Date.now().toString());
     let response = await fetch(m3u8Url.href, { signal: controller.signal });
     clearTimeout(timerId);
     
     const fetchEnd = performance.now();
     pingTime = Math.round(fetchEnd - fetchStart);
-    logger.info(`[PERF] M3U8 fetch took ${(pingTime).toFixed(2)}ms, status: ${response.status}`);
+    logger.info(`M3U8检测ping结束, pingTime: ${pingTime}ms`);
     
     if (!response.ok) {
       return null;
     }
     
-    const parseStart = performance.now();
     let playlist = await response.text();
     let match = playlist.match(/#EXT-X-STREAM-INF:PROGRAM-ID=\d[^\n]+\n([^\n]+)/)
     if(match) {
@@ -77,19 +68,8 @@ export const getInfoFromM3U8 = async (
       firstTsUrl = new URL(match[1], url).href;
     }
 
-    const parseEnd = performance.now();
-    logger.info(`[PERF] M3U8 parsing took ${(parseEnd - parseStart).toFixed(2)}ms`);
-
-    // 2. Store result in cache
-    m3u8InfoCache[url] = {
-      pingTime,
-      firstTsUrl,
-      speed: 0,
-      timestamp: Date.now(),
-    };
-
     const perfEnd = performance.now();
-    logger.info(`[PERF] M3U8 resolution detection COMPLETE - took ${(perfEnd - perfStart).toFixed(2)}ms, pingTime: ${pingTime}`);
+    logger.info(`M3U8检测结束 消耗:${(perfEnd - perfStart).toFixed(2)}ms`);
     
     return {
       pingTime,
@@ -99,26 +79,39 @@ export const getInfoFromM3U8 = async (
   } catch (error) {
     clearTimeout(timerId);
     const perfEnd = performance.now();
-    logger.info(`[PERF] M3U8 resolution detection ERROR - took ${(perfEnd - perfStart).toFixed(2)}ms, error: ${error}`);
+    logger.info(`M3U8检测失败 - 消耗:${(perfEnd - perfStart).toFixed(2)}ms, error: ${error}`);
     return null;
   }
 };
 
 export const getTsSpeed = async (
   url: string,
+  firstTsUrl: string,
   signal?: AbortSignal,
 ): Promise<{
   speed: number,
 } | null> => {
   try {
-    const cachedEntry = m3u8InfoCache[url];
+    // 清除代理,获取主机名
+    const { m3u8Proxy } = useSettingsStore.getState();    
+    let m3u8RealDomain = new URL(url.replace(m3u8Proxy, '')).host;
+
+    // 检测缓存
+    let cachedEntry = m3u8InfoCache[m3u8RealDomain];
+    if (cachedEntry && Date.now() - cachedEntry.timestamp < CACHE_DURATION) {
+      logger.info(`M3U8检测缓存命中, speed: ${cachedEntry.speed} KB/s`);
+      return cachedEntry;
+    }
+
+
     const downloadStart = performance.now();
     let allBytes = 0;
-    for(let i=0;i<3;i++) {
-      // 重复测3次,提升测试精度
-      const firstTsUrl = new URL(cachedEntry.firstTsUrl);
-      firstTsUrl.searchParams.set('_t123789', Date.now().toString());
-      const response = await fetch(firstTsUrl.href, { signal });
+    const testUrl = new URL(firstTsUrl);
+    logger.info(`开始M3U8测速: ${firstTsUrl}`);
+    for(let i=0;i<5;i++) {
+      // 重复多次,提升测试精度
+      testUrl.searchParams.set('_t123789', Date.now().toString());
+      const response = await fetch(testUrl.href, { signal });
       if (!response.ok) {
         return null;
       }
@@ -127,7 +120,13 @@ export const getTsSpeed = async (
     }
     const downloadEnd = performance.now();
     const speed = Math.round(allBytes / (downloadEnd - downloadStart) * 1000 / 1024);
-    cachedEntry.speed = speed;
+
+    cachedEntry = {
+      speed,
+      timestamp: Date.now(),
+    };
+    m3u8InfoCache[m3u8RealDomain] = cachedEntry;
+
     return cachedEntry;
   } catch (error) {
     return null;
