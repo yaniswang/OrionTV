@@ -125,7 +125,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     let episodes: string[] = [];
     
     // 如果有detail，使用detail的source获取episodes；否则使用传入的source
-    if (detail && detail.source) {
+    if (detail && detail.source && detail.source == source && detail.id == id) {
       logger.info(`[INFO] Using existing detail source "${detail.source}" and id "${detail.id}" to get episodes`);
       episodes = episodesSelectorBySource(detail.source, detail.id)(useDetailStore.getState());
     } else {
@@ -137,14 +137,16 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       isDetialLoading: true,
     });
     
-    const needsDetailInit = !detail || !episodes || episodes.length === 0 || detail.title !== title || detail.source !== source;
+    const needsDetailInit = !detail || !episodes || episodes.length === 0 || detail.title !== title || detail.source !== source || !useDetailStore.getState().allSourcesLoaded;
     logger.info(`[PERF] Detail check - needsInit: ${needsDetailInit}, hasDetail: ${!!detail}, episodesCount: ${episodes?.length || 0}`);
     
     if (needsDetailInit) {
 
       const detailInitStart = performance.now();
       logger.info(`[PERF] DetailStore.init START - ${q}, ${title}`);
-      
+      useDetailStore.setState({
+        loading: true
+      });
       useDetailStore.getState().init(q, title, year, stype, source, id);
 
       while(true) {
@@ -536,6 +538,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       outroStartTime: undefined,
       isLandscapeMode: null,
     });
+    useDetailStore.getState().abort();
   },
 
   handleVideoLoad: async (data: OnLoadData) => {

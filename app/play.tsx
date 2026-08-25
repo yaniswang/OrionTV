@@ -143,6 +143,7 @@ export default function PlayScreen() {
   const source = sourceStr || detail?.source;
   const id = videoId || detail?.id.toString();
   const title = videoTitle || detail?.title;
+  
   const {
     isDetialLoading,
     isVideoLoading,
@@ -378,7 +379,10 @@ export default function PlayScreen() {
   
   const handelBack = async() => {
     // 页面跳转前保存播放记录
-    await savePlayRecord({ }, { immediate: true });
+    try {
+      await savePlayRecord({ }, { immediate: true });
+    }
+    catch (e) {}
     router.back();
   };
   
