@@ -5,6 +5,7 @@ import { storageConfig } from "@/services/storageConfig";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Logger from "@/utils/Logger";
 import useDetailStore from "./detailStore";
+import { clearM3u8Cache } from "@/services/m3u8";
 
 const logger = Logger.withTag('SettingsStore');
 
@@ -135,6 +136,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     if (currentM3u8Proxy !== processedM3u8Proxy) {
       // 重置detail信息
       useDetailStore.setState({detail: null});
+      clearM3u8Cache();
     }
     api.setBaseUrl(processedApiBaseUrl);
     // Also update the URL in the state so the input field shows the processed URL

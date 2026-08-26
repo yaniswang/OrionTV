@@ -35,7 +35,7 @@ export const getInfoFromM3U8 = async (
   try {
     let pingTime = 0, firstTsUrl = ''
     const fetchStart = performance.now();
-    timerId = setTimeout(() => controller.abort(), 5000);
+    timerId = setTimeout(() => controller.abort(), 10000);
     const m3u8Url = new URL(url);
     m3u8Url.searchParams.set('_t123789', Date.now().toString());
     let response = await fetch(m3u8Url.href, { signal: controller.signal });
@@ -54,7 +54,7 @@ export const getInfoFromM3U8 = async (
     if(match) {
       // 需要进一步解析子文件
       const subM3u8Url = new URL(match[1], url);
-      timerId = setTimeout(() => controller.abort(), 5000);
+      timerId = setTimeout(() => controller.abort(), 10000);
       response = await fetch(subM3u8Url.href, { signal: controller.signal });
       clearTimeout(timerId);
       if (!response.ok) {
@@ -87,10 +87,11 @@ export const getInfoFromM3U8 = async (
 export const getTsSpeed = async (
   url: string,
   firstTsUrl: string,
-  signal?: AbortSignal,
+  signal: AbortSignal,
 ): Promise<{
   speed: number,
 } | null> => {
+  let timerId;
   try {
     // 清除代理,获取主机名
     const { m3u8Proxy } = useSettingsStore.getState();    
@@ -103,6 +104,8 @@ export const getTsSpeed = async (
       return cachedEntry;
     }
 
+    const controller = new AbortController();
+    signal.addEventListener("abort", () => controller.abort());
 
     const downloadStart = performance.now();
     let allBytes = 0;
@@ -111,12 +114,19 @@ export const getTsSpeed = async (
     for(let i=0;i<5;i++) {
       // 重复多次,提升测试精度
       testUrl.searchParams.set('_t123789', Date.now().toString());
-      const response = await fetch(testUrl.href, { signal });
+      timerId = setTimeout(() => controller.abort(), 10000);
+      const response = await fetch(testUrl.href, { signal: controller.signal });
+      clearTimeout(timerId);
       if (!response.ok) {
         return null;
       }
       const buf = await response.arrayBuffer();
       allBytes += buf.byteLength;
+      // 最长测速10秒
+      if ((performance.now() - downloadStart) >= 10 * 1000){
+        logger.info('测速10s超时');
+        break;
+      }
     }
     const downloadEnd = performance.now();
     const speed = Math.round(allBytes / (downloadEnd - downloadStart) * 1000 / 1024);
@@ -129,6 +139,11 @@ export const getTsSpeed = async (
 
     return cachedEntry;
   } catch (error) {
+    if (timerId) clearTimeout(timerId);
     return null;
   }
+}
+
+export const clearM3u8Cache = () => {
+  Object.keys(m3u8InfoCache).forEach(k => delete m3u8InfoCache[k]);
 }

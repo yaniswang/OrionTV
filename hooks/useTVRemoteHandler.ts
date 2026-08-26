@@ -19,34 +19,35 @@ export const useTVRemoteHandler = () => {
 
   // 重置或启动隐藏控件的定时器
   const resetTimer = useCallback(() => {
+    if (showEpisodeModal || showSourceModal || showSpeedModal || !showControls) {
+      return;
+    }
     // 清除之前的定时器
     if (controlsTimer.current) {
       clearTimeout(controlsTimer.current);
+      controlsTimer.current = null;
     }
     // 设置新的定时器
     controlsTimer.current = setTimeout(() => {
       setShowControls(false);
+      controlsTimer.current = null;
     }, CONTROLS_TIMEOUT);
-  }, [setShowControls]);
+  }, [setShowControls, showControls, showEpisodeModal, showSourceModal, showSpeedModal]);
 
   // 当控件显示时，启动定时器
   useEffect(() => {
-    if (showControls) {
+    if (showControls && !showEpisodeModal && !showSourceModal && !showSpeedModal) {
       resetTimer();
-    } else {
-      // 如果控件被隐藏，清除定时器
-      if (controlsTimer.current) {
-        clearTimeout(controlsTimer.current);
-      }
     }
 
     // 组件卸载时清除定时器
     return () => {
       if (controlsTimer.current) {
         clearTimeout(controlsTimer.current);
+        controlsTimer.current = null;
       }
     };
-  }, [showControls, resetTimer]);
+  }, [showControls, showEpisodeModal, showSourceModal, showSpeedModal]);
 
   // 组件卸载时清除快进定时器
   useEffect(() => {
@@ -72,7 +73,6 @@ export const useTVRemoteHandler = () => {
           }
         }
       }
-
       resetTimer();
 
       if (showControls) {
@@ -130,11 +130,6 @@ export const useTVRemoteHandler = () => {
     // 切换控件的显示状态
     const newShowControls = !showControls;
     setShowControls(newShowControls);
-
-    // 如果控件变为显示状态，则重置定时器
-    if (newShowControls) {
-      resetTimer();
-    }
   };
 
   return { onScreenPress };

@@ -94,7 +94,7 @@ const useDetailStore = create<DetailState>((set, get) => ({
             }
           }
           const m3u8End = performance.now();
-          logger.info(`[PERF] M3U8 resolution for ${searchResult.source_name}: ${(m3u8End - m3u8Start).toFixed(2)}ms (${videoInfo && JSON.stringify(videoInfo) || 'failed'})`);
+          logger.info(`[PERF] M3U8 info for ${searchResult.source_name}: ${(m3u8End - m3u8Start).toFixed(2)}ms (${videoInfo && JSON.stringify(videoInfo) || 'failed'})`);
           return { ...searchResult, ...videoInfo };
         })
       );
@@ -221,7 +221,6 @@ const useDetailStore = create<DetailState>((set, get) => ({
         logger.warn(`[WARN] Background search failed`);
       }
 
-      const favoriteCheckStart = performance.now();
       const finalState = get();
       
       // 最终检查：如果所有搜索都完成但仍然没有结果
@@ -258,6 +257,7 @@ const useDetailStore = create<DetailState>((set, get) => ({
         logger.info(`[SUCCESS] DetailStore.init completed successfully with ${finalState.searchResults.length} sources`);
       }
 
+      const favoriteCheckStart = performance.now();
       if (finalState.detail) {
         const { source, id } = finalState.detail;
         logger.info(`[INFO] Checking favorite status for source: ${source}, id: ${id}`);

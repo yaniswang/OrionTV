@@ -258,7 +258,6 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       logger.info(`[PERF] Episodes mapping (${episodes.length} episodes) took ${(episodesMappingEnd - episodesMappingStart).toFixed(2)}ms`);
       
       let isFavorited = await FavoriteManager.isFavorited(source, id.toString());
-
       if (!isFavorited) {
         const favoritesData = await FavoriteManager.getAll();
         const arrFavoritesData = Object.entries(favoritesData).map(item =>{
