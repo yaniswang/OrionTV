@@ -16,12 +16,21 @@ export const useTVRemoteHandler = () => {
 
   const controlsTimer = useRef<NodeJS.Timeout | null>(null);
   const fastForwardIntervalRef = useRef<NodeJS.Timeout | null>(null);
-
+  const modalRef = useRef({
+    showEpisodeModal: false,
+    showSpeedModal: false,
+    showSourceModal: false,
+  });
+  
+  // 每次modal变更同步到ref
+  useEffect(() => {
+    modalRef.current.showEpisodeModal = showEpisodeModal;
+    modalRef.current.showSpeedModal = showSpeedModal;
+    modalRef.current.showSourceModal = showSourceModal;
+  },[showEpisodeModal, showSpeedModal, showSourceModal])
+  
   // 重置或启动隐藏控件的定时器
   const resetTimer = useCallback(() => {
-    if (showEpisodeModal || showSourceModal || showSpeedModal || !showControls) {
-      return;
-    }
     // 清除之前的定时器
     if (controlsTimer.current) {
       clearTimeout(controlsTimer.current);
@@ -61,7 +70,8 @@ export const useTVRemoteHandler = () => {
   // 处理遥控器事件
   const handleTVEvent = useCallback(
     (event: HWEvent) => {
-      if (showEpisodeModal) {
+      const m = modalRef.current;
+      if (m.showEpisodeModal || m.showSpeedModal || m.showSourceModal) {
         return;
       }
 
@@ -120,7 +130,7 @@ export const useTVRemoteHandler = () => {
           break;
       }
     },
-    [showControls, showEpisodeModal, setShowControls, resetTimer, togglePlayPause, seek]
+    [showControls, showEpisodeModal, showSourceModal, showSpeedModal, setShowControls, resetTimer, togglePlayPause, seek]
   );
 
   useTVEventHandler(handleTVEvent);
