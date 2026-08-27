@@ -31,12 +31,12 @@ export const getInfoFromM3U8 = async (
     return null;
   }
 
+  let m3u8Url = new URL(url);
   let timerId;
   try {
     let pingTime = 0, firstTsUrl = ''
     const fetchStart = performance.now();
     timerId = setTimeout(() => controller.abort(), 10000);
-    const m3u8Url = new URL(url);
     m3u8Url.searchParams.set('_t123789', Date.now().toString());
     let response = await fetch(m3u8Url.href, { signal: controller.signal });
     clearTimeout(timerId);
@@ -53,9 +53,9 @@ export const getInfoFromM3U8 = async (
     let match = playlist.match(/#EXT-X-STREAM-INF:PROGRAM-ID=\d[^\n]+\n([^\n]+)/)
     if(match) {
       // 需要进一步解析子文件
-      const subM3u8Url = new URL(match[1], url);
+      m3u8Url = new URL(match[1], url);
       timerId = setTimeout(() => controller.abort(), 10000);
-      response = await fetch(subM3u8Url.href, { signal: controller.signal });
+      response = await fetch(m3u8Url.href, { signal: controller.signal });
       clearTimeout(timerId);
       if (!response.ok) {
         return null;
@@ -65,7 +65,7 @@ export const getInfoFromM3U8 = async (
     
     match = playlist.match(/#EXTINF:[^,]+,\n([^\n]+)/);
     if (match) {
-      firstTsUrl = new URL(match[1], url).href;
+      firstTsUrl = new URL(match[1], m3u8Url.href).href;
     }
 
     const perfEnd = performance.now();
