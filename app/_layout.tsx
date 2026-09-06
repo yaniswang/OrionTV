@@ -11,6 +11,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { useRemoteControlStore } from "@/stores/remoteControlStore";
 import LoginModal from "@/components/LoginModal";
 import useAuthStore from "@/stores/authStore";
+import useDanmakuStore from "@/stores/danmakuStore";
 import { useUpdateStore, initUpdateStore } from "@/stores/updateStore";
 import { UpdateModal } from "@/components/UpdateModal";
 import { UPDATE_CONFIG } from "@/constants/UpdateConfig";
@@ -36,6 +37,7 @@ export default function RootLayout() {
   useEffect(() => {
     const initializeApp = async () => {
       await loadSettings();
+      await useDanmakuStore.getState().hydrateDisplaySettings();
     };
     initializeApp();
     initUpdateStore(); // 初始化更新存储

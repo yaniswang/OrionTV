@@ -8,6 +8,8 @@ import { PlayerControls } from "@/components/PlayerControls";
 import { EpisodeSelectionModal } from "@/components/EpisodeSelectionModal";
 import { SourceSelectionModal } from "@/components/SourceSelectionModal";
 import { SpeedSelectionModal } from "@/components/SpeedSelectionModal";
+import { DanmakuOverlay } from "@/components/DanmakuOverlay";
+import { DanmakuSourceModal } from "@/components/DanmakuSourceModal";
 import { SeekingBar } from "@/components/SeekingBar";
 // import { NextEpisodeOverlay } from "@/components/NextEpisodeOverlay";
 import VideoLoadingAnimation from "@/components/VideoLoadingAnimation";
@@ -15,6 +17,7 @@ import useDetailStore from "@/stores/detailStore";
 import { useTVRemoteHandler } from "@/hooks/useTVRemoteHandler";
 import Toast from "react-native-toast-message";
 import usePlayerStore, { selectCurrentEpisode } from "@/stores/playerStore";
+import useDanmakuStore from "@/stores/danmakuStore";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { useVideoHandlers } from "@/hooks/useVideoHandlers";
 import Logger from '@/utils/Logger';
@@ -165,6 +168,7 @@ export default function PlayScreen() {
     reset,
     loadVideo,
     seek,
+    currentEpisodeIndex,
   } = usePlayerStore();
   const currentEpisode = usePlayerStore(selectCurrentEpisode);
 
@@ -223,8 +227,19 @@ export default function PlayScreen() {
     return () => {
       logger.info(`[PERF] PlayScreen unmounting - calling reset()`);
       reset(); // Reset state when component unmounts
+      useDanmakuStore.getState().reset();
     };
   }, [episodeIndex, source, position, setVideoRef, reset, loadVideo, id, q, title, videoYear, videoStype]);
+
+  useEffect(() => {
+    if (!detail?.title || currentEpisodeIndex < 0) return;
+    useDanmakuStore.getState().loadForPlayback({
+      title: detail.title,
+      year: detail.year,
+      episodeIndex: currentEpisodeIndex,
+      episodeTitle: currentEpisode?.title,
+    });
+  }, [detail?.title, detail?.year, currentEpisodeIndex, currentEpisode?.title]);
 
   // 调节音量 (右侧)
   const handleVolume = (direction:string) => {
@@ -432,6 +447,7 @@ export default function PlayScreen() {
           <GestureDetector gesture={composedGesture}>
             <View style={dynamicStyles.videoContainer}>
               <Video ref={videoRef} style={dynamicStyles.videoPlayer} {...videoProps} />
+              <DanmakuOverlay />
             </View>
           </GestureDetector>
         </GestureHandlerRootView>
@@ -456,6 +472,7 @@ export default function PlayScreen() {
       {currentEpisode?.url && (<EpisodeSelectionModal />)}
       {currentEpisode?.url && (<SourceSelectionModal />)}
       {currentEpisode?.url && (<SpeedSelectionModal />)}
+      {currentEpisode?.url && (<DanmakuSourceModal />)}
       
       <View style={dynamicStyles.brightnessBar}>
         <AnimatedVerticalProgress progress={brightness} forceShow={brightnessBarShow} />

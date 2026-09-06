@@ -2,6 +2,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { api, PlayRecord as ApiPlayRecord, Favorite as ApiFavorite } from "./api";
 import { storageConfig } from "./storageConfig";
 import Logger from '@/utils/Logger';
+import type { DanmakuArea, DanmakuDensity } from "@/utils/danmaku";
+import { DANMAKU_DEFAULT_AREA, DANMAKU_DEFAULT_DENSITY, isDanmakuArea, isDanmakuDensity } from "@/utils/danmaku";
 
 const logger = Logger.withTag('Storage');
 
@@ -13,6 +15,7 @@ const STORAGE_KEYS = {
   PLAY_RECORDS: "mytv_play_records",
   SEARCH_HISTORY: "mytv_search_history",
   LOGIN_CREDENTIALS: "mytv_login_credentials",
+  DANMAKU_DISPLAY: "mytv_danmaku_display",
 } as const;
 
 // --- Type Definitions (aligned with api.ts) ---
@@ -371,5 +374,36 @@ export class LoginCredentialsManager {
     } catch (error) {
       logger.error("Failed to clear login credentials:", error);
     }
+  }
+}
+
+export interface DanmakuDisplaySettings {
+  area: DanmakuArea;
+  density: DanmakuDensity;
+}
+
+export class DanmakuDisplaySettingsManager {
+  static defaults(): DanmakuDisplaySettings {
+    return { area: DANMAKU_DEFAULT_AREA, density: DANMAKU_DEFAULT_DENSITY };
+  }
+
+  static async get(): Promise<DanmakuDisplaySettings> {
+    const fallback = this.defaults();
+    try {
+      const data = await AsyncStorage.getItem(STORAGE_KEYS.DANMAKU_DISPLAY);
+      if (!data) return fallback;
+      const parsed = JSON.parse(data);
+      return {
+        area: isDanmakuArea(parsed.area) ? parsed.area : fallback.area,
+        density: isDanmakuDensity(parsed.density) ? parsed.density : fallback.density,
+      };
+    } catch (error) {
+      logger.info("Failed to get danmaku display settings:", error);
+      return fallback;
+    }
+  }
+
+  static async save(settings: DanmakuDisplaySettings): Promise<void> {
+    await AsyncStorage.setItem(STORAGE_KEYS.DANMAKU_DISPLAY, JSON.stringify(settings));
   }
 }

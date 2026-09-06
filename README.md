@@ -1,6 +1,11 @@
 # OrionTV 📺
-
+原OrionTV好久不更新，我就先找到了https://github.com/yaniswang/OrionTV 的修改版，然后在大佬的基础上根据自己的使用习惯又进行了些改动，我只在手机上使用，所以修改都是针对手机使用的情况。
+新增：
+弹幕功能：只要在moontvplus后台配置好弹幕api，就可以正常使用
+播放器：可以点按进度条跳转了，播放器菜单面缩小
 一个基于 React Native TVOS 和 Expo 构建的播放器，旨在提供流畅的视频观看体验。
+
+https://pan.quark.cn/s/2b3129dba1e5?pwd=UrDj  安装包不知道为啥传不上去，直接放链接吧
 
 ## ✨ 功能特性
 

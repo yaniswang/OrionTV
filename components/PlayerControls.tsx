@@ -1,6 +1,6 @@
 import React from "react";
 import { View, Text, StyleSheet, Pressable, Platform } from "react-native";
-import { Pause, Play, SkipForward, List, Tv, ArrowDownToDot, ArrowUpFromDot, Gauge, Unlock, Lock, ChevronLeft, Rocket } from "lucide-react-native";
+import { Pause, Play, SkipForward, List, Tv, ArrowDownToDot, ArrowUpFromDot, Gauge, Unlock, Lock, ChevronLeft, Rocket, MessageCircle } from "lucide-react-native";
 import { ThemedText } from "@/components/ThemedText";
 import { MediaButton } from "@/components/MediaButton";
 import { FontAwesome } from "@expo/vector-icons";
@@ -14,6 +14,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import {Battery} from '@brightlayer-ui/react-native-progress-icons';
 import { useBatteryLevel, useBatteryState, BatteryState } from 'expo-battery';
 import { format } from 'date-fns';
+import useDanmakuStore from "@/stores/danmakuStore";
 
 interface PlayerControlsProps {
   showControls: boolean;
@@ -88,6 +89,7 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
 
   const durationMillis = status.durationMillis || 0;
   const seekPositionMillis = seekPosition * durationMillis;
+  const { openModal: openDanmakuModal, enabled: danmakuEnabled, count: danmakuCount } = useDanmakuStore();
 
   return (
     <View style={styles.controlContainer}>
@@ -190,6 +192,10 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
 
               <MediaButton onPress={() => setShowSpeedModal(true)} timeLabel={playbackRate !== 1.0 ? `${playbackRate}x` : undefined}>
                 <Gauge color="white" size={24} />
+              </MediaButton>
+
+              <MediaButton onPress={openDanmakuModal} timeLabel={danmakuCount > 0 ? `${danmakuCount}` : undefined}>
+                <MessageCircle color={danmakuEnabled ? "#00bb5e" : "white"} size={24} />
               </MediaButton>
 
               <MediaButton onPress={toggleFavorite}>

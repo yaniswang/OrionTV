@@ -1,5 +1,10 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import EventSource from "react-native-sse";
+import type {
+  DanmakuCommentsResponse,
+  DanmakuEpisodesResponse,
+  DanmakuSearchResponse,
+} from "@/utils/danmaku";
 
 // region: --- Interface Definitions ---
 export interface DoubanItem {
@@ -324,6 +329,24 @@ export class API {
 
   async getVideoDetail(source: string, id: string): Promise<VideoDetail> {
     const url = `/api/detail?source=${source}&id=${id}`;
+    const response = await this._fetch(url);
+    return response.json();
+  }
+
+  async searchDanmaku(keyword: string): Promise<DanmakuSearchResponse> {
+    const url = `/api/danmaku/search?keyword=${encodeURIComponent(keyword)}`;
+    const response = await this._fetch(url);
+    return response.json();
+  }
+
+  async getDanmakuEpisodes(animeId: number): Promise<DanmakuEpisodesResponse> {
+    const url = `/api/danmaku/episodes?animeId=${animeId}`;
+    const response = await this._fetch(url);
+    return response.json();
+  }
+
+  async getDanmakuComments(episodeId: number): Promise<DanmakuCommentsResponse> {
+    const url = `/api/danmaku/comment?episodeId=${episodeId}`;
     const response = await this._fetch(url);
     return response.json();
   }
