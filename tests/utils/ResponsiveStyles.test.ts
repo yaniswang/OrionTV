@@ -6,9 +6,9 @@ import {
   getResponsiveTextSize,
   getResponsiveSpacing,
   ResponsiveStyleCreator,
-} from "../ResponsiveStyles";
+} from "@/utils/ResponsiveStyles";
 import { ResponsiveConfig } from "@/hooks/useResponsiveLayout";
-import { DeviceUtils } from "../DeviceUtils";
+import { DeviceUtils } from "@/utils/DeviceUtils";
 
 jest.mock("react-native", () => ({
   StyleSheet: {
@@ -94,9 +94,10 @@ describe("ResponsiveStyles", () => {
 
       const styles = getCommonResponsiveStyles(mobileConfig);
 
+      // container 只负责铺满 + 纯黑底（内边距在 safeContainer 上）
       expect(styles.container).toEqual({
         flex: 1,
-        paddingHorizontal: 16,
+        backgroundColor: "#000000",
       });
 
       expect(styles.safeContainer).toEqual({

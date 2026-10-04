@@ -1,7 +1,8 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { ResizeMode, OnLoadData, OnPlaybackStateChangedData, ViewType } from 'react-native-video';
 import Toast from 'react-native-toast-message';
 import usePlayerStore from '@/stores/playerStore';
+import { onProxyEvent } from '@/services/localProxy';
 import Logger from '@/utils/Logger';
 const logger = Logger.withTag('useVideoHandlers');
 
@@ -74,6 +75,27 @@ export const useVideoHandlers = ({
       usePlayerStore.getState().handleVideoError('other', currentEpisode.url);
     }
   }, [currentEpisode?.url]);
+
+  // 当前分片回源超时（30 秒还没下完）：这个源已经慢到放不动了，
+  // 直接切下一个源，不再等它重复重试同一片。
+  useEffect(() => {
+    let switching = false;
+    return onProxyEvent((event) => {
+      if (event.type !== 'segment-timeout') return;
+      if (switching) return;
+      switching = true;
+
+      const { episodes, currentEpisodeIndex, handleVideoError } = usePlayerStore.getState();
+      const failedUrl = episodes[currentEpisodeIndex]?.url ?? event.url;
+      logger.warn(`[TIMEOUT] 当前分片回源超时，切换下一个播放源: ${event.url}`);
+
+      handleVideoError('network', failedUrl)
+        .catch((error) => logger.error(`[TIMEOUT] 切换播放源失败:`, error))
+        .finally(() => {
+          switching = false;
+        });
+    });
+  }, []);
 
   // 优化的Video组件props
   const videoProps = useMemo(() => ({

@@ -1,6 +1,6 @@
 import React from "react";
 import { View, Text, StyleSheet, Pressable, Platform } from "react-native";
-import { Pause, Play, SkipForward, List, Tv, ArrowDownToDot, ArrowUpFromDot, Gauge, Unlock, Lock, ChevronLeft, Rocket } from "lucide-react-native";
+import { Pause, Play, SkipForward, List, Tv, ArrowDownToDot, ArrowUpFromDot, Gauge, Unlock, Lock, ChevronLeft, Send } from "lucide-react-native";
 import { ThemedText } from "@/components/ThemedText";
 import { MediaButton } from "@/components/MediaButton";
 import { FontAwesome } from "@expo/vector-icons";
@@ -22,7 +22,6 @@ interface PlayerControlsProps {
 }
 
 export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, setShowControls, handelBack }) => {
-  const { m3u8Proxy } = useSettingsStore.getState();
   const batteryLevel = useBatteryLevel();
   const batteryState = useBatteryState();
   const {
@@ -101,9 +100,8 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
           {videoTitle} {episodes.length > 1 && currentEpisodeTitle ? `- ${currentEpisodeTitle}` : ""}{" "}
           {currentSourceName ? `(${currentSourceName})` : ""}
         </Text>
-        {/^http/.test(m3u8Proxy) && (
-          <Rocket color="#00bb5e" size={18}/>
-        )}
+        {/* 纸飞机 = 当前这个源实际走了远端代理（数据经中转转发）；源因非 200 或太慢回退直连时不显示 */}
+        {detail?.useProxy && <Send color="#00bb5e" size={18} />}
       </View>
       <View style={styles.topRightContainer}>
         <Text style={styles.topTimeText}>

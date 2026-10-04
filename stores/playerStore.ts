@@ -4,6 +4,8 @@ import { VideoRef, OnLoadData, OnProgressData, OnPlaybackStateChangedData } from
 import { RefObject } from "react";
 import { PlayRecord, PlayRecordManager, PlayerSettingsManager, FavoriteManager } from "@/services/storage";
 import useDetailStore, { episodesSelectorBySource } from "./detailStore";
+import { hasRecentSegmentTimeout, mapEpisodesWithLocalProxy } from "@/services/localProxy";
+import { useSettingsStore } from "@/stores/settingsStore";
 import Logger from '@/utils/Logger';
 
 const logger = Logger.withTag('PlayerStore');
@@ -147,7 +149,9 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       useDetailStore.setState({
         loading: true
       });
-      useDetailStore.getState().init(q, title, year, stype, source, id);
+      useDetailStore
+        .getState()
+        .init(q, title, year, stype, source, id, useSettingsStore.getState().m3u8Proxy);
 
       while(true) {
         // 第一个结果返回就开始播放
@@ -250,7 +254,9 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       const savedPlaybackRate = playerSettings?.playbackRate || 1.0;
       
       const episodesMappingStart = performance.now();
-      const mappedEpisodes = episodes.map((ep, index) => ({
+      // 包一层本机预缓存代理：HLS 才包，代理不可用时自动回退原地址
+      const proxiedEpisodes = await mapEpisodesWithLocalProxy(episodes);
+      const mappedEpisodes = proxiedEpisodes.map((ep, index) => ({
         url: ep,
         title: `第 ${index + 1} 集`,
       }));
@@ -616,7 +622,8 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       // 重新加载当前集数的episodes
       const newEpisodes = fallbackSource.episodes || [];
       if (newEpisodes.length > currentEpisodeIndex) {
-        const mappedEpisodes = newEpisodes.map((ep, index) => ({
+        const proxiedEpisodes = await mapEpisodesWithLocalProxy(newEpisodes);
+        const mappedEpisodes = proxiedEpisodes.map((ep, index) => ({
           url: ep,
           title: `第 ${index + 1} 集`,
         }));
@@ -630,10 +637,12 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
         logger.info(`[VIDEO_ERROR] Successfully switched to fallback source in ${(perfEnd - perfStart).toFixed(2)}ms`);
         logger.info(`[VIDEO_ERROR] New episode URL: ${newEpisodes[currentEpisodeIndex].substring(0, 100)}...`);
         
-        Toast.show({ 
-          type: "success", 
-          text1: "已切换播放源", 
-          text2: `正在使用 ${fallbackSource.source_name}` 
+        Toast.show({
+          type: "success",
+          text1: "已切换播放源",
+          text2: hasRecentSegmentTimeout()
+            ? `原片源响应超时，已切到 ${fallbackSource.source_name}`
+            : `正在使用 ${fallbackSource.source_name}`,
         });
       } else {
         logger.error(`[VIDEO_ERROR] Fallback source doesn't have episode ${currentEpisodeIndex + 1}`);
@@ -725,9 +734,14 @@ export const selectCurrentEpisode = (state: PlayerState) => {
     state.currentEpisodeIndex >= 0
   ) {
     if (state.currentEpisodeIndex >= state.episodes.length) {
-      // 超过当前源的最大集数，跳转最后一集
-      state.playEpisode(state.episodes.length - 1);
-      return undefined;
+      // 超过当前源的最大集数（例如切到集数更少的源）：只取最后一集。
+      // 这里不能调 playEpisode 改状态——取值函数在渲染期间被调用，
+      // 改状态会触发 React 的 setState-in-render 和 getSnapshot 警告。
+      // 集号本身的纠正放在 PlayScreen 的 useEffect 里做。
+      const lastEpisode = state.episodes[state.episodes.length - 1];
+      return lastEpisode && lastEpisode.url && lastEpisode.url.trim() !== ""
+        ? lastEpisode
+        : undefined;
     }
     const episode = state.episodes[state.currentEpisodeIndex];
     // 确保episode有有效的URL

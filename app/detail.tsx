@@ -5,19 +5,13 @@ import { ThemedView } from "@/components/ThemedView";
 import { ThemedText } from "@/components/ThemedText";
 import { StyledButton } from "@/components/StyledButton";
 import VideoLoadingAnimation from "@/components/VideoLoadingAnimation";
-import useDetailStore from "@/stores/detailStore";
+import useDetailStore, { EXCELLENT_SEGMENT_RATIO } from "@/stores/detailStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { FontAwesome } from "@expo/vector-icons";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { getCommonResponsiveStyles } from "@/utils/ResponsiveStyles";
 import ResponsiveNavigation from "@/components/navigation/ResponsiveNavigation";
 import ResponsiveHeader from "@/components/navigation/ResponsiveHeader";
-
-const formatSpeed = (speed: number) => {
-  if (speed >= 1024) {
-    return `${(speed/1024).toFixed(1)} MB/s`;
-  }
-  return `${speed} KB/s`;
-}
 
 export default function DetailScreen() {
   const { source, id, q, title, year, stype } = useLocalSearchParams<{ source: string; id: string; q: string; title: string; year: string, stype: string }>();
@@ -45,7 +39,7 @@ export default function DetailScreen() {
 
   useEffect(() => {
     if (title) {
-      init(q, title, year, stype, source, id);
+      init(q, title, year, stype, source, id, useSettingsStore.getState().m3u8Proxy);
     }
     return () => {
       abort();
@@ -70,7 +64,7 @@ export default function DetailScreen() {
   };
 
   if (loading) {
-    return <VideoLoadingAnimation showProgressBar={false} />;
+    return <VideoLoadingAnimation showProgressBar={false} loadingText="正在优选测速中……请稍等" />;
   }
 
   if (error) {
@@ -209,9 +203,10 @@ export default function DetailScreen() {
                           </Text>
                         </View>
                       )}
-                      {item.speed > 0 && (
-                        <View style={[dynamicStyles.badge, { backgroundColor: "#666" }, isSelected && dynamicStyles.selectedBadge]}>
-                          <Text style={dynamicStyles.badgeText}>{formatSpeed(item.speed)}</Text>
+                      {item.segmentRatio >= EXCELLENT_SEGMENT_RATIO && (
+                        <View style={[dynamicStyles.badge, dynamicStyles.excellentBadge]}>
+                          <FontAwesome name="bolt" size={deviceType === "mobile" ? 10 : 12} color="#08331a" />
+                          <Text style={[dynamicStyles.badgeText, dynamicStyles.excellentBadgeText]}>优秀</Text>
                         </View>
                       )}
                     </StyledButton>
@@ -311,9 +306,10 @@ export default function DetailScreen() {
                             </Text>
                           </View>
                         )}
-                        {item.speed > 0 && (
-                          <View style={[dynamicStyles.badge, { backgroundColor: "#666" }, isSelected && dynamicStyles.selectedBadge]}>
-                            <Text style={dynamicStyles.badgeText}>{formatSpeed(item.speed)}</Text>
+                        {item.segmentRatio >= EXCELLENT_SEGMENT_RATIO && (
+                          <View style={[dynamicStyles.badge, dynamicStyles.excellentBadge]}>
+                            <FontAwesome name="bolt" size={deviceType === "mobile" ? 10 : 12} color="#08331a" />
+                            <Text style={[dynamicStyles.badgeText, dynamicStyles.excellentBadgeText]}>优秀</Text>
                           </View>
                         )}
                       </StyledButton>
@@ -488,6 +484,15 @@ const createResponsiveStyles = (deviceType: string, spacing: number) => {
     },
     selectedBadge: {
       backgroundColor: "#4c4c4c",
+    },
+    excellentBadge: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: "#4ade80",
+    },
+    excellentBadgeText: {
+      color: "#08331a",
+      marginLeft: 2,
     },
 
     episodesContainer: {

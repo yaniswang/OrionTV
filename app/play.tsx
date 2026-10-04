@@ -36,7 +36,7 @@ const LoadingContainer = memo(
     );
     return (
       <View style={style}>
-        <VideoLoadingAnimation showProgressBar loadingText="加载视频详情中，请稍等..." />
+        <VideoLoadingAnimation showProgressBar loadingText="正在优选测速中……请稍等" />
       </View>
     );
   }
@@ -152,6 +152,8 @@ export default function PlayScreen() {
     // showNextEpisodeOverlay,
     playbackRate,
     isLandscapeMode,
+    episodes,
+    currentEpisodeIndex,
     setVideoRef,
     handleVideoProgress,
     handleVideoLoad,
@@ -167,6 +169,14 @@ export default function PlayScreen() {
     seek,
   } = usePlayerStore();
   const currentEpisode = usePlayerStore(selectCurrentEpisode);
+
+  // 切到集数更少的源时，当前集号可能越界，纠正回最后一集。
+  // 必须放在 effect 里：渲染期间改状态会触发 React 的 setState-in-render 与 getSnapshot 警告。
+  useEffect(() => {
+    if (episodes.length > 0 && currentEpisodeIndex >= episodes.length) {
+      usePlayerStore.getState().playEpisode(episodes.length - 1);
+    }
+  }, [episodes.length, currentEpisodeIndex]);
 
   // 使用Video事件处理hook
   const { videoProps } = useVideoHandlers({
@@ -421,7 +431,7 @@ export default function PlayScreen() {
   }, [isDetialLoading]);
 
   if (!detail) {
-    return <VideoLoadingAnimation showProgressBar loadingText="加载视频详情中，请稍等..." />;
+    return <VideoLoadingAnimation showProgressBar loadingText="正在优选测速中……请稍等" />;
   }
 
   return (

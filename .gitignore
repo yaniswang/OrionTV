@@ -3,6 +3,10 @@ node_modules/
 dist/
 ios/
 android/
+
+# 临时文件、临时工程（约定见 AGENTS.md）
+Temp/
+
 npm-debug.*
 *.jks
 *.p8

@@ -1,14 +1,27 @@
 import { create } from "zustand";
 import { SearchResult, api } from "@/services/api";
-import { getInfoFromM3U8, getTsSpeed } from "@/services/m3u8";
-import { useSettingsStore } from "@/stores/settingsStore";
+import { getInfoFromM3U8 } from "@/services/m3u8";
 import { FavoriteManager } from "@/services/storage";
-import NetInfo from '@react-native-community/netinfo';
 import Logger from "@/utils/Logger";
 
 const logger = Logger.withTag('DetailStore');
 
-export type SearchResultWithResolution = SearchResult & { resolution?: string | null, pingTime: number, firstTsUrl: string, speed: number };
+/**
+ * "优秀"阈值：分片时长 / 加载耗时。
+ * 实测单连接 0.8 的源，配合 5 条并发预取连接（放大 2~5 倍）后仍有 1.6 倍以上余量，够流畅播放。
+ */
+export const EXCELLENT_SEGMENT_RATIO = 0.8;
+
+export type SearchResultWithResolution = SearchResult & {
+  resolution?: string | null,
+  pingTime: number,
+  segmentLoadMs?: number | null,
+  segmentDurationMs?: number | null,
+  /** 分片时长 / 加载耗时，> 1 表示下载比播放快、可流畅播放 */
+  segmentRatio?: number,
+  /** 这个源最终走了 m3u8Proxy（代理不达标时会自动改走直连） */
+  useProxy?: boolean,
+};
 
 interface DetailState {
   q: string | null;
@@ -23,7 +36,7 @@ interface DetailState {
   isFavorited: boolean;
   failedSources: Set<string>; // 记录失败的source列表
 
-  init: (q: string | undefined, title: string, year: string, stype: string, preferredSource?: string, id?: string) => Promise<void>;
+  init: (q: string | undefined, title: string, year: string, stype: string, preferredSource: string | undefined, id: string | undefined, m3u8Proxy: string) => Promise<void>;
   setDetail: (detail: SearchResultWithResolution) => Promise<void>;
   abort: () => void;
   toggleFavorite: () => Promise<void>;
@@ -44,8 +57,7 @@ const useDetailStore = create<DetailState>((set, get) => ({
   isFavorited: false,
   failedSources: new Set(),
 
-  init: async (q, title, year, stype, preferredSource, id) => {
-    const netInfo = await NetInfo.fetch();
+  init: async (q, title, year, stype, preferredSource, id, m3u8Proxy) => {
     const perfStart = performance.now();
     logger.info(`[PERF] DetailStore.init START - q: ${q}, title: ${title}, year: ${year}, stype: ${stype}, preferredSource: ${preferredSource}, id: ${id}`);
     
@@ -69,7 +81,6 @@ const useDetailStore = create<DetailState>((set, get) => ({
       controller: newController,
     });
 
-    const { m3u8Proxy } = useSettingsStore.getState();
     const processAndSetResults = async (results: SearchResult[], merge = false) => {
       const resolutionStart = performance.now();
       logger.info(`[PERF] M3U8 detection START - processing ${results.length} sources`);
@@ -78,15 +89,41 @@ const useDetailStore = create<DetailState>((set, get) => ({
         results.map(async (searchResult) => {
           let videoInfo;
           const m3u8Start = performance.now();
+          const proxyPrefix =
+            m3u8Proxy && /^https?:\/\//.test(m3u8Proxy) ? m3u8Proxy : '';
+          let routedViaProxy = false;
           try {
             if (searchResult.episodes && searchResult.episodes.length > 0) {
-              if (m3u8Proxy && /^https?:\/\//.test(m3u8Proxy)) {
-                // 添加m3u8代理到URL
-                searchResult.episodes = searchResult.episodes.map((url)=> {
-                  return m3u8Proxy + url;
-                })
+              const rawUrl = searchResult.episodes[0];
+
+              if (proxyPrefix) {
+                // 用户配了代理：先按代理测。够用（≥ 优秀阈值）就保留代理
+                const proxied = await getInfoFromM3U8(proxyPrefix + rawUrl, signal, proxyPrefix);
+                // 源站没返回 200（403/404/5xx）就没得商量，直接走直连
+                if (proxied && !proxied.blocked && proxied.segmentRatio >= EXCELLENT_SEGMENT_RATIO) {
+                  videoInfo = proxied;
+                  routedViaProxy = true;
+                } else {
+                  // 代理不可用（非 200）或太差：再测直连，谁好用谁
+                  const direct = await getInfoFromM3U8(rawUrl, signal);
+                  if (
+                    direct &&
+                    (!proxied || proxied.blocked || direct.segmentRatio > proxied.segmentRatio)
+                  ) {
+                    videoInfo = direct;
+                  } else {
+                    videoInfo = proxied;
+                    routedViaProxy = true;
+                  }
+                }
+              } else {
+                videoInfo = await getInfoFromM3U8(rawUrl, signal);
               }
-              videoInfo = await getInfoFromM3U8(searchResult.episodes[0], signal);
+
+              // 按选中的路由改写地址（只在用代理时才拼前缀，避免重复叠加）
+              if (routedViaProxy) {
+                searchResult.episodes = searchResult.episodes.map((url) => proxyPrefix + url);
+              }
             }
           } catch (e) {
             if ((e as Error).name !== "AbortError") {
@@ -94,8 +131,8 @@ const useDetailStore = create<DetailState>((set, get) => ({
             }
           }
           const m3u8End = performance.now();
-          logger.info(`[PERF] M3U8 info for ${searchResult.source_name}: ${(m3u8End - m3u8Start).toFixed(2)}ms (${videoInfo && JSON.stringify(videoInfo) || 'failed'})`);
-          return { ...searchResult, ...videoInfo };
+          logger.info(`[PERF] M3U8 info for ${searchResult.source_name} [${routedViaProxy ? '代理' : '直连'}]: ${(m3u8End - m3u8Start).toFixed(2)}ms (${videoInfo && JSON.stringify(videoInfo) || 'failed'})`);
+          return { ...searchResult, ...videoInfo, useProxy: routedViaProxy };
         })
       );
       
@@ -116,14 +153,19 @@ const useDetailStore = create<DetailState>((set, get) => ({
         }); // 丢充无法获取M3U8的数据或者重复的ID
         const newResults = resultsWithResolution.filter((r) => !existingSources.has(r.source));
         const finalResults = merge ? [...state.searchResults, ...newResults] : resultsWithResolution;
+        // 按"分片时长 / 加载耗时"的倍数从高到低排：越快能跟上的源越靠前，
+        // 测不出倍数（0）的排最后。
+        const sortedResults = [...finalResults].sort(
+          (a, b) => (b.segmentRatio ?? 0) - (a.segmentRatio ?? 0),
+        );
 
         return {
-          searchResults: finalResults,
-          sources: finalResults.map((r) => ({
+          searchResults: sortedResults,
+          sources: sortedResults.map((r) => ({
             source: r.source,
             source_name: r.source_name,
           })),
-          detail: state.detail ?? finalResults[0] ?? null,
+          detail: state.detail ?? sortedResults[0] ?? null,
         };
       });
     };
@@ -228,32 +270,6 @@ const useDetailStore = create<DetailState>((set, get) => ({
         logger.error(`[ERROR] All search attempts completed but no results found for "${q||title}"`);
         set({ error: `未找到 "${q||title}" 的播放源，请检查标题拼写或稍后重试` });
       } else if (finalState.searchResults.length > 0) {
-        if (netInfo.type !== 'cellular') {
-          // 非移动网络才会开启测速
-          logger.info('开始源测速')
-          const searchResults = finalState.searchResults;
-          searchResults.sort((a, b) => b.speed - a.speed);
-          for(const i in searchResults) {
-            const result = searchResults[i];
-            logger.info(`源:${result.source_name} 测速开始`)
-            const m3u8Info = await getTsSpeed(result.episodes[0], result.firstTsUrl, signal);
-            if (m3u8Info) {
-              result.speed = m3u8Info.speed;
-              searchResults.sort((a, b) => b.speed - a.speed)
-              set({
-                searchResults
-              });
-              logger.info(`源:${result.source_name} 测速结束, 速度: ${result.speed} KB/s`)
-            } else {
-              logger.info(`源:${result.source_name} 测速失败`)
-            }
-            if (signal.aborted) return;
-          }
-          set({
-            searchResults
-          });
-          logger.info('结束源测速')
-        }
         logger.info(`[SUCCESS] DetailStore.init completed successfully with ${finalState.searchResults.length} sources`);
       }
 

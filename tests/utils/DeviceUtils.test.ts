@@ -1,5 +1,5 @@
 import { Dimensions } from "react-native";
-import { DeviceUtils } from "../DeviceUtils";
+import { DeviceUtils } from "@/utils/DeviceUtils";
 
 jest.mock("react-native", () => ({
   Dimensions: {

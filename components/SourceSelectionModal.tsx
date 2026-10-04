@@ -4,20 +4,14 @@ import { FlashList } from "@shopify/flash-list";
 import Modal from "react-native-modal";
 import { StyledButton } from "./StyledButton";
 import { ThemedText } from "@/components/ThemedText";
-import useDetailStore from "@/stores/detailStore";
+import useDetailStore, { EXCELLENT_SEGMENT_RATIO } from "@/stores/detailStore";
 import usePlayerStore from "@/stores/playerStore";
 import Logger from '@/utils/Logger';
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { getCommonResponsiveStyles } from "@/utils/ResponsiveStyles";
+import { FontAwesome } from "@expo/vector-icons";
 
 const logger = Logger.withTag('SourceSelectionModal');
-
-const formatSpeed = (speed: number) => {
-  if (speed >= 1024) {
-    return `${(speed/1024).toFixed(1)} MB/s`;
-  }
-  return `${speed} KB/s`;
-}
 
 export const SourceSelectionModal: React.FC = () => {
   // 响应式布局配置
@@ -28,8 +22,15 @@ export const SourceSelectionModal: React.FC = () => {
   // 动态样式
   const dynamicStyles = createResponsiveStyles(deviceType, spacing);
   
-  const { showSourceModal, setShowSourceModal, loadVideo, currentEpisodeIndex, status } = usePlayerStore();
-  const { searchResults, detail, setDetail, allSourcesLoaded } = useDetailStore();
+  // 只订阅需要的字段：播放进度每 500ms 更新一次，整店订阅会让这个弹窗跟着每秒重渲染两次
+  const showSourceModal = usePlayerStore((s) => s.showSourceModal);
+  const setShowSourceModal = usePlayerStore((s) => s.setShowSourceModal);
+  const loadVideo = usePlayerStore((s) => s.loadVideo);
+  const currentEpisodeIndex = usePlayerStore((s) => s.currentEpisodeIndex);
+  const searchResults = useDetailStore((s) => s.searchResults);
+  const detail = useDetailStore((s) => s.detail);
+  const setDetail = useDetailStore((s) => s.setDetail);
+  const allSourcesLoaded = useDetailStore((s) => s.allSourcesLoaded);
 
   const onSelectSource = async (index: number) => {
     logger.debug("onSelectSource", index, searchResults[index].id, detail?.id);
@@ -38,6 +39,8 @@ export const SourceSelectionModal: React.FC = () => {
       setDetail(newDetail);
       
       // Reload the video with the new source, preserving current position
+      // 播放位置在按下这一刻再取，避免订阅 status 导致弹窗被进度更新反复重渲染
+      const { status } = usePlayerStore.getState();
       const currentPosition = status?.isLoaded ? status.positionMillis : undefined;
       loadVideo({
         source: newDetail.source,
@@ -87,11 +90,11 @@ export const SourceSelectionModal: React.FC = () => {
                       </Text>
                     </View>
                   )}
-                  {item.speed > 0 && (
-                    <View style={[dynamicStyles.badge, isSelected && dynamicStyles.selectedBadge]}>
-                      <Text style={dynamicStyles.badgeText}>
-                        {formatSpeed(item.speed)}
-                      </Text>
+                  {/* 分片时长 / 加载耗时 ≥ 阈值：下载比播放快，够流畅 */}
+                  {!!item.segmentRatio && item.segmentRatio >= EXCELLENT_SEGMENT_RATIO && (
+                    <View style={[dynamicStyles.badge, dynamicStyles.excellentBadge]}>
+                      <FontAwesome name="bolt" size={deviceType === "mobile" ? 10 : 12} color="#08331a" />
+                      <Text style={[dynamicStyles.badgeText, dynamicStyles.excellentBadgeText]}>优秀</Text>
                     </View>
                   )}
               </StyledButton>
@@ -166,6 +169,15 @@ const createResponsiveStyles = (deviceType: string, spacing: number) => {
     },
     selectedBadge: {
       backgroundColor: "#4c4c4c",
+    },
+    excellentBadge: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: "#4ade80",
+    },
+    excellentBadgeText: {
+      color: "#08331a",
+      marginLeft: 2,
     },
   });
 };
