@@ -5,6 +5,7 @@ import { storageConfig } from "@/services/storageConfig";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Logger from "@/utils/Logger";
 import useDetailStore from "./detailStore";
+import { clearSpeedTestCache } from "@/services/m3u8";
 
 const logger = Logger.withTag('SettingsStore');
 
@@ -133,7 +134,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       await AsyncStorage.setItem('authCookies', '');
     }
     if (currentM3u8Proxy !== processedM3u8Proxy) {
-      // 重置detail信息
+      // 代理地址变了，旧的完整测速结果不能继续复用
+      clearSpeedTestCache();
       useDetailStore.setState({detail: null});
     }
     api.setBaseUrl(processedApiBaseUrl);

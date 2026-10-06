@@ -18,8 +18,7 @@ const logger = Logger.withTag('VideoPrefetch');
 const DEFAULT_PORT = 18923;
 
 export { PREFETCH_COUNT } from './playlist';
-export { getProxyOrigin, stopProxyServer, onProxyEvent, hasRecentSegmentTimeout } from './proxy';
-export type { ProxyEvent } from './proxy';
+export { getProxyOrigin, stopProxyServer } from './proxy';
 
 /** 启动本地代理（幂等）；失败返回 null，调用方回退直连 */
 export async function ensureLocalProxy(): Promise<string | null> {

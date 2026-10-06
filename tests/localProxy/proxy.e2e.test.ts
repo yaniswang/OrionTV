@@ -4,7 +4,7 @@
  * 起一个本地假源站，只验证代理的调度行为，不依赖任何外网：
  *   1. 当前分片没拿到之前，不发起后面的预取（不和播放器抢带宽）；
  *   2. 跳转时窗口外的在途下载被取消，新窗口在跳转片到手后补发；
- *   3. 播放器要的片正好在预取中时，复用那条下载，而不是取消重下。
+ *   3. 当前片不读取已完成缓存，但会复用正在预取的同一分片，不取消重下。
  *
  * @jest-environment node
  */
@@ -81,12 +81,13 @@ function startOrigin(): Promise<http.Server> {
     s.requests += 1;
     // 只有第 0 片快（先拿到播放位置），其余都慢，保证跳转时它们仍在途
     const delay = sid === 0 ? FAST_MS : SLOW_MS;
+    let requestAborted = false;
 
     res.writeHead(200, { 'Content-Type': 'video/mp2t' });
     res.write(`#sid=${sid}\n`);
 
     const timer = setTimeout(() => {
-      if (s.aborted) return;
+      if (requestAborted) return;
       s.completed = true;
       res.end(`payload-${sid}`);
     }, delay);
@@ -94,6 +95,7 @@ function startOrigin(): Promise<http.Server> {
     const onGone = () => {
       clearTimeout(timer);
       if (s.completed) return; // 正常结束的 'close' 不算取消
+      requestAborted = true;
       s.aborted = true;
     };
     res.on('close', onGone);
@@ -190,7 +192,7 @@ describe('预取窗口（端到端）', () => {
     expect(inFlightNow()).toEqual(Array.from({ length: PREFETCH_COUNT }, (_, i) => 101 + i));
   });
 
-  it('播放器要的片正在预取中时，复用这条下载而不是重下', async () => {
+  it('当前片在途预取时复用下载，不取消重下', async () => {
     // 从干净状态开始，避免上一个用例留下的缓存/在途干扰
     await stopProxyServer();
     segs.clear();
@@ -204,11 +206,28 @@ describe('预取窗口（端到端）', () => {
     expect(state(1).started).toBe(true);
     expect(state(1).requests).toBe(1);
 
-    // 播放器接着要第 1 片：它正在预取中，应当等这条下载，而不是再回源一次
+    // 播放器接着要第 1 片：复用正在进行的预取，不取消、不重下
     const body = await getText(segUrl(playlistText, 1));
     expect(body.length).toBeGreaterThan(0);
-    expect(state(1).requests).toBe(1); // 没有再发第二条请求
-    expect(state(1).aborted).toBe(false); // 也没被取消
+    expect(state(1).requests).toBe(1); // 仍然只有正在预取的那一条请求
+    expect(state(1).aborted).toBe(false); // 没有被取消
     expect(state(1).completed).toBe(true);
+  });
+
+  it('当前片已完成预取时直接返回缓存，不重新回源', async () => {
+    await stopProxyServer();
+    segs.clear();
+    const proxy = await startProxyServer(19100);
+    const playlistText = await getText(`${proxy}/${encodeTarget(`${ORIGIN}/index.m3u8`)}`);
+
+    await getText(segUrl(playlistText, 0));
+    await sleep(SLOW_MS + 400);
+
+    expect(state(1).completed).toBe(true);
+    expect(state(1).requests).toBe(1);
+
+    const body = await getText(segUrl(playlistText, 1));
+    expect(body.length).toBeGreaterThan(0);
+    expect(state(1).requests).toBe(1); // 命中已完成缓存，不再回源
   });
 });

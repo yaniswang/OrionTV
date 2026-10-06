@@ -4,7 +4,7 @@ import { VideoRef, OnLoadData, OnProgressData, OnPlaybackStateChangedData } from
 import { RefObject } from "react";
 import { PlayRecord, PlayRecordManager, PlayerSettingsManager, FavoriteManager } from "@/services/storage";
 import useDetailStore, { episodesSelectorBySource } from "./detailStore";
-import { hasRecentSegmentTimeout, mapEpisodesWithLocalProxy } from "@/services/localProxy";
+import { mapEpisodesWithLocalProxy } from "@/services/localProxy";
 import { useSettingsStore } from "@/stores/settingsStore";
 import Logger from '@/utils/Logger';
 
@@ -640,9 +640,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
         Toast.show({
           type: "success",
           text1: "已切换播放源",
-          text2: hasRecentSegmentTimeout()
-            ? `原片源响应超时，已切到 ${fallbackSource.source_name}`
-            : `正在使用 ${fallbackSource.source_name}`,
+          text2: `正在使用 ${fallbackSource.source_name}`,
         });
       } else {
         logger.error(`[VIDEO_ERROR] Fallback source doesn't have episode ${currentEpisodeIndex + 1}`);
@@ -715,6 +713,11 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       ...status,
       isPlaying,
     };
+
+    // 有推荐源时，测速队列一直等在这里：视频真正开始播放才放行
+    if (isPlaying) {
+      useDetailStore.getState().startSpeedTest();
+    }
 
     set({
       status: newStatus

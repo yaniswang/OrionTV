@@ -39,12 +39,12 @@ const logger = Logger.withTag('VideoPrefetch');
 
 /**
  * 分片内存缓存上限——只是兜底，正常不该触发：
- * 缓存实际按"当前分片 + 后面 PREFETCH_COUNT 片"裁剪（见 trimCacheToWindow），
- * 最多也就 6 片，就算单片 5MB 也只有 30MB。
+ * 缓存实际按"当前分片后面的 PREFETCH_COUNT 片"裁剪（见 trimCacheToWindow），
+ * 最多 5 片，就算单片 5MB 也只有 25MB。
  */
 const MAX_CACHE_BYTES = 64 * 1024 * 1024;
-/** 回源超时。超过这个时间还下不完一片，这个源基本也放不动了，直接换源 */
-const FETCH_TIMEOUT_MS = 30000;
+/** 回源超时：按最大 6 秒分片留 2 倍容忍度，超时后返回 504 交给播放器重试 */
+const FETCH_TIMEOUT_MS = 12000;
 const PORT_ATTEMPTS = 5;
 /** pid -> 分片列表 最多保留多少份 */
 const MAX_PLAYLISTS = 50;
@@ -81,7 +81,7 @@ const playlists = new Map<string, string[]>();
  * 换源后，旧源可能还有残留请求在跑，它超时不能被当成"当前源太慢"。
  */
 let activePlaylistPid: string | null = null;
-/** 在途的预取下载：分片地址 -> 归属、取消句柄与可复用的下载 Promise */
+/** 在途的预取下载：分片地址 -> 归属与取消句柄 */
 const inflight = new Map<
   string,
   { pid: string; sid: number; controller: AbortController; promise: Promise<FetchResult> }
@@ -91,37 +91,6 @@ let servingFetch: { pid: string; sid: number; controller: AbortController } | nu
 
 let server: TcpServerLike | null = null;
 let localOrigin: string | null = null;
-
-/** 代理运行中需要让界面知道的状况 */
-export type ProxyEvent = { type: 'segment-timeout'; url: string };
-type ProxyEventListener = (event: ProxyEvent) => void;
-const proxyEventListeners = new Set<ProxyEventListener>();
-/** 最近一次"当前分片回源超时"的时间戳 */
-let lastSegmentTimeoutAt = 0;
-
-/** 订阅代理事件，返回取消订阅函数 */
-export function onProxyEvent(listener: ProxyEventListener): () => void {
-  proxyEventListeners.add(listener);
-  return () => {
-    proxyEventListeners.delete(listener);
-  };
-}
-
-function emitProxyEvent(event: ProxyEvent): void {
-  if (event.type === 'segment-timeout') lastSegmentTimeoutAt = Date.now();
-  for (const listener of [...proxyEventListeners]) {
-    try {
-      listener(event);
-    } catch {
-      // 监听方（界面）出错不应影响代理本身
-    }
-  }
-}
-
-/** 最近是否发生过"当前分片回源超时"（用于把失败原因写进界面提示） */
-export function hasRecentSegmentTimeout(withinMs = 30000): boolean {
-  return lastSegmentTimeoutAt > 0 && Date.now() - lastSegmentTimeoutAt <= withinMs;
-}
 
 // ------------------------------------------------------------------ 生命周期
 
@@ -268,7 +237,6 @@ async function handleHead(socket: TcpSocketLike, head: string): Promise<void> {
       }
       return;
     }
-    logger.warn(`请求处理失败: ${String(error)}`);
     writeResponse(socket, textResult(502, 'proxy error', 'text/plain', 'no-store'), headOnly, keepAlive);
   }
 }
@@ -295,40 +263,41 @@ async function handleRequest(parsed: ParsedRequest): Promise<ProxyResult> {
   const sid = isSegment ? (sidParsed as number) : -1;
   const forwardHeaders = buildForwardHeaders(parsed.headers);
 
-  // ① 分片：先只做取消——窗口外的在途预取一律干掉。
-  //    注意这里不发新的预取：当前片还在等回源，先让它独占带宽。
+  // ① 分片：当前片优先使用已完成缓存，其次复用正在预取的同一片，
+  //    两边都没有时才直接回源。使用后立即把当前片裁出缓存窗口。
   if (isSegment) {
     cancelSupersededServing(pid, sid);
     cancelOutOfWindowPrefetch(pid, sid);
-    trimCacheToWindow(pid, sid);
 
     const cached = segmentCache.get(target);
     if (cached) {
-      // 命中缓存：播放器不用等网络，这时补发后面的预取最合适
+      trimCacheToWindow(pid, sid);
       startPrefetchWindow(pid, sid, forwardHeaders);
       return bytesResult(200, cached, guessSegmentType(target), SEGMENT_CACHE_CONTROL);
     }
 
-    // 播放器要的这一片正好在某条在途预取里：直接等那条下载，别取消重下。
-    // 此时也不新起预取——让当前片先拿到带宽，等它下完再由下面补发。
+    trimCacheToWindow(pid, sid);
+
     const pending = inflight.get(target);
     if (pending && pending.pid === pid) {
       servingFetch = { pid, sid, controller: pending.controller };
       try {
-        await pending.promise;
+        const prefetched = await pending.promise;
+        trimCacheToWindow(pid, sid);
+        startPrefetchWindow(pid, sid, forwardHeaders);
+        return bytesResult(
+          prefetched.status,
+          prefetched.base64,
+          prefetched.contentType || guessSegmentType(target),
+        );
       } catch (error) {
-        // 被外部取消（跳转）：让上层按取消处理，不要再重下这一片
-        if (pending.controller.signal.aborted) throw error;
+        if (isAbortError(error)) {
+          return textResult(504, 'upstream timeout', 'text/plain', 'no-store');
+        }
+        throw error;
       } finally {
         if (servingFetch?.controller === pending.controller) servingFetch = null;
       }
-
-      const recovered = segmentCache.get(target);
-      if (recovered) {
-        startPrefetchWindow(pid, sid, forwardHeaders);
-        return bytesResult(200, recovered, guessSegmentType(target), SEGMENT_CACHE_CONTROL);
-      }
-      // 预取没成功（非 200 或出错）：落到下面自己重新回源
     }
   }
 
@@ -340,16 +309,8 @@ async function handleRequest(parsed: ParsedRequest): Promise<ProxyResult> {
   try {
     fetched = await fetchUrl(target, forwardHeaders, isSegment ? serveController.signal : undefined);
   } catch (error) {
-    // 回源超时（不是播放器跳转）：这是一种用户能感知的等待，需要让界面给出提示
+    // 回源超时：只返回可重试的 504，是否重试由播放器决定。
     if (isAbortError(error) && isSegment && !serveController.signal.aborted) {
-      // 只有"当前正在播的这份清单"超时才通知界面。
-      // 换源后旧源残留的重试也会超时，不能让它把刚切过去的健康源误判成慢源。
-      if (pid === activePlaylistPid) {
-        logger.warn(`当前分片回源超时，已通知界面: ${target}`);
-        emitProxyEvent({ type: 'segment-timeout', url: target });
-      } else {
-        logger.debug(`旧清单的分片超时，忽略（不换源）: ${target}`);
-      }
       return textResult(504, 'upstream timeout', 'text/plain', 'no-store');
     }
     throw error;
@@ -395,12 +356,10 @@ async function handleRequest(parsed: ParsedRequest): Promise<ProxyResult> {
     }
   }
 
-  // ④ 分片：写缓存；当前片已经拿到，再补发后面的预取
+  // ④ 分片：当前片不写入缓存；当前片已经拿到，再补发后面的预取
   //    （放在这里是为了不和播放器正在等的这一片抢带宽）
-  if (isSegment && fetched.status === 200) {
-    segmentCache.set(target, fetched.base64, fetched.byteLength);
-  }
   if (isSegment && fetched.ok) {
+    trimCacheToWindow(pid, sid);
     startPrefetchWindow(pid, sid, forwardHeaders);
   }
 
@@ -446,15 +405,15 @@ function cancelDownloadsOfOtherPlaylists(keepPid: string): void {
 }
 
 /**
- * 按预取窗口裁剪缓存：只留"当前分片 + 后面 PREFETCH_COUNT 片"，其它全部清掉。
- * 这样缓存不需要按字节数限制——播过去的、以及换源前旧清单的分片都会被清空。
+ * 按预取窗口裁剪缓存：只留"当前分片后面的 PREFETCH_COUNT 片"，其它全部清掉。
+ * 当前片直接回源、不写缓存；播过去的、以及换源前旧清单的分片都会被清空。
  */
 function trimCacheToWindow(pid: string, currentSid: number): void {
   const segments = playlists.get(pid);
   if (!segments) return;
 
   const keep = new Set<string>();
-  for (let sid = currentSid; sid <= currentSid + PREFETCH_COUNT && sid < segments.length; sid++) {
+  for (let sid = currentSid + 1; sid <= currentSid + PREFETCH_COUNT && sid < segments.length; sid++) {
     keep.add(segments[sid]);
   }
   segmentCache.keepOnly(keep);
@@ -478,7 +437,7 @@ function cancelOutOfWindowPrefetch(pid: string, currentSid: number): void {
 
   const cancelSet = new Set(plan.toCancel);
   for (const [url, entry] of [...inflight]) {
-    // 正在被播放器等待的那一片不算预取，不能取消（要复用它的下载）
+    // 当前片由上层直接回源，会单独取消，不在这里处理。
     if (entry.pid !== pid || entry.sid === currentSid || !cancelSet.has(entry.sid)) continue;
     entry.controller.abort();
     inflight.delete(url);
@@ -524,7 +483,6 @@ function startPrefetch(
       return result;
     })
     .catch((error) => {
-      if (!isAbortError(error)) logger.debug(`预取失败 ${target}: ${String(error)}`);
       throw error;
     })
     .finally(() => {

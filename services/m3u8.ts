@@ -29,6 +29,33 @@ const MANIFEST_TIMEOUT_MS = 10000;
  */
 const MANIFEST_RANGE_HEADER: Record<string, string> = { Range: 'bytes=0-1023' };
 
+type ManifestPhase = '主清单' | '子清单';
+
+class M3U8TimeoutError extends Error {
+  constructor(readonly timeoutMs: number) {
+    super(`请求超时（${timeoutMs}ms）`);
+    this.name = 'M3U8TimeoutError';
+  }
+}
+
+class M3U8ManifestError extends Error {
+  constructor(
+    readonly phase: ManifestPhase,
+    readonly url: string,
+    readonly withRange: boolean,
+    readonly sourceError: unknown,
+  ) {
+    super(`${phase}请求失败`);
+    this.name = 'M3U8ManifestError';
+  }
+}
+
+function describeError(error: unknown): string {
+  if (error instanceof M3U8TimeoutError) return error.message;
+  if (error instanceof Error) return `${error.name}: ${error.message}`;
+  return String(error);
+}
+
 /** 探测结果缓存时长：同一地址在这个时间内不再重复测速（避免反复下分片） */
 const PROBE_CACHE_DURATION = 30 * 60 * 1000;
 
@@ -132,10 +159,17 @@ async function requestWithTimeout<T>(
     controller.abort();
   }
   signal.addEventListener('abort', onAbort);
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
   try {
     const response = await fetch(url, { ...init, signal: controller.signal });
     return await read(response);
+  } catch (error) {
+    if (timedOut) throw new M3U8TimeoutError(timeoutMs);
+    throw error;
   } finally {
     clearTimeout(timer);
     signal.removeEventListener('abort', onAbort);
@@ -205,11 +239,25 @@ async function loadSegments(
   fetchText: PlaylistTextFetcher,
   url: string,
   count: number,
-): Promise<{ status: number; ok: boolean; segments: M3U8Segment[] }> {
+): Promise<{
+  status: number;
+  ok: boolean;
+  segments: M3U8Segment[];
+  failedPhase?: ManifestPhase;
+  failedUrl?: string;
+  withRange?: boolean;
+}> {
   const attempt = async (withRange: boolean) => {
     const playlistUrl = withCacheBuster(url);
-    const first = await fetchText(playlistUrl, withRange);
-    if (!first.ok) return { status: first.status, ok: false, segments: [] };
+    let first: { status: number; ok: boolean; body: string };
+    try {
+      first = await fetchText(playlistUrl, withRange);
+    } catch (error) {
+      throw new M3U8ManifestError('主清单', playlistUrl, withRange, error);
+    }
+    if (!first.ok) {
+      return { status: first.status, ok: false, segments: [], failedPhase: '主清单' as const, failedUrl: playlistUrl, withRange };
+    }
 
     let playlist = trimIncompleteTail(first.body, withRange);
     let mediaPlaylistUrl = playlistUrl;
@@ -218,8 +266,16 @@ async function loadSegments(
     if (match) {
       mediaPlaylistUrl = new URL(match[1], url).href;
       // 子清单也要带时间戳，否则这一跳会命中 CDN 缓存，测出来的是缓存速度
-      const sub = await fetchText(withCacheBuster(mediaPlaylistUrl), withRange);
-      if (!sub.ok) return { status: sub.status, ok: false, segments: [] };
+      const subUrl = withCacheBuster(mediaPlaylistUrl);
+      let sub: { status: number; ok: boolean; body: string };
+      try {
+        sub = await fetchText(subUrl, withRange);
+      } catch (error) {
+        throw new M3U8ManifestError('子清单', subUrl, withRange, error);
+      }
+      if (!sub.ok) {
+        return { status: sub.status, ok: false, segments: [], failedPhase: '子清单' as const, failedUrl: subUrl, withRange };
+      }
       playlist = trimIncompleteTail(sub.body, withRange);
     }
 
@@ -282,6 +338,11 @@ export const pingM3U8 = async (
       `[PERF] ping清单 [${tag}|${route}] ${(performance.now() - manifestStart).toFixed(0)}ms status=${loaded.status} 分片数=${loaded.segments.length}`,
     );
     if (!loaded.ok) {
+      logger.info(
+        `M3U8检测失败 [${tag}|${route}]：HTTP ${loaded.status}，` +
+          `${loaded.failedPhase ?? '主清单'}${loaded.withRange ? '（Range 1KB）' : '（全量）'}，` +
+          `url=${loaded.failedUrl ?? url.substring(0, 160)}`,
+      );
       return null;
     }
     const segments = loaded.segments;
@@ -324,8 +385,12 @@ export const pingM3U8 = async (
   } catch (error) {
     if (signal.aborted) return null;
     const timedOut = controller.signal.aborted;
+    const detail = error instanceof M3U8ManifestError
+      ? `${error.phase}${error.withRange ? '（Range 1KB）' : '（全量）'} ${describeError(error.sourceError)}，url=${error.url.substring(0, 160)}`
+      : `${describeError(error)}，url=${url.substring(0, 160)}`;
     logger.info(
-      `M3U8检测失败${timedOut ? '（ping 超时）' : ''} - 消耗:${(performance.now() - perfStart).toFixed(2)}ms, error: ${error}`,
+      `M3U8检测失败${timedOut ? '（ping 超时）' : ''} [${tag}|${route}] - ` +
+        `消耗:${(performance.now() - perfStart).toFixed(2)}ms, ${detail}`,
     );
     return null;
   } finally {
@@ -341,7 +406,10 @@ export const pingM3U8 = async (
 export const resolveM3U8Segments = async (
   url: string,
   signal: AbortSignal,
+  contextLabel?: string,
 ): Promise<M3U8Segment[] | null> => {
+  const prefix = contextLabel ? `[${contextLabel}] ` : '';
+  const shortUrl = url.substring(0, 160);
   if (!url.toLowerCase().endsWith('.m3u8')) return null;
   try {
     const loaded = await loadSegments(
@@ -357,12 +425,28 @@ export const resolveM3U8Segments = async (
       FULL_PROBE_SEGMENT_COUNT,
     );
     if (!loaded.ok) {
-      logger.info(`清单加载失败 status=${loaded.status} url=${url.substring(0, 80)}`);
+      logger.info(
+        `${prefix}清单加载失败：HTTP ${loaded.status}，${loaded.failedPhase ?? '主清单'}` +
+          `${loaded.withRange ? '（Range 1KB）' : '（全量）'}，url=${loaded.failedUrl ?? shortUrl}`,
+      );
       return null;
     }
-    return loaded.segments.length > 0 ? loaded.segments : null;
+    if (loaded.segments.length === 0) {
+      logger.info(`${prefix}清单加载失败：HTTP ${loaded.status} 成功但未解析到分片，url=${shortUrl}`);
+      return null;
+    }
+    return loaded.segments;
   } catch (error) {
-    if (!signal.aborted) logger.info(`清单加载失败: ${String(error)}`);
+    if (!signal.aborted) {
+      if (error instanceof M3U8ManifestError) {
+        logger.info(
+          `${prefix}清单加载失败：${error.phase}${error.withRange ? '（Range 1KB）' : '（全量）'} ` +
+            `${describeError(error.sourceError)}，url=${error.url.substring(0, 160)}`,
+        );
+      } else {
+        logger.info(`${prefix}清单加载失败：${describeError(error)}，url=${shortUrl}`);
+      }
+    }
     return null;
   }
 };
@@ -402,7 +486,7 @@ export const measureM3U8Speed = async (
       };
     } catch (error) {
       if (!signal.aborted) {
-        logger.info(`分片加载失败或超时（按失败处理）: ${String(error)}`);
+        logger.info(`分片加载失败或超时（按失败处理）: ${describeError(error)}`);
       }
       return { ok: false, blocked: false, byteLength: 0, durationMs: 0 };
     }
