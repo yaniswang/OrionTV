@@ -1,6 +1,7 @@
 package com.oriontv
 
 import android.content.Context
+import android.os.Build
 import com.facebook.react.modules.network.OkHttpClientProvider
 import java.security.KeyStore
 import java.security.cert.CertificateException
@@ -11,13 +12,18 @@ import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
 
 /**
- * Android 7.1.1 以下的系统信任库不包含 ISRG Root X1/X2。
- * Network Security Config 从 Android 7.0 才生效，因此这里统一给 RN 的
- * 全局 OkHttp 客户端补充 Let's Encrypt 根证书，fetch、XHR 和 react-native-video
- * 都会复用该客户端。
+ * Android 6.0 及以下不支持 Network Security Config，系统信任库也不包含 ISRG Root X1/X2。
+ * 仅在这类系统上给 RN 全局 OkHttp 客户端补充 Let's Encrypt 根证书，保证 fetch/XHR 可用；
+ * Android 7.0+ 继续使用系统默认 OkHttp 和 Network Security Config。
  */
 object LegacyTls {
   fun configure(context: Context) {
+    // Android 7.0+ 已支持 Network Security Config，使用 RN 默认 OkHttp，
+    // 避免自定义 SSLContext 影响连接复用和测速性能。
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+      return
+    }
+
     val trustManager = CompositeTrustManager(
       listOf(
         createSystemTrustManager(),
