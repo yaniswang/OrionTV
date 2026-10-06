@@ -7,6 +7,7 @@ import { version as currentVersion } from '../package.json';
 import { UPDATE_CONFIG } from '../constants/UpdateConfig';
 import Logger from '@/utils/Logger';
 import { Platform } from 'react-native';
+import ReactNativeBlobUtil from 'react-native-blob-util';
 
 const logger = Logger.withTag('UpdateService');
 
@@ -177,15 +178,20 @@ class UpdateService {
       throw new Error(`APK not found at ${fileUri}`);
     }
 
-    // ② 把 file:// 转成 content://，Expo‑FileSystem 已经实现了 FileProvider
-    let contentUri = await FileSystem.getContentUriAsync(fileUri);
-
-    if (Platform.OS === 'android' && Platform.Version < 24) {
-      contentUri = fileUri; // 老版本安卓使用file路径
-    }
-
-    // ③ 只在 Android 里执行
+    // ② 只在 Android 里执行
     if (Platform.OS === 'android') {
+      // Android 6 的安装器不支持 content://，需要先复制到应用外部 Download 目录，
+      // 再使用 file:// 交给系统安装器。
+      if (Platform.Version < 24) {
+        const downloadDir = ReactNativeBlobUtil.fs.dirs.DownloadDir;
+        const downloadPath = `${downloadDir}/OrionTV_v${Date.now()}.apk`;
+        await ReactNativeBlobUtil.fs.cp(fileUri, downloadPath);
+        await ReactNativeBlobUtil.android.actionViewIntent(downloadPath, ANDROID_MIME_TYPE);
+        return;
+      }
+
+      // Android 7.0+ 使用 content://
+      const contentUri = await FileSystem.getContentUriAsync(fileUri);
       const flags = 1 | 0x10000000;
       try {
         // 尝试标准安装
