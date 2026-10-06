@@ -2,6 +2,7 @@ import * as FileSystem from "expo-file-system";
 import * as IntentLauncher from "expo-intent-launcher";
 import ReactNativeBlobUtil from "react-native-blob-util";
 import { Platform } from "react-native";
+import { UPDATE_CONFIG } from "@/constants/UpdateConfig";
 import updateService from "@/services/updateService";
 
 jest.mock("expo-file-system", () => ({
@@ -47,6 +48,39 @@ jest.mock("@/utils/Logger", () => ({
     }),
   },
 }));
+
+describe("UpdateService.checkVersion", () => {
+  const originalFetch = global.fetch;
+
+  afterAll(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("读取 GitHub 最新 release tag 作为版本", async () => {
+    const assetUrl = "https://github.com/yaniswang/OrionTV/releases/download/v1.4.2/orionTV.1.4.2-universal.apk";
+    const json = jest.fn().mockResolvedValue({
+      tag_name: "v1.4.2",
+      assets: [
+        {
+          name: "orionTV.1.4.2-universal.apk",
+          browser_download_url: assetUrl,
+        },
+      ],
+    });
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, json }) as unknown as typeof fetch;
+
+    const versionInfo = await updateService.checkVersion();
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      UPDATE_CONFIG.GITHUB_LATEST_RELEASE_URL,
+      expect.objectContaining({ signal: expect.anything() })
+    );
+    expect(versionInfo).toEqual({
+      version: "1.4.2",
+      downloadUrl: `https://v4.gh-proxy.org/${assetUrl}`,
+    });
+  });
+});
 
 describe("UpdateService.installApk", () => {
   beforeEach(() => {

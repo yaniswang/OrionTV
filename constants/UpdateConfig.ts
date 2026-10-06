@@ -5,13 +5,13 @@ export const UPDATE_CONFIG = {
   // 检查更新间隔（毫秒）
   CHECK_INTERVAL: 12 * 60 * 60 * 1000, // 12小时
 
-  // GitHub相关URL
-  GITHUB_RAW_URL:
-    `https://v4.gh-proxy.org/https://raw.githubusercontent.com/yaniswang/OrionTV/refs/heads/master/package.json?t=${Date.now()}`,
+  // GitHub Releases 最新版本 API
+  GITHUB_LATEST_RELEASE_URL:
+    `https://v4.gh-proxy.org/https://api.github.com/repos/yaniswang/OrionTV/releases/latest?t=${Date.now()}`,
 
-  // 获取平台特定的下载URL
-  getDownloadUrl(version: string): string {
-    return `https://v4.gh-proxy.org/https://github.com/yaniswang/OrionTV/releases/download/v${version}/orionTV.${version}.apk`;
+  // 为 Release 中返回的下载地址增加代理
+  getDownloadUrl(assetUrl: string): string {
+    return `https://v4.gh-proxy.org/${assetUrl}`;
   },
 
   // 是否显示更新日志

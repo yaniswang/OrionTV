@@ -16,6 +16,16 @@ interface VersionInfo {
   downloadUrl: string;
 }
 
+interface GitHubReleaseAsset {
+  name?: string;
+  browser_download_url?: string;
+}
+
+interface GitHubRelease {
+  tag_name?: string;
+  assets?: GitHubReleaseAsset[];
+}
+
 /**
  * 只在 Android 平台使用的常量（iOS 不会走到下载/安装流程）
  */
@@ -31,7 +41,7 @@ class UpdateService {
   }
 
   /** --------------------------------------------------------------
-   *  1️⃣ 远程版本检查（保持不变，只是把 fetch 包装成 async/await）
+   *  1️⃣ 从 GitHub Releases 获取最新版本
    * --------------------------------------------------------------- */
   async checkVersion(): Promise<VersionInfo> {
     const maxRetries = 3;
@@ -39,18 +49,31 @@ class UpdateService {
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 10_000);
-        const response = await fetch(UPDATE_CONFIG.GITHUB_RAW_URL, {
+        const response = await fetch(UPDATE_CONFIG.GITHUB_LATEST_RELEASE_URL, {
+          headers: {
+            Accept: 'application/vnd.github+json',
+          },
           signal: controller.signal,
         });
         clearTimeout(timeoutId);
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}`);
         }
-        const remotePackage = await response.json();
-        const remoteVersion = remotePackage.version as string;
+        const release = (await response.json()) as GitHubRelease;
+        if (!release.tag_name) {
+          throw new Error('Latest release tag not found');
+        }
+        const remoteVersion = release.tag_name.replace(/^v/i, '');
+        const exactAssetName = `orionTV.${remoteVersion}.apk`;
+        const apkAsset =
+          release.assets?.find(asset => asset.name === exactAssetName) ??
+          release.assets?.find(asset => asset.name?.toLowerCase().endsWith('.apk'));
+        if (!apkAsset?.browser_download_url) {
+          throw new Error('Latest release APK asset not found');
+        }
         return {
           version: remoteVersion,
-          downloadUrl: UPDATE_CONFIG.getDownloadUrl(remoteVersion),
+          downloadUrl: UPDATE_CONFIG.getDownloadUrl(apkAsset.browser_download_url),
         };
       } catch (e) {
         logger.warn(`checkVersion attempt ${attempt}/${maxRetries}`, e);
