@@ -132,4 +132,23 @@ describe("UpdateService.installApk", () => {
     expect(ReactNativeBlobUtil.fs.cp).not.toHaveBeenCalled();
     expect(ReactNativeBlobUtil.android.actionViewIntent).not.toHaveBeenCalled();
   });
+
+  it("安装器未返回前不会重复调起 IntentLauncher", async () => {
+    Object.defineProperty(Platform, "Version", { value: 24, configurable: true });
+    const fileUri = "file:///data/user/0/com.oriontv/files/OrionTV_v1.apk";
+    let resolveStart!: () => void;
+    (IntentLauncher.startActivityAsync as jest.Mock).mockImplementation(
+      () => new Promise<void>(resolve => {
+        resolveStart = resolve;
+      })
+    );
+
+    const firstInstall = updateService.installApk(fileUri);
+    const secondInstall = updateService.installApk(fileUri);
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(IntentLauncher.startActivityAsync).toHaveBeenCalledTimes(1);
+    resolveStart();
+    await Promise.all([firstInstall, secondInstall]);
+  });
 });

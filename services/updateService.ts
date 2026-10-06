@@ -32,6 +32,7 @@ interface GitHubRelease {
 const ANDROID_MIME_TYPE = 'application/vnd.android.package-archive';
 
 class UpdateService {
+  private installInProgress = false;
   private static instance: UpdateService;
   static getInstance(): UpdateService {
     if (!UpdateService.instance) {
@@ -191,10 +192,25 @@ class UpdateService {
     throw new Error('Download failed');
   }
 
+  // 防止重复点击导致同时启动多个系统安装 Activity
+  async installApk(fileUri: string): Promise<void> {
+    if (this.installInProgress) {
+      logger.warn('APK install already in progress');
+      return;
+    }
+
+    this.installInProgress = true;
+    try {
+      await this.installApkInternal(fileUri);
+    } finally {
+      this.installInProgress = false;
+    }
+  }
+
   /** --------------------------------------------------------------
    *  4️⃣ 安装 APK（只在 Android 可用，使用 expo-intent-launcher）
    * --------------------------------------------------------------- */
-  async installApk(fileUri: string): Promise<void> {
+  private async installApkInternal(fileUri: string): Promise<void> {
     // ① 先确认文件存在
     const exists = await FileSystem.getInfoAsync(fileUri);
     if (!exists.exists) {
