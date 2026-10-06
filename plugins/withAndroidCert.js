@@ -1,4 +1,4 @@
-const { withDangerousMod, withAndroidManifest } = require('@expo/config-plugins');
+const { withDangerousMod, withAndroidManifest, withMainApplication } = require('@expo/config-plugins');
 const fs = require('fs');
 const path = require('path');
 
@@ -7,31 +7,33 @@ function withNetworkSecurityConfigManifest(config) {
   return withAndroidManifest(config, async (config) => {
     const androidManifest = config.modResults;
     const mainApplication = androidManifest.manifest.application[0];
-    
+
     // 给 <application> 标签添加 android:networkSecurityConfig 属性
     mainApplication.$['android:networkSecurityConfig'] = '@xml/network_security_config';
-    
+
     return config;
   });
 }
 
-// 2. 写入配置文件并复制证书文件到原生 Android 目录
+// 2. 写入配置文件、证书和旧 Android TLS 支持代码
 function withCertFiles(config) {
   return withDangerousMod(config, [
     'android',
     async (config) => {
       const { projectRoot } = config.modRequest;
-      
+
       // 路径定义
       const resDir = path.join(projectRoot, 'android/app/src/main/res');
       const xmlDir = path.join(resDir, 'xml');
       const rawDir = path.join(resDir, 'raw');
-      
-      // 确保 xml 和 raw 文件夹存在
+      const javaDir = path.join(projectRoot, 'android/app/src/main/java/com/oriontv');
+
+      // 确保资源目录存在
       fs.mkdirSync(xmlDir, { recursive: true });
       fs.mkdirSync(rawDir, { recursive: true });
+      fs.mkdirSync(javaDir, { recursive: true });
 
-      // 网络安全配置文件的 XML 内容
+      // 网络安全配置：API 24+ 的兜底方案
       const networkSecurityConfigXml = `<?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
       <base-config cleartextTrafficPermitted="true">
@@ -45,19 +47,45 @@ function withCertFiles(config) {
       </base-config>
   </network-security-config>`;
 
-      // 写入 xml 配置文件
       fs.writeFileSync(path.join(xmlDir, 'network_security_config.xml'), networkSecurityConfigXml);
-
       fs.copyFileSync(path.join(projectRoot, 'plugins/isrg_root_x1.cer'), path.join(rawDir, 'isrg_root_x1.cer'));
       fs.copyFileSync(path.join(projectRoot, 'plugins/isrg_root_x2.cer'), path.join(rawDir, 'isrg_root_x2.cer'));
-      console.log('✅ isrg根证书已成功复制到原生 Android 目录');
+      fs.copyFileSync(path.join(projectRoot, 'plugins/LegacyTls.kt'), path.join(javaDir, 'LegacyTls.kt'));
+      console.log('✅ ISRG 根证书和旧 Android TLS 支持代码已复制到原生 Android 目录');
 
       return config;
     },
   ]);
 }
 
+// 3. 在 MainApplication.onCreate 中初始化全局 OkHttp TLS 配置
+function withLegacyTlsMainApplication(config) {
+  return withMainApplication(config, (config) => {
+    const mainApplication = config.modResults;
+    let contents = mainApplication.contents;
+    const isKotlin = contents.includes('override fun onCreate');
+    const configureCall = isKotlin ? 'LegacyTls.configure(this)' : 'LegacyTls.INSTANCE.configure(this);';
+
+    if (!contents.includes(configureCall)) {
+      const onCreatePattern = isKotlin
+        ? /(override fun onCreate\(\) \{\s*super\.onCreate\(\))/
+        : /(public void onCreate\(\) \{\s*super\.onCreate\(\);?)/;
+
+      if (!onCreatePattern.test(contents)) {
+        throw new Error('无法在 MainApplication.onCreate 中初始化 LegacyTls');
+      }
+
+      contents = contents.replace(onCreatePattern, `$1\n    ${configureCall}`);
+      mainApplication.contents = contents;
+    }
+
+    return config;
+  });
+}
+
 // 导出组合后的插件
 module.exports = function withAndroidCert(config) {
-  return withNetworkSecurityConfigManifest(withCertFiles(config));
+  return withLegacyTlsMainApplication(
+    withNetworkSecurityConfigManifest(withCertFiles(config)),
+  );
 };
