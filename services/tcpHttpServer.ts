@@ -5,6 +5,14 @@ import Logger from '@/utils/Logger';
 const logger = Logger.withTag('TCPHttpServer');
 
 const PORT = 12346;
+/** 端口被占用时最多顺着往后试几个端口（热重载不会释放上一次 JS 上下文的监听） */
+const PORT_ATTEMPTS = 5;
+
+/** 判断是否为"端口已被占用"，只有这种情况才值得换端口重试 */
+function isAddressInUse(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /EADDRINUSE|address already in use/i.test(message);
+}
 
 interface HttpRequest {
   method: string;
@@ -25,6 +33,10 @@ class TCPHttpServer {
   private server: TcpSocket.Server | null = null;
   private isRunning = false;
   private requestHandler: RequestHandler | null = null;
+  /** 正在进行的启动：并发调用 start 时复用同一次，避免同时建两个监听 */
+  private pendingStart: Promise<string> | null = null;
+  /** 实际监听成功的地址（端口被占用时会顺延，不能再按常量 PORT 拼） */
+  private boundUrl: string | null = null;
 
   constructor() {
     this.server = null;
@@ -98,7 +110,21 @@ class TCPHttpServer {
     this.requestHandler = handler;
   }
 
-  public async start(): Promise<string> {
+  public start(): Promise<string> {
+    if (this.pendingStart) {
+      logger.debug('[TCPHttpServer] Start already in progress.');
+      return this.pendingStart;
+    }
+    const task = this.doStart().finally(() => {
+      if (this.pendingStart === task) {
+        this.pendingStart = null;
+      }
+    });
+    this.pendingStart = task;
+    return task;
+  }
+
+  private async doStart(): Promise<string> {
     const netState = await NetInfo.fetch();
     let ipAddress: string | null = null;
     
@@ -112,9 +138,29 @@ class TCPHttpServer {
 
     if (this.isRunning) {
       logger.debug('[TCPHttpServer] Server is already running.');
-      return `http://${ipAddress}:${PORT}`;
+      return this.boundUrl ?? `http://${ipAddress}:${PORT}`;
     }
 
+    // 上一次启动失败（或刚 stop 过）可能还留着 server 对象，先清掉再重来
+    this.closeCurrentServer();
+
+    let lastError: unknown = null;
+    for (let i = 0; i < PORT_ATTEMPTS; i++) {
+      const port = PORT + i;
+      try {
+        return await this.listen(port, ipAddress);
+      } catch (error) {
+        lastError = error;
+        if (!isAddressInUse(error)) {
+          throw error;
+        }
+        logger.info(`[TCPHttpServer] 端口 ${port} 已被占用，换下一个端口重试`);
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error('端口被占用，启动失败');
+  }
+
+  private listen(port: number, ipAddress: string): Promise<string> {
     return new Promise((resolve, reject) => {
       try {
         this.server = TcpSocket.createServer((socket: TcpSocket.Socket) => {
@@ -166,31 +212,44 @@ class TCPHttpServer {
           });
         });
 
-        this.server.listen({ port: PORT, host: '0.0.0.0' }, () => {
-          logger.debug(`[TCPHttpServer] Server listening on ${ipAddress}:${PORT}`);
+        this.server.listen({ port, host: '0.0.0.0' }, () => {
+          logger.debug(`[TCPHttpServer] Server listening on ${ipAddress}:${port}`);
           this.isRunning = true;
-          resolve(`http://${ipAddress}:${PORT}`);
+          this.boundUrl = `http://${ipAddress}:${port}`;
+          resolve(this.boundUrl);
         });
 
         this.server.on('error', (error: Error) => {
           logger.info('[TCPHttpServer] Server error:', error);
-          this.isRunning = false;
+          this.closeCurrentServer();
           reject(error);
         });
 
       } catch (error) {
         logger.info('[TCPHttpServer] Failed to start server:', error);
+        this.closeCurrentServer();
         reject(error);
       }
     });
   }
 
   public stop() {
-    if (this.server && this.isRunning) {
-      this.server.close();
-      this.server = null;
-      this.isRunning = false;
-      logger.debug('[TCPHttpServer] Server stopped');
+    if (!this.server) return;
+    this.closeCurrentServer();
+    logger.debug('[TCPHttpServer] Server stopped');
+  }
+
+  /** 关掉当前持有的 server（启动失败时也要关，否则失败留下的 socket 会一直挂着） */
+  private closeCurrentServer() {
+    const server = this.server;
+    this.server = null;
+    this.isRunning = false;
+    this.boundUrl = null;
+    if (!server) return;
+    try {
+      server.close();
+    } catch (error) {
+      logger.debug('[TCPHttpServer] Close server failed:', error);
     }
   }
 

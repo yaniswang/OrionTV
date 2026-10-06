@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect } from "react";
-import { View, TextInput, StyleSheet, Alert, Keyboard, TouchableOpacity } from "react-native";
+import { View, TextInput, StyleSheet, Alert, Keyboard, TouchableOpacity, ActivityIndicator, Pressable, ScrollView } from "react-native";
 import { ThemedView } from "@/components/ThemedView";
 import { ThemedText } from "@/components/ThemedText";
 import VideoCard from "@/components/VideoCard";
 import VideoLoadingAnimation from "@/components/VideoLoadingAnimation";
 import { api, SearchResult } from "@/services/api";
+import { SearchHistoryManager } from "@/services/storage";
 import { Search, QrCode } from "lucide-react-native";
 import { StyledButton } from "@/components/StyledButton";
 import { useRemoteControlStore } from "@/stores/remoteControlStore";
@@ -27,7 +28,10 @@ export default function SearchScreen() {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [searchHistory, setSearchHistory] = useState<string[]>([]);
   const textInputRef = useRef<TextInput>(null);
+  const historyLongPressRef = useRef(false);
+  const searchControllerRef = useRef<AbortController | null>(null);
   const [isInputFocused, setIsInputFocused] = useState(false);
   const { showModal: showRemoteModal, lastMessage, targetPage, clearMessage } = useRemoteControlStore();
   const { remoteInputEnabled } = useSettingsStore();
@@ -49,6 +53,20 @@ export default function SearchScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastMessage, targetPage]);
 
+  // 离开搜索页时中断未完成的 WS 搜索
+  useEffect(() => {
+    return () => {
+      searchControllerRef.current?.abort();
+      searchControllerRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    SearchHistoryManager.get()
+      .then(setSearchHistory)
+      .catch((err) => logger.info("Failed to load search history:", err));
+  }, []);
+
   // useEffect(() => {
   //   // Focus the text input when the screen loads
   //   const timer = setTimeout(() => {
@@ -59,49 +77,126 @@ export default function SearchScreen() {
 
   const handleSearch = async (searchText?: string) => {
     const term = typeof searchText === "string" ? searchText : keyword;
-    if (!term.trim()) {
+    const trimmedTerm = term.trim();
+    if (!trimmedTerm) {
       Keyboard.dismiss();
       return;
     }
     Keyboard.dismiss();
+
+    void SearchHistoryManager.add(trimmedTerm)
+      .then(() => SearchHistoryManager.get())
+      .then(setSearchHistory)
+      .catch((err) => logger.info("Failed to update search history:", err));
+
+    // 取消上一次搜索，避免旧结果混进新结果
+    searchControllerRef.current?.abort();
+    const controller = new AbortController();
+    searchControllerRef.current = controller;
+
     setLoading(true);
     setError(null);
-    try {
-      const response = await api.searchVideos(term);
-      if (response.results.length > 0) {
-        // 聚合搜索
-        const mapResults = new Map<string, SearchResult>()
-        response.results.map((item: any) => {
-          const key = `${item.title.replace(' ', '')}-${item.year || 'unknown'}-${item.episodes.length === 1 ? 'movie' : 'tv'}`;
+    setResults([]);
+
+    // 聚合搜索：同一个片子聚合成一条，用 source_count 记录有多少个源
+    const mapResults = new Map<string, SearchResult>();
+    const mergeItems = (items: SearchResult[]) => {
+      let changed = false;
+      items.forEach((item: any) => {
+        const key = `${item.title.replace(' ', '')}-${item.year || 'unknown'}-${item.episodes.length === 1 ? 'movie' : 'tv'}`;
+        const existedItem = mapResults.get(key);
+        if (existedItem) {
+          // 换成新对象，保证列表能感知到源数量的变化
+          mapResults.set(key, { ...existedItem, source_count: (existedItem.source_count || 1) + 1 });
+        } else {
+          // 首个源，聚合后不需要记录具体是哪个源
           delete item['source'];
           delete item['source_name'];
           delete item['id'];
-          const existedItem = mapResults.get(key);
-          if (!existedItem) {
-            // 首个源
-            item['source_count'] = 1;
-            mapResults.set(key, item);
-          } else {
-            existedItem.source_count ++;
+          item['source_count'] = 1;
+          mapResults.set(key, item);
+        }
+        changed = true;
+      });
+      if (changed && !controller.signal.aborted) {
+        setResults([...mapResults.values()].sort((a, b) => (b.source_count || 0) - (a.source_count || 0)));
+      }
+    };
+
+    try {
+      // WS 模式：每个源搜完就实时回调，边搜边展示
+      await api.searchVideosWsStream(
+        trimmedTerm,
+        (message) => {
+          if (message.type === 'source_result' && message.results?.length) {
+            mergeItems(message.results);
           }
-        });
-        const arrResults = [...mapResults.values()];
-        arrResults.sort((a, b) => {
-          return b.source_count - a.source_count;
-        })
-        setResults(arrResults);
-      } else {
+        },
+        controller.signal
+      );
+      if (!controller.signal.aborted && mapResults.size === 0) {
         setError("没有找到相关内容");
       }
     } catch (err) {
+      if (controller.signal.aborted) return;
       setError("搜索失败，请稍后重试。");
       logger.info("Search failed:", err);
     } finally {
-      setLoading(false);
+      if (searchControllerRef.current === controller) {
+        setLoading(false);
+      }
     }
   };
 
   const onSearchPress = () => handleSearch();
+
+  const handleHistoryPress = (historyKeyword: string) => {
+    if (historyLongPressRef.current) {
+      historyLongPressRef.current = false;
+      return;
+    }
+    setKeyword(historyKeyword);
+    handleSearch(historyKeyword);
+  };
+
+  const handleHistoryLongPress = (historyKeyword: string) => {
+    historyLongPressRef.current = true;
+    Alert.alert("删除搜索历史", `确定要删除"${historyKeyword}"吗？`, [
+      { text: "取消", style: "cancel" },
+      {
+        text: "删除",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await SearchHistoryManager.remove(historyKeyword);
+            setSearchHistory((history) => history.filter((item) => item !== historyKeyword));
+          } catch (err) {
+            logger.info("Failed to delete search history:", err);
+            Alert.alert("错误", "删除搜索历史失败，请重试");
+          }
+        },
+      },
+    ]);
+  };
+
+  const handleClearSearchHistory = () => {
+    Alert.alert("清空搜索历史", "确定要清空全部搜索历史吗？", [
+      { text: "取消", style: "cancel" },
+      {
+        text: "清空",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await SearchHistoryManager.clear();
+            setSearchHistory([]);
+          } catch (err) {
+            logger.info("Failed to clear search history:", err);
+            Alert.alert("错误", "清空搜索历史失败，请重试");
+          }
+        },
+      },
+    ]);
+  };
 
   const handleQrPress = () => {
     if (!remoteInputEnabled) {
@@ -130,6 +225,49 @@ export default function SearchScreen() {
 
   // 动态样式
   const dynamicStyles = createResponsiveStyles(deviceType, spacing);
+
+  const renderSearchHistory = () => (
+    <ScrollView
+      style={dynamicStyles.historyScroll}
+      contentContainerStyle={dynamicStyles.historyContainer}
+      keyboardShouldPersistTaps="handled"
+    >
+      <View style={dynamicStyles.historyHeader}>
+        <ThemedText style={dynamicStyles.historyTitle}>搜索历史</ThemedText>
+        {searchHistory.length > 0 && (
+          <Pressable
+            onPress={handleClearSearchHistory}
+            style={({ focused }) => [
+              dynamicStyles.clearHistoryButton,
+              focused && dynamicStyles.clearHistoryButtonFocused,
+            ]}
+          >
+            <ThemedText style={dynamicStyles.clearHistoryText}>清空</ThemedText>
+          </Pressable>
+        )}
+      </View>
+      {searchHistory.length > 0 ? (
+        <View style={dynamicStyles.historyTags}>
+          {searchHistory.map((item) => (
+            <Pressable
+              key={item}
+              onPress={() => handleHistoryPress(item)}
+              onLongPress={() => handleHistoryLongPress(item)}
+              delayLongPress={deviceType === 'mobile' ? 800 : 1000}
+              style={({ focused }) => [
+                dynamicStyles.historyTag,
+                focused && dynamicStyles.historyTagFocused,
+              ]}
+            >
+              <ThemedText style={dynamicStyles.historyTagText} numberOfLines={1}>{item}</ThemedText>
+            </Pressable>
+          ))}
+        </View>
+      ) : (
+        <ThemedText style={dynamicStyles.historyEmptyText}>暂无搜索历史</ThemedText>
+      )}
+    </ScrollView>
+  );
 
   const renderSearchContent = () => (
     <>
@@ -167,19 +305,21 @@ export default function SearchScreen() {
         )}
       </View>
 
-      {loading ? (
+      {loading && results.length === 0 ? (
         <VideoLoadingAnimation showProgressBar={false} />
       ) : error ? (
         <View style={[commonStyles.center, { flex: 1 }]}>
           <ThemedText style={dynamicStyles.errorText}>{error}</ThemedText>
         </View>
+      ) : results.length === 0 ? (
+        renderSearchHistory()
       ) : (
         <CustomScrollView
           data={results}
           renderItem={renderItem}
-          loading={loading}
           error={error}
           emptyMessage="输入关键词开始搜索"
+          ListFooterComponent={loading ? <ActivityIndicator style={{ marginVertical: 20 }} color="#ffffff" /> : null}
         />
       )}
       <RemoteControlModal />
@@ -224,7 +364,7 @@ const createResponsiveStyles = (deviceType: string, spacing: number) => {
     inputContainer: {
       flex: 1,
       height: isMobile ? minTouchTarget : 50,
-      backgroundColor: "#2c2c2e",
+      backgroundColor: Colors.dark.border,
       borderRadius: isMobile ? 8 : 8,
       marginRight: spacing / 2,
       borderWidth: 2,
@@ -251,6 +391,66 @@ const createResponsiveStyles = (deviceType: string, spacing: number) => {
       justifyContent: "center",
       alignItems: "center",
       borderRadius: isMobile ? 8 : 8,
+    },
+    historyScroll: {
+      flex: 1,
+    },
+    historyContainer: {
+      paddingHorizontal: spacing,
+      paddingBottom: spacing,
+    },
+    historyHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginBottom: spacing,
+    },
+    historyTitle: {
+      color: Colors.dark.text,
+      fontSize: isMobile ? 18 : 20,
+      fontWeight: "600",
+    },
+    clearHistoryButton: {
+      minHeight: 40,
+      justifyContent: "center",
+      marginLeft: spacing,
+      paddingHorizontal: spacing / 2,
+      borderRadius: 8,
+      borderWidth: 2,
+      borderColor: "transparent",
+    },
+    clearHistoryButtonFocused: {
+      borderColor: Colors.dark.primary,
+    },
+    clearHistoryText: {
+      color: Colors.dark.icon,
+      fontSize: isMobile ? 14 : 16,
+    },
+    historyTags: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+    },
+    historyTag: {
+      minHeight: 40,
+      maxWidth: "100%",
+      justifyContent: "center",
+      marginRight: spacing / 2,
+      marginBottom: spacing / 2,
+      paddingHorizontal: spacing,
+      borderRadius: 20,
+      borderWidth: 2,
+      borderColor: "transparent",
+      backgroundColor: Colors.dark.border,
+    },
+    historyTagFocused: {
+      borderColor: Colors.dark.primary,
+    },
+    historyTagText: {
+      color: Colors.dark.text,
+      fontSize: isMobile ? 15 : 16,
+    },
+    historyEmptyText: {
+      color: Colors.dark.icon,
+      fontSize: isMobile ? 14 : 16,
     },
     errorText: {
       color: "red",

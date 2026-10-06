@@ -210,7 +210,7 @@ export class API {
   }
 
   async deleteSearchHistory(keyword?: string): Promise<{ success: boolean }> {
-    const url = keyword ? `/api/searchhistory?keyword=${keyword}` : "/api/searchhistory";
+    const url = keyword ? `/api/searchhistory?keyword=${encodeURIComponent(keyword)}` : "/api/searchhistory";
     const response = await this._fetch(url, { method: "DELETE" });
     return response.json();
   }
@@ -283,7 +283,8 @@ export class API {
     return response.json();
   }
 
-  async searchVideosWs(query: string, signal?: AbortSignal) {
+  /** 取登录 cookie 里的 auth token：SSE 请求走不了 cookie jar，需要手动带 Cookie 头 */
+  private async _getAuthToken(): Promise<string> {
     const cookies = await AsyncStorage.getItem('authCookies');
     if(!cookies) {
       throw new Error("No auth cookie!");
@@ -292,21 +293,64 @@ export class API {
     if (!match) {
       throw new Error("Find auth cookie failed!");
     }
-    const auth = match[1];
-    const arrMessages = [];
-    const es = new EventSource(`${this.baseURL}/api/search/ws?q=${encodeURIComponent(query)}`, {
+    return match[1];
+  }
+
+  private async _createSearchEventSource(query: string): Promise<EventSource> {
+    const auth = await this._getAuthToken();
+    return new EventSource(`${this.baseURL}/api/search/ws?q=${encodeURIComponent(query)}`, {
       headers: {
         Cookie: `auth=${auth};`
       }
     });
+  }
+
+  async searchVideosWs(query: string, signal?: AbortSignal) {
+    const arrMessages: any[] = [];
+    const es = await this._createSearchEventSource(query);
     es.addEventListener("message", (event) => {
-      const data = JSON.parse(event.data);
+      const data = JSON.parse(event.data || '{}');
       arrMessages.push(data);
       if(data.type === 'complete' || signal?.aborted) {
         es.close();
       }
     });
     return arrMessages;
+  }
+
+  /**
+   * WS(SSE) 增量搜索：每个源搜完就实时回调一次，收到 complete 或中断时 resolve。
+   * 与 searchVideosWs 的区别是结果实时交给调用方，而不是攒完再返回。
+   */
+  async searchVideosWsStream(
+    query: string,
+    onMessage: (message: { type: string; results?: SearchResult[] }) => void,
+    signal?: AbortSignal
+  ): Promise<void> {
+    if (signal?.aborted) return;
+    const es = await this._createSearchEventSource(query);
+    return new Promise<void>((resolve) => {
+      let closed = false;
+      const close = () => {
+        if (closed) return;
+        closed = true;
+        signal?.removeEventListener?.('abort', close);
+        es.close();
+        resolve();
+      };
+      es.addEventListener("message", (event) => {
+        const data = JSON.parse(event.data || '{}');
+        onMessage(data);
+        if(data.type === 'complete') {
+          close();
+        }
+      });
+      es.addEventListener("error", close);
+      signal?.addEventListener?.('abort', close);
+      if (signal?.aborted) {
+        close();
+      }
+    });
   }
 
   async searchVideo(query: string, resourceId: string, signal?: AbortSignal): Promise<{ results: SearchResult[] }> {

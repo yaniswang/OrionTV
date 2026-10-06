@@ -6,6 +6,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { StyledButton } from "@/components/StyledButton";
 import VideoLoadingAnimation from "@/components/VideoLoadingAnimation";
 import useDetailStore, { EXCELLENT_SEGMENT_RATIO } from "@/stores/detailStore";
+import { SpeedTestIcon } from "@/components/SpeedTestIcon";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { FontAwesome } from "@expo/vector-icons";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
@@ -27,6 +28,7 @@ export default function DetailScreen() {
   const {
     detail,
     searchResults,
+    testingSource,
     loading,
     error,
     allSourcesLoaded,
@@ -187,7 +189,7 @@ export default function DetailScreen() {
                   const isSelected = detail?.source === item.source && detail?.id === item.id;
                   return (
                     <StyledButton
-                      key={index}
+                      key={item.source}
                       onPress={() => {
                         setDetail(item);
                         setSelectedTab('episodes');
@@ -206,9 +208,11 @@ export default function DetailScreen() {
                       {item.segmentRatio >= EXCELLENT_SEGMENT_RATIO && (
                         <View style={[dynamicStyles.badge, dynamicStyles.excellentBadge]}>
                           <FontAwesome name="bolt" size={deviceType === "mobile" ? 10 : 12} color="#08331a" />
-                          <Text style={[dynamicStyles.badgeText, dynamicStyles.excellentBadgeText]}>优秀</Text>
+                          <Text style={[dynamicStyles.badgeText, dynamicStyles.excellentBadgeText]}>优</Text>
                         </View>
                       )}
+                      {/* 测速中的图标放整行最后（集数、优 的后面） */}
+                      {testingSource === item.source && <SpeedTestIcon size={deviceType === "mobile" ? 12 : 14} />}
                     </StyledButton>
                   );
                 })}
@@ -289,7 +293,7 @@ export default function DetailScreen() {
                     const isSelected = detail?.source === item.source && detail?.id === item.id;
                     return (
                       <StyledButton
-                        key={index}
+                        key={item.source}
                         onPress={() => {
                           setDetail(item);
                           setSelectedTab('episodes');
@@ -309,9 +313,11 @@ export default function DetailScreen() {
                         {item.segmentRatio >= EXCELLENT_SEGMENT_RATIO && (
                           <View style={[dynamicStyles.badge, dynamicStyles.excellentBadge]}>
                             <FontAwesome name="bolt" size={deviceType === "mobile" ? 10 : 12} color="#08331a" />
-                            <Text style={[dynamicStyles.badgeText, dynamicStyles.excellentBadgeText]}>优秀</Text>
+                            <Text style={[dynamicStyles.badgeText, dynamicStyles.excellentBadgeText]}>优</Text>
                           </View>
                         )}
+                        {/* 测速中的图标放整行最后（集数、优 的后面） */}
+                        {testingSource === item.source && <SpeedTestIcon size={14} />}
                       </StyledButton>
                     );
                   })}

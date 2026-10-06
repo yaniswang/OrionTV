@@ -303,6 +303,18 @@ export class SearchHistoryManager {
     await api.addSearchHistory(trimmed);
   }
 
+  static async remove(keyword: string): Promise<void> {
+    const trimmed = keyword.trim();
+    if (!trimmed) return;
+
+    if (this.getStorageType() === "localstorage") {
+      const history = (await this.get()).filter((item) => item !== trimmed);
+      await AsyncStorage.setItem(STORAGE_KEYS.SEARCH_HISTORY, JSON.stringify(history));
+      return;
+    }
+    await api.deleteSearchHistory(trimmed);
+  }
+
   static async clear(): Promise<void> {
     if (this.getStorageType() === "localstorage") {
       await AsyncStorage.removeItem(STORAGE_KEYS.SEARCH_HISTORY);

@@ -4,12 +4,13 @@ import { FlashList } from "@shopify/flash-list";
 import Modal from "react-native-modal";
 import { StyledButton } from "./StyledButton";
 import { ThemedText } from "@/components/ThemedText";
-import useDetailStore, { EXCELLENT_SEGMENT_RATIO } from "@/stores/detailStore";
+import useDetailStore, { EXCELLENT_SEGMENT_RATIO, SearchResultWithResolution } from "@/stores/detailStore";
 import usePlayerStore from "@/stores/playerStore";
 import Logger from '@/utils/Logger';
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { getCommonResponsiveStyles } from "@/utils/ResponsiveStyles";
 import { FontAwesome } from "@expo/vector-icons";
+import { SpeedTestIcon } from "./SpeedTestIcon";
 
 const logger = Logger.withTag('SourceSelectionModal');
 
@@ -31,11 +32,13 @@ export const SourceSelectionModal: React.FC = () => {
   const detail = useDetailStore((s) => s.detail);
   const setDetail = useDetailStore((s) => s.setDetail);
   const allSourcesLoaded = useDetailStore((s) => s.allSourcesLoaded);
+  const testingSource = useDetailStore((s) => s.testingSource);
 
-  const onSelectSource = async (index: number) => {
-    logger.debug("onSelectSource", index, searchResults[index].id, detail?.id);
-    if (searchResults[index].id !== detail?.id) {
-      const newDetail = searchResults[index];
+  // 按源（而不是列表下标）选择：测速过程中列表会随时按倍率重排，用下标会点错源
+  const onSelectSource = async (item: SearchResultWithResolution) => {
+    logger.debug("onSelectSource", item.source, item.id, detail?.id);
+    if (item.id !== detail?.id) {
+      const newDetail = item;
       setDetail(newDetail);
       
       // Reload the video with the new source, preserving current position
@@ -69,14 +72,15 @@ export const SourceSelectionModal: React.FC = () => {
         <FlashList
           data={searchResults}
           numColumns={Math.floor((responsiveConfig.screenWidth * 0.9) / 250)}
-          // keyExtractor={(item, index) => `source-${item.id}-${index}`}
+          // 列表会随测速结果重排，key 必须跟着源走（不同源可能有相同的 id）
+          keyExtractor={(item) => `${item.source}-${item.id}`}
           extraData={detail?.id}
           estimatedItemSize={60}
-          renderItem={({ item, index }) => {
+          renderItem={({ item }) => {
             const isSelected = detail?.source === item.source && detail?.id === item.id;
             return (
               <StyledButton
-                onPress={() => onSelectSource(index)}
+                onPress={() => onSelectSource(item)}
                 isSelected={isSelected}
                 hasTVPreferredFocus={isSelected}
                 style={styles.sourceItem}
@@ -94,9 +98,11 @@ export const SourceSelectionModal: React.FC = () => {
                   {!!item.segmentRatio && item.segmentRatio >= EXCELLENT_SEGMENT_RATIO && (
                     <View style={[dynamicStyles.badge, dynamicStyles.excellentBadge]}>
                       <FontAwesome name="bolt" size={deviceType === "mobile" ? 10 : 12} color="#08331a" />
-                      <Text style={[dynamicStyles.badgeText, dynamicStyles.excellentBadgeText]}>优秀</Text>
+                      <Text style={[dynamicStyles.badgeText, dynamicStyles.excellentBadgeText]}>优</Text>
                     </View>
                   )}
+                  {/* 测速中的图标放整行最后（集数、优 的后面） */}
+                  {testingSource === item.source && <SpeedTestIcon size={deviceType === "mobile" ? 12 : 14} />}
               </StyledButton>
             );
           }}
