@@ -115,7 +115,7 @@ export const getCachedSpeedTest = (url: string, proxyPrefix?: string): M3U8Probe
   const cacheKey = getCacheKey(url, proxyPrefix);
   const cached = probeCache[cacheKey];
   if (!cached || Date.now() - cached.at >= PROBE_CACHE_DURATION) return null;
-  logger.info(`命中测速缓存（${cacheKey}，${Math.round((Date.now() - cached.at) / 1000)}s 前测过）: 倍率 ${cached.info.segmentRatio}`);
+  logger.info(`[缓存] 命中 ${cacheKey}（${Math.round((Date.now() - cached.at) / 1000)}s 前），路线=${cacheKey.startsWith('proxy:') ? '代理' : '直连'}，倍率=${cached.info.segmentRatio}`);
   return cached.info;
 };
 
@@ -311,7 +311,7 @@ export const pingM3U8 = async (
   // 日志标识：源站短标识 + 走代理还是直连，方便把各步骤对上同一个源
   const tag = urlTag(url);
   const route = proxyPrefix ? '代理' : '直连';
-  logger.info(`M3U8检测开始 [${tag}|${route}] - url: ${url.substring(0, 100)}...`);
+  logger.info(`[PING|${route}] 开始：${tag}`);
   // 整次 ping（清单 + 首个分片）共用一个超时预算，单源最坏只花 PING_TIMEOUT_MS
   const controller = new AbortController();
   const onAbort = () => controller.abort();
@@ -335,13 +335,11 @@ export const pingM3U8 = async (
       FULL_PROBE_SEGMENT_COUNT,
     );
     logger.info(
-      `[PERF] ping清单 [${tag}|${route}] ${(performance.now() - manifestStart).toFixed(0)}ms status=${loaded.status} 分片数=${loaded.segments.length}`,
+      `[PING|${route}] 清单：${(performance.now() - manifestStart).toFixed(0)}ms，HTTP=${loaded.status}，分片数=${loaded.segments.length}`,
     );
     if (!loaded.ok) {
       logger.info(
-        `M3U8检测失败 [${tag}|${route}]：HTTP ${loaded.status}，` +
-          `${loaded.failedPhase ?? '主清单'}${loaded.withRange ? '（Range 1KB）' : '（全量）'}，` +
-          `url=${loaded.failedUrl ?? url.substring(0, 160)}`,
+        `[PING|${route}] 失败：HTTP=${loaded.status}，${loaded.failedPhase ?? '主清单'}${loaded.withRange ? '（Range 1KB）' : '（全量）'}，url=${loaded.failedUrl ?? url.substring(0, 160)}`,
       );
       return null;
     }
@@ -359,16 +357,16 @@ export const pingM3U8 = async (
           readHead,
         );
         logger.info(
-          `[PERF] pingHEAD [${tag}|${route}] ${(performance.now() - probeStart).toFixed(0)}ms status=${head.status} url=${segments[0].url.substring(0, 80)}`,
+          `[PING|${route}] 首片：${(performance.now() - probeStart).toFixed(0)}ms，HTTP=${head.status}，url=${segments[0].url.substring(0, 80)}`,
         );
         blocked = isBlockedStatus(head.status);
         if (blocked) {
-          logger.info(`[${tag}|${route}] 首个分片 HEAD 返回 ${head.status}（非 200），判定该路由不可用`);
+          logger.info(`[PING|${route}] 不可用：首片 HTTP=${head.status}`);
         }
       } catch (error) {
         if (signal.aborted) return null;
         // HEAD 失败（超时/网络错误）不当成源不可用，交给完整测速判定
-        logger.info(`[${tag}|${route}] 首个分片 HEAD 失败（按慢源处理）: ${String(error)}`);
+        logger.info(`[PING|${route}] 首片失败（按慢源继续测速）：${String(error)}`);
       }
     }
 
@@ -380,7 +378,7 @@ export const pingM3U8 = async (
       segmentRatio: 0,
       blocked,
     };
-    logger.info(`M3U8检测ping结束, pingTime: ${pingTime}ms, 分片数: ${segments.length}, blocked: ${blocked}`);
+    logger.info(`[PING|${route}] 完成：${pingTime}ms，分片数=${segments.length}，首片状态=${blocked ? '不可用' : '正常'}`);
     return { info, segments };
   } catch (error) {
     if (signal.aborted) return null;
@@ -389,8 +387,7 @@ export const pingM3U8 = async (
       ? `${error.phase}${error.withRange ? '（Range 1KB）' : '（全量）'} ${describeError(error.sourceError)}，url=${error.url.substring(0, 160)}`
       : `${describeError(error)}，url=${url.substring(0, 160)}`;
     logger.info(
-      `M3U8检测失败${timedOut ? '（ping 超时）' : ''} [${tag}|${route}] - ` +
-        `消耗:${(performance.now() - perfStart).toFixed(2)}ms, ${detail}`,
+      `[PING|${route}] 失败${timedOut ? '（超时）' : ''}：${(performance.now() - perfStart).toFixed(2)}ms，${detail}`,
     );
     return null;
   } finally {
@@ -408,7 +405,7 @@ export const resolveM3U8Segments = async (
   signal: AbortSignal,
   contextLabel?: string,
 ): Promise<M3U8Segment[] | null> => {
-  const prefix = contextLabel ? `[${contextLabel}] ` : '';
+  const prefix = contextLabel ? `[测速|${contextLabel}] ` : '[测速] ';
   const shortUrl = url.substring(0, 160);
   if (!url.toLowerCase().endsWith('.m3u8')) return null;
   try {
@@ -463,7 +460,9 @@ export const measureM3U8Speed = async (
   signal: AbortSignal,
   baseInfo: M3U8ProbeInfo,
   proxyPrefix?: string,
+  contextLabel?: string,
 ): Promise<M3U8ProbeInfo> => {
+  const prefix = contextLabel ? `[测速|${contextLabel}] ` : '[测速] ';
   const loadSegment = async (segment: M3U8Segment) => {
     try {
       // 带时间戳绕缓存，否则测到的是缓存命中速度（快得离谱、不代表真实回源速度）
@@ -475,7 +474,7 @@ export const measureM3U8Speed = async (
         readBytes,
       );
       if (isBlockedStatus(response.status)) {
-        logger.info(`分片返回 ${response.status}（非 200），判定该路由不可用`);
+        logger.info(`${prefix}分片不可用：HTTP=${response.status}`);
         return { ok: false, blocked: true, byteLength: 0, durationMs: 0 };
       }
       return {
@@ -486,7 +485,7 @@ export const measureM3U8Speed = async (
       };
     } catch (error) {
       if (!signal.aborted) {
-        logger.info(`分片加载失败或超时（按失败处理）: ${describeError(error)}`);
+        logger.info(`${prefix}分片失败（按失败处理）：${describeError(error)}`);
       }
       return { ok: false, blocked: false, byteLength: 0, durationMs: 0 };
     }
@@ -519,8 +518,9 @@ export const measureM3U8Speed = async (
       : 0;
 
   logger.info(
-    `分片完整测速: ${loadedCount}/${segments.length} 片 ${(byteLength / 1024).toFixed(0)}KB / ${segmentLoadMs}ms` +
-      `（总时长 ${(segmentDurationMs / 1000).toFixed(1)}s，倍数 ${segmentRatio}）`,
+    `${prefix}分片结果：${loadedCount}/${segments.length} 片，` +
+      `${(byteLength / 1024).toFixed(0)}KB，加载=${segmentLoadMs}ms，` +
+      `分片总时长=${(segmentDurationMs / 1000).toFixed(1)}s，倍率=${segmentRatio}`,
   );
 
   const info: M3U8ProbeInfo = {

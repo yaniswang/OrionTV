@@ -170,9 +170,17 @@ class TCPHttpServer {
           
           socket.on('data', async (data: string | Buffer) => {
             requestData += data.toString();
-            
+
             // Check if we have a complete HTTP request
-            if (requestData.includes('\r\n\r\n')) {
+            const headerEnd = requestData.indexOf('\r\n\r\n');
+            if (headerEnd >= 0) {
+              const headerText = requestData.slice(0, headerEnd);
+              const contentLengthMatch = /content-length:\s*(\d+)/i.exec(headerText);
+              if (contentLengthMatch) {
+                const contentLength = Number.parseInt(contentLengthMatch[1], 10);
+                const bodyBytes = new TextEncoder().encode(requestData.slice(headerEnd + 4)).length;
+                if (bodyBytes < contentLength) return;
+              }
               try {
                 const request = this.parseHttpRequest(requestData);
                 if (request && this.requestHandler) {

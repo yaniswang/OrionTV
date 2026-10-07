@@ -5,29 +5,15 @@ import Modal from "react-native-modal";
 import { StyledButton } from "./StyledButton";
 import usePlayerStore from "@/stores/playerStore";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
-
-interface SpeedOption {
-  rate: number;
-  label: string;
-}
-
-const SPEED_OPTIONS: SpeedOption[] = [
-  { rate: 0.5, label: "0.5x" },
-  { rate: 0.75, label: "0.75x" },
-  { rate: 1.0, label: "1x" },
-  { rate: 1.25, label: "1.25x" },
-  { rate: 1.5, label: "1.5x" },
-  { rate: 2.0, label: "2x" },
-  { rate: 4.0, label: "4x" },
-  { rate: 8.0, label: "8x" },
-];
+import { usePlaybackController } from "@/hooks/usePlaybackController";
 
 export const SpeedSelectionModal: React.FC = () => {
-  const { showSpeedModal, setShowSpeedModal, playbackRate, setPlaybackRate } = usePlayerStore();
+  const { showSpeedModal, setShowSpeedModal } = usePlayerStore();
+  const { playbackRate, availablePlaybackRates, setPlaybackRate } = usePlaybackController();
   const responsiveConfig = useResponsiveLayout();
 
   const onSelectSpeed = (rate: number) => {
-    setPlaybackRate(rate);
+    void setPlaybackRate(rate);
     setShowSpeedModal(false);
   };
 
@@ -40,17 +26,17 @@ export const SpeedSelectionModal: React.FC = () => {
       <View style={styles.modalContent}>
         <Text style={styles.modalTitle}>播放速度</Text>
         <FlashList
-          data={SPEED_OPTIONS}
+          data={availablePlaybackRates}
           numColumns={Math.floor((responsiveConfig.screenWidth * 0.9) / 170)}
-          keyExtractor={(item) => `speed-${item.rate}`}
+          keyExtractor={(item) => `speed-${item}`}
           extraData={playbackRate}
           estimatedItemSize={77}
           renderItem={({ item }) => (
             <StyledButton
-              text={item.label}
-              onPress={() => onSelectSpeed(item.rate)}
-              isSelected={playbackRate === item.rate}
-              hasTVPreferredFocus={playbackRate === item.rate}
+              text={`${item}x`}
+              onPress={() => onSelectSpeed(item)}
+              isSelected={playbackRate === item}
+              hasTVPreferredFocus={playbackRate === item}
               style={styles.speedItem}
               textStyle={styles.speedItemText}
             />

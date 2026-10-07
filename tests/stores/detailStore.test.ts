@@ -98,10 +98,11 @@ beforeEach(() => {
 });
 
 describe('detailStore.init 有推荐源', () => {
-  it('跳过 PING：推荐源立即进列表，WS 源返回后先排队，起播后才测速，全程不发 HEAD 请求', async () => {
+  it('推荐源跳过 PING：直接完整测速成功后才插入开播，WS 其它源起播后才测速', async () => {
     const preferred = makeSource(1, 'pref', 'https://pref.example.com/index.m3u8');
     const other = makeSource(2, 'other', 'https://other.example.com/index.m3u8');
     mockApi.searchVideo.mockResolvedValue({ results: [preferred] });
+
     let releaseWs: (messages: { type: string; results?: SearchResult[] }[]) => void = () => {};
     mockApi.searchVideosWs.mockReturnValue(
       new Promise((resolve) => {
@@ -109,40 +110,12 @@ describe('detailStore.init 有推荐源', () => {
       }),
     );
 
-    const initPromise = useDetailStore
-      .getState()
-      .init('白日提灯', '白日提灯', '2025', undefined as unknown as string, 'pref', '1', '');
-
-    // WS 还没返回：推荐源已经在列表里（边等搜索边播放）
-    await flushAsyncWork();
-    expect(useDetailStore.getState().searchResults.map((result) => result.source)).toEqual(['pref']);
-    expect(probeCalls).toBe(0);
-
-    releaseWs([
-      { type: 'source_result', results: [other] },
-      { type: 'complete' },
-    ]);
-    // 视频还没起播：其它源只排队，不开始测速
-    expect(useDetailStore.getState().testingSource).toBeNull();
-    useDetailStore.getState().startSpeedTest();
-    await initPromise;
-
-    const finalState = useDetailStore.getState();
-    expect(probeCalls).toBe(0); // 跳过 PING：没有分片探测
-    expect(finalState.searchResults.map((result) => result.source).sort()).toEqual(['other', 'pref']);
-    expect(finalState.searchResults.every((result) => result.segmentLoadMs != null)).toBe(true);
-    expect(finalState.error).toBeNull();
-  });
-
-  it('测速中的源会写进 testingSource，测完清空', async () => {
-    const preferred = makeSource(1, 'pref', 'https://pref.example.com/index.m3u8');
-    mockApi.searchVideo.mockResolvedValue({ results: [preferred] });
-    mockApi.searchVideosWs.mockResolvedValue([{ type: 'complete' }]);
-
-    let releaseSegments: () => void = () => {};
-    const segmentGate = new Promise<void>((resolve) => {
-      releaseSegments = resolve;
+    let releaseFirstSegments: () => void = () => {};
+    const firstSegmentGate = new Promise<void>((resolve) => {
+      releaseFirstSegments = resolve;
     });
+    let preferredMeasureStarted = false;
+    let segmentGets = 0;
 
     global.fetch = jest.fn(async (input: any, init: any = {}) => {
       const url = String(input);
@@ -153,6 +126,112 @@ describe('detailStore.init 有推荐源', () => {
       if (url.includes('.m3u8')) {
         return makeResponse(200, PLAYLIST, 0);
       }
+      if (url.includes('pref.example.com')) {
+        preferredMeasureStarted = true;
+        await firstSegmentGate;
+      }
+      segmentGets++;
+      return makeResponse(200, '', 512 * 1024);
+    }) as any;
+
+    const initPromise = useDetailStore
+      .getState()
+      .init('白日提灯', '白日提灯', '2025', undefined as unknown as string, 'pref', '1', '');
+
+    // 推荐源完整测速完成前不插表，loading 保持 true
+    expect(await waitFor(() => preferredMeasureStarted)).toBe(true);
+    expect(useDetailStore.getState().searchResults).toEqual([]);
+    expect(useDetailStore.getState().loading).toBe(true);
+    expect(probeCalls).toBe(0); // 跳过 PING，没有 HEAD 探测
+
+    releaseFirstSegments();
+    expect(
+      await waitFor(() => {
+        const state = useDetailStore.getState();
+        return state.loading === false && state.searchResults[0]?.source === 'pref';
+      }),
+    ).toBe(true);
+    expect(useDetailStore.getState().searchResults[0].segmentLoadMs).not.toBeNull();
+    expect(segmentGets).toBeGreaterThan(0);
+
+    releaseWs([
+      { type: 'source_result', results: [other] },
+      { type: 'complete' },
+    ]);
+    // 视频还没起播：WS 其它源只入队，不开始测速
+    expect(await waitFor(() => useDetailStore.getState().searchResults.length === 2)).toBe(true);
+    const beforeStart = useDetailStore.getState();
+    expect(beforeStart.testingSource).toBeNull();
+    expect(beforeStart.searchResults.find((result) => result.source === 'other')?.segmentLoadMs).toBeNull();
+
+    useDetailStore.getState().startSpeedTest();
+    await initPromise;
+
+    const finalState = useDetailStore.getState();
+    expect(probeCalls).toBe(0); // 推荐源和 WS 其它源都不走 PING
+    expect(finalState.searchResults.map((result) => result.source).sort()).toEqual(['other', 'pref']);
+    expect(finalState.searchResults.every((result) => result.segmentLoadMs != null)).toBe(true);
+    expect(finalState.error).toBeNull();
+  });
+
+  it('推荐源完整测速失败：不插入推荐源，WS 其它源 PING 通过后自动开播', async () => {
+    const preferred = makeSource(1, 'pref', 'https://pref.example.com/index.m3u8');
+    const other = makeSource(2, 'other', 'https://other.example.com/index.m3u8');
+    mockApi.searchVideo.mockResolvedValue({ results: [preferred] });
+    mockApi.searchVideosWs.mockResolvedValue([
+      { type: 'source_result', results: [other] },
+      { type: 'complete' },
+    ]);
+
+    let preferredManifestCalls = 0;
+    global.fetch = jest.fn(async (input: any, init: any = {}) => {
+      const url = String(input);
+      if (url.includes('pref.example.com') && url.includes('.m3u8')) {
+        preferredManifestCalls++;
+        return makeResponse(404, '', 0);
+      }
+      if (init.method === 'HEAD') {
+        probeCalls++;
+        return makeResponse(200, '', 0);
+      }
+      if (url.includes('.m3u8')) {
+        return makeResponse(200, PLAYLIST, 0);
+      }
+      return makeResponse(200, '', 512 * 1024);
+    }) as any;
+
+    await useDetailStore
+      .getState()
+      .init('白日提灯', '白日提灯', '2025', undefined as unknown as string, 'pref', '1', '');
+
+    const state = useDetailStore.getState();
+    expect(preferredManifestCalls).toBeGreaterThan(0); // 先对推荐源做了 PING
+    expect(state.searchResults.map((result) => result.source)).toEqual(['other']);
+    expect(state.detail?.source).toBe('other');
+    expect(state.searchResults[0].segmentLoadMs).not.toBeNull();
+    expect(state.error).toBeNull();
+    expect(probeCalls).toBeGreaterThan(0); // 推荐源失败后，WS 其它源走原有 PING 流程
+  });
+
+  it('推荐源完整测速完成前不插表，测速完成后才插入', async () => {
+    const preferred = makeSource(1, 'pref', 'https://pref.example.com/index.m3u8');
+    mockApi.searchVideo.mockResolvedValue({ results: [preferred] });
+    mockApi.searchVideosWs.mockResolvedValue([{ type: 'complete' }]);
+
+    let releaseSegments: () => void = () => {};
+    const segmentGate = new Promise<void>((resolve) => {
+      releaseSegments = resolve;
+    });
+    let measureStarted = false;
+
+    global.fetch = jest.fn(async (input: any, init: any = {}) => {
+      const url = String(input);
+      if (init.method === 'HEAD') {
+        probeCalls++;
+        return makeResponse(200, '', 0);
+      }
+      if (url.includes('.m3u8')) return makeResponse(200, PLAYLIST, 0);
+      measureStarted = true;
       await segmentGate;
       return makeResponse(200, '', 512 * 1024);
     }) as any;
@@ -161,16 +240,18 @@ describe('detailStore.init 有推荐源', () => {
       .getState()
       .init('白日提灯', '白日提灯', '2025', undefined as unknown as string, 'pref', '1', '');
 
-    // 起播前不开始测速，也不显示测速中图标
-    expect(await waitFor(() => useDetailStore.getState().searchResults.length > 0)).toBe(true);
-    expect(useDetailStore.getState().testingSource).toBeNull();
+    expect(await waitFor(() => measureStarted)).toBe(true);
+    expect(useDetailStore.getState().searchResults).toEqual([]);
+    expect(useDetailStore.getState().loading).toBe(true);
 
-    // 视频起播：放行队列，图标落到正在测的源上
-    useDetailStore.getState().startSpeedTest();
-    expect(await waitFor(() => useDetailStore.getState().testingSource === 'pref')).toBe(true);
     releaseSegments();
     await initPromise;
-    expect(useDetailStore.getState().testingSource).toBeNull();
+
+    const state = useDetailStore.getState();
+    expect(state.searchResults.map((result) => result.source)).toEqual(['pref']);
+    expect(state.loading).toBe(false);
+    expect(state.searchResults[0].segmentLoadMs).not.toBeNull();
+    expect(probeCalls).toBe(0);
   });
   it('缓存按两条路由一起查：上次回退直连测出的结果，二次打开直接复用不再重测', async () => {
     const proxyPrefix = 'https://proxy.example.com/';
@@ -180,8 +261,12 @@ describe('detailStore.init 有推荐源', () => {
     mockApi.searchVideosWs.mockImplementation(async () => [{ type: 'complete' }]);
 
     let segmentGets = 0;
-    global.fetch = jest.fn(async (input: any) => {
+    global.fetch = jest.fn(async (input: any, init: any = {}) => {
       const url = String(input);
+      if (init.method === 'HEAD') {
+        probeCalls++;
+        return makeResponse(200, '', 0);
+      }
       if (url.includes('.m3u8')) {
         // 代理路由的清单 403，直连清单正常：这条源只会在直连上测出结果
         return url.startsWith(proxyPrefix) ? makeResponse(403, '', 0) : makeResponse(200, PLAYLIST, 0);
@@ -251,8 +336,12 @@ describe('detailStore.init 有推荐源', () => {
     ]);
 
     let segmentGets = 0;
-    global.fetch = jest.fn(async (input: any) => {
+    global.fetch = jest.fn(async (input: any, init: any = {}) => {
       const url = String(input);
+      if (init.method === 'HEAD') {
+        probeCalls++;
+        return makeResponse(200, '', 0);
+      }
       if (url.includes('.m3u8')) return makeResponse(200, PLAYLIST, 0);
       segmentGets++;
       return makeResponse(200, '', 512 * 1024);
@@ -262,15 +351,23 @@ describe('detailStore.init 有推荐源', () => {
       .getState()
       .init('白日提灯', '白日提灯', '2025', undefined as unknown as string, 'pref', '1', '');
 
-    // 推荐源和 WS 源都已插进列表，但视频还没起播：一个分片都不该下
+    // 首源先完成完整测速；WS 其它源只入队，等视频起播后才开始测速
     expect(await waitFor(() => useDetailStore.getState().searchResults.length === 2)).toBe(true);
-    await flushAsyncWork();
-    expect(segmentGets).toBe(0);
+    expect(
+      await waitFor(() => {
+        const list = useDetailStore.getState().searchResults;
+        return list.some((result) => result.source === 'pref' && result.segmentLoadMs != null);
+      }),
+    ).toBe(true);
+    const getsAfterFirstMeasure = segmentGets;
+    expect(getsAfterFirstMeasure).toBeGreaterThan(0);
     expect(useDetailStore.getState().testingSource).toBeNull();
-    expect(useDetailStore.getState().searchResults.every((result) => result.segmentLoadMs == null)).toBe(true);
+    expect(useDetailStore.getState().searchResults.find((result) => result.source === 'other')?.segmentLoadMs).toBeNull();
+    await flushAsyncWork();
+    expect(segmentGets).toBe(getsAfterFirstMeasure); // 其它源没有被提前测速
     expect(useDetailStore.getState().allSourcesLoaded).toBe(false);
 
-    // 起播放行：队列开始测，测完 init 才收尾
+    // 起播放行：放行其它源测速，测完 init 才收尾
     useDetailStore.getState().startSpeedTest();
     await initPromise;
 
@@ -296,6 +393,46 @@ describe('detailStore.init 无推荐源', () => {
     expect(mockApi.searchVideo).not.toHaveBeenCalled();
     expect(state.searchResults.map((result) => result.source)).toEqual(['a']);
     expect(state.detail?.source).toBe('a');
+  });
+
+  it('无推荐源第一个 PING 完成立即显示详情页，完整测速在后台继续', async () => {
+    const only = makeSource(1, 'a', 'https://a.example.com/index.m3u8');
+    mockApi.searchVideosWs.mockResolvedValue([
+      { type: 'source_result', results: [only] },
+      { type: 'complete' },
+    ]);
+
+    let releaseSegments: () => void = () => {};
+    const segmentGate = new Promise<void>((resolve) => {
+      releaseSegments = resolve;
+    });
+
+    global.fetch = jest.fn(async (input: any, init: any = {}) => {
+      const url = String(input);
+      if (init.method === 'HEAD') {
+        probeCalls++;
+        return makeResponse(200, '', 0);
+      }
+      if (url.includes('.m3u8')) return makeResponse(200, PLAYLIST, 0);
+      await segmentGate;
+      return makeResponse(200, '', 512 * 1024);
+    }) as any;
+
+    const initPromise = useDetailStore
+      .getState()
+      .init('白日提灯', '白日提灯', '2025', undefined as unknown as string, undefined, undefined, '');
+
+    expect(await waitFor(() => useDetailStore.getState().detail?.source === 'a')).toBe(true);
+    expect(useDetailStore.getState().loading).toBe(false); // 详情页可以立即展示
+    expect(useDetailStore.getState().testingSource).toBe('a'); // 完整测速仍在后台继续
+    expect(useDetailStore.getState().searchResults[0].segmentLoadMs).toBeNull();
+
+    releaseSegments();
+    await initPromise;
+
+    const state = useDetailStore.getState();
+    expect(state.loading).toBe(false);
+    expect(state.searchResults[0].segmentLoadMs).not.toBeNull();
   });
 });
 

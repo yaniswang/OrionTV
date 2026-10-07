@@ -5,6 +5,7 @@ import Modal from "react-native-modal";
 import { StyledButton } from "./StyledButton";
 import usePlayerStore from "@/stores/playerStore";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
+import { usePlaybackController } from "@/hooks/usePlaybackController";
 
 interface EpisodeSelectionModalProps {}
 
@@ -18,7 +19,7 @@ export const EpisodeSelectionModal: React.FC<EpisodeSelectionModalProps> = () =>
   const showEpisodeModal = usePlayerStore((s) => s.showEpisodeModal);
   const episodes = usePlayerStore((s) => s.episodes);
   const currentEpisodeIndex = usePlayerStore((s) => s.currentEpisodeIndex);
-  const playEpisode = usePlayerStore((s) => s.playEpisode);
+  const { playEpisode } = usePlaybackController();
   const setShowEpisodeModal = usePlayerStore((s) => s.setShowEpisodeModal);
 
   const [episodeGroupSize] = useState(30);
@@ -54,7 +55,7 @@ export const EpisodeSelectionModal: React.FC<EpisodeSelectionModalProps> = () =>
 
   const responsiveConfig = useResponsiveLayout();
   const onSelectEpisode = (index: number) => {
-    playEpisode(index);
+    void playEpisode(index);
     setShowEpisodeModal(false);
   };
 

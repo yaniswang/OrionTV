@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useTVEventHandler, HWEvent } from "react-native";
 import usePlayerStore from "@/stores/playerStore";
+import { usePlaybackController } from "./usePlaybackController";
 
 const SEEK_STEP = 20 * 1000; // 快进/快退的时间步长（毫秒）
 
@@ -12,7 +13,8 @@ const CONTROLS_TIMEOUT = 5000;
  * @returns onScreenPress - 一个函数，用于处理屏幕点击事件，以显示控件并重置定时器。
  */
 export const useTVRemoteHandler = () => {
-  const { showControls, setShowControls, showEpisodeModal, showSourceModal, showSpeedModal, setShowEpisodeModal, setShowSourceModal, setShowSpeedModal, togglePlayPause, seek, setPlaybackRate } = usePlayerStore();
+  const { showControls, setShowControls, showEpisodeModal, showSourceModal, showSpeedModal, setShowEpisodeModal, setShowSourceModal, setShowSpeedModal, setPlaybackRate } = usePlayerStore();
+  const { togglePlayPause, seekBy, isCasting } = usePlaybackController();
 
   const controlsTimer = useRef<NodeJS.Timeout | null>(null);
   const fastForwardIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -97,31 +99,31 @@ export const useTVRemoteHandler = () => {
           setShowControls(true);
           break;
         case 'longSelect':
-          if (event.eventKeyAction === 0) {
+          if (!isCasting && event.eventKeyAction === 0) {
             setPlaybackRate(2);
           }
-          else if(event.eventKeyAction === 1) {
+          else if (!isCasting && event.eventKeyAction === 1) {
             setPlaybackRate(1);
           }
           break;
         case "left":
-          seek(-SEEK_STEP); // 快退15秒
+          void seekBy(-SEEK_STEP); // 快退15秒
           break;
         case "longLeft":
           if (!fastForwardIntervalRef.current && event.eventKeyAction === 0) {
             fastForwardIntervalRef.current = setInterval(() => {
-              seek(-SEEK_STEP*2); 
+              void seekBy(-SEEK_STEP * 2);
             }, 100);
           }
           break;
         case "right":
-          seek(SEEK_STEP);
+          void seekBy(SEEK_STEP);
           break;
         case "longRight":
           // 长按开始: 启动连续快进
           if (!fastForwardIntervalRef.current && event.eventKeyAction === 0) {
             fastForwardIntervalRef.current = setInterval(() => {
-              seek(SEEK_STEP*2); 
+              void seekBy(SEEK_STEP * 2);
             }, 100);
           }
           break;
@@ -130,7 +132,17 @@ export const useTVRemoteHandler = () => {
           break;
       }
     },
-    [showControls, showEpisodeModal, showSourceModal, showSpeedModal, setShowControls, resetTimer, togglePlayPause, seek]
+    [
+      showControls,
+      showEpisodeModal,
+      showSourceModal,
+      showSpeedModal,
+      setShowControls,
+      resetTimer,
+      togglePlayPause,
+      seekBy,
+      isCasting,
+    ]
   );
 
   useTVEventHandler(handleTVEvent);

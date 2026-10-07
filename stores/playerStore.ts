@@ -44,6 +44,7 @@ interface PlayerState {
   initialPosition: number;
   playbackRate: number;
   isLandscapeMode: boolean | null;
+  autoPlayAfterLoad: boolean;
   introEndTime?: number;
   outroStartTime?: number;
   isFavorited: boolean;
@@ -68,15 +69,15 @@ interface PlayerState {
   setShowSpeedModal: (show: boolean) => void;
   setShowNextEpisodeOverlay: (show: boolean) => void;
   setPlaybackRate: (rate: number) => void;
-  setIntroEndTime: () => void;
-  setOutroStartTime: () => void;
+  setIntroEndTime: (positionMillis?: number) => void;
+  setOutroStartTime: (positionMillis?: number, durationMillis?: number) => void;
   reset: () => void;
   toggleFavorite:  () => void;
   toggleLock:  () => void;
   _seekTimeout?: NodeJS.Timeout;
   _isRecordSaveThrottled: boolean;
   // Internal helper
-  savePlayRecord: (updates?: Partial<PlayRecord>, options?: { immediate?: boolean }) => Promise<void>;
+  savePlayRecord: (updates?: Partial<PlayRecord>, options?: { immediate?: boolean; positionMillis?: number; durationMillis?: number }) => Promise<void>;
   handleVideoError: (errorType: 'ssl' | 'network' | 'other', failedUrl: string) => Promise<void>;
   handleVideoLoad: (data: OnLoadData) => void;
   handleVideoProgress: (data: OnProgressData) => void;
@@ -111,6 +112,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
   initialPosition: 0,
   playbackRate: 1.0,
   isLandscapeMode: null,
+  autoPlayAfterLoad: true,
   introEndTime: undefined,
   outroStartTime: undefined,
   _seekTimeout: undefined,
@@ -122,6 +124,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
   loadVideo: async ({ source, id, episodeIndex, position, q, title, year, stype }) => {
     const perfStart = performance.now();
     logger.info(`[PERF] PlayerStore.loadVideo START - source: ${source}, id: ${id}, q: ${q}, title: ${title}, year: ${year}, stype: ${stype}`);
+    const requestedSource = source;
     
     let detail = useDetailStore.getState().detail;
     let episodes: string[] = [];
@@ -300,7 +303,17 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
         introEndTime: playRecord?.introEndTime || playerSettings?.introEndTime,
         outroStartTime: playRecord?.outroStartTime || playerSettings?.outroStartTime,
         isFavorited: isFavorited,
+        autoPlayAfterLoad: true,
       });
+
+      if (needsDetailInit && detail!.source !== requestedSource) {
+        logger.info(`[SUCCESS] 已自动切换播放源：${requestedSource} -> ${detail!.source}（${detail!.source_name}）`);
+        Toast.show({
+          type: "success",
+          text1: "已切换播放源",
+          text2: `正在使用 ${detail!.source_name}`,
+        });
+      }
       
       const perfEnd = performance.now();
       logger.info(`[PERF] PlayerStore.loadVideo COMPLETE - total time: ${(perfEnd - perfStart).toFixed(2)}ms`);
@@ -408,24 +421,29 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     set({ _seekTimeout: timeoutId });
   },
 
-  setIntroEndTime: () => {
+  setIntroEndTime: (positionMillis) => {
     const { status, introEndTime: existingIntroEndTime } = get();
     const detail = useDetailStore.getState().detail;
-    if (!status?.isLoaded || !detail) return;
+    const effectivePosition = positionMillis ?? status.positionMillis;
+    const effectiveDuration = status.durationMillis;
+    if (!detail || (positionMillis === undefined && !status?.isLoaded)) return;
 
     if (existingIntroEndTime) {
-      // Clear the time
       set({ introEndTime: undefined });
-      get().savePlayRecord({ introEndTime: undefined }, { immediate: true });
+      get().savePlayRecord(
+        { introEndTime: undefined },
+        { immediate: true, positionMillis: effectivePosition, durationMillis: effectiveDuration },
+      );
       Toast.show({
         type: "info",
         text1: "已清除片头时间",
       });
     } else {
-      // Set the time
-      const newIntroEndTime = status.positionMillis;
-      set({ introEndTime: newIntroEndTime });
-      get().savePlayRecord({ introEndTime: newIntroEndTime }, { immediate: true });
+      set({ introEndTime: effectivePosition });
+      get().savePlayRecord(
+        { introEndTime: effectivePosition },
+        { immediate: true, positionMillis: effectivePosition, durationMillis: effectiveDuration },
+      );
       Toast.show({
         type: "success",
         text1: "设置成功",
@@ -434,25 +452,30 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     }
   },
 
-  setOutroStartTime: () => {
+  setOutroStartTime: (positionMillis, durationMillis) => {
     const { status, outroStartTime: existingOutroStartTime } = get();
     const detail = useDetailStore.getState().detail;
-    if (!status?.isLoaded || !detail) return;
+    const effectivePosition = positionMillis ?? status.positionMillis;
+    const effectiveDuration = durationMillis ?? status.durationMillis;
+    if (!detail || (positionMillis === undefined && !status?.isLoaded) || !effectiveDuration) return;
 
     if (existingOutroStartTime) {
-      // Clear the time
       set({ outroStartTime: undefined });
-      get().savePlayRecord({ outroStartTime: undefined }, { immediate: true });
+      get().savePlayRecord(
+        { outroStartTime: undefined },
+        { immediate: true, positionMillis: effectivePosition, durationMillis: effectiveDuration },
+      );
       Toast.show({
         type: "info",
         text1: "已清除片尾时间",
       });
     } else {
-      // Set the time
-      if (!status.durationMillis) return;
-      const newOutroStartTime = status.durationMillis - status.positionMillis;
+      const newOutroStartTime = Math.max(0, effectiveDuration - effectivePosition);
       set({ outroStartTime: newOutroStartTime });
-      get().savePlayRecord({ outroStartTime: newOutroStartTime }, { immediate: true });
+      get().savePlayRecord(
+        { outroStartTime: newOutroStartTime },
+        { immediate: true, positionMillis: effectivePosition, durationMillis: effectiveDuration },
+      );
       Toast.show({
         type: "success",
         text1: "设置成功",
@@ -462,7 +485,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   savePlayRecord: async (updates = {}, options = {}) => {
-    const { immediate = false } = options;
+    const { immediate = false, positionMillis: remotePosition, durationMillis: remoteDuration } = options;
     if (!immediate) {
       if (get()._isRecordSaveThrottled) {
         return;
@@ -475,7 +498,9 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
 
     const { q, detail } = useDetailStore.getState();
     const { currentEpisodeIndex, episodes, status, introEndTime, outroStartTime } = get();
-    if (detail && status?.isLoaded) {
+    const effectivePosition = remotePosition ?? status.positionMillis;
+    const effectiveDuration = remoteDuration ?? status.durationMillis;
+    if (detail && (status?.isLoaded || remotePosition !== undefined)) {
       const existingRecord = {
         introEndTime,
         outroStartTime,
@@ -486,8 +511,8 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
         cover: detail.poster || "",
         index: currentEpisodeIndex + 1,
         total_episodes: episodes.length,
-        play_time: Math.floor(status.positionMillis / 1000),
-        total_time: status.durationMillis ? Math.floor(status.durationMillis / 1000) : 0,
+        play_time: Math.floor(effectivePosition / 1000),
+        total_time: effectiveDuration ? Math.floor(effectiveDuration / 1000) : 0,
         source_name: detail.source_name,
         year: detail.year || "",
         ...existingRecord,
@@ -539,6 +564,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       showNextEpisodeOverlay: false,
       initialPosition: 0,
       playbackRate: 1.0,
+      autoPlayAfterLoad: true,
       introEndTime: undefined,
       outroStartTime: undefined,
       isLandscapeMode: null,
@@ -554,7 +580,11 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       if (jumpPosition > 0) {
         logger.info(`[PERF] Setting initial position to ${jumpPosition}ms`);
         await videoRef?.current?.seek(jumpPosition / 1000);
+      }
+      if (get().autoPlayAfterLoad) {
         await videoRef?.current?.resume();
+      } else {
+        await videoRef?.current?.pause();
       }
       
       // 根据视频高宽比, 决定是否切换为横屏

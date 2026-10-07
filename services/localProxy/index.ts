@@ -1,59 +1,97 @@
 /**
- * 本地预缓存代理 —— 对外接口
+ * 本地预缓存代理 —— 原生模块的 JS 入口。
  *
- * 播放时并行预缓存：把 HLS 播放入口包一层本机代理，
- * 代理在回源的同时，向后并发预取接下来的若干分片到内存缓存。
- *
- * 与 m3u8Proxy 的关系：m3u8Proxy 是"远端中转"，本模块是"本机预取"。
- * 拼接顺序是 m3u8Proxy 先、本地代理后，两者同时生效，互不影响。
- * 没有配置 m3u8Proxy 时，本地代理直接回源。
+ * 全部数据面都在 Android 原生 MediaProxy 中完成，这里只负责启动、停止和包装播放地址。
  */
 
 import Logger from '@/utils/Logger';
-import { buildProxyUrl } from './playlist';
-import { getProxyOrigin, startProxyServer, stopProxyServer } from './proxy';
+import { getNativeMediaProxy } from './native';
 
 const logger = Logger.withTag('VideoPrefetch');
-
 const DEFAULT_PORT = 18923;
 
-export { PREFETCH_COUNT } from './playlist';
-export { getProxyOrigin, stopProxyServer } from './proxy';
+let nativeOrigin: string | null = null;
 
-/** 启动本地代理（幂等）；失败返回 null，调用方回退直连 */
+export function getProxyOrigin(): string | null {
+  return nativeOrigin;
+}
+
+export function isLanProxyOrigin(origin = getProxyOrigin()): boolean {
+  if (!origin) return false;
+  try {
+    const host = new URL(origin).hostname;
+    return host !== '127.0.0.1' && host !== 'localhost' && host !== '::1';
+  } catch {
+    return false;
+  }
+}
+
+export function cancelProxyDownloads(): void {
+  getNativeMediaProxy()?.cancelDownloads();
+}
+
+export async function stopProxyServer(): Promise<void> {
+  nativeOrigin = null;
+  const native = getNativeMediaProxy();
+  if (!native) return;
+  try {
+    await native.stop();
+  } catch (error) {
+    logger.warn(`停止原生本地代理失败: ${String(error)}`);
+  }
+}
+
+/** 启动原生代理（幂等）；原生模块不可用或启动失败时返回 null。 */
 export async function ensureLocalProxy(): Promise<string | null> {
-  const existing = getProxyOrigin();
-  if (existing) return existing;
+  if (nativeOrigin) return nativeOrigin;
+  const native = getNativeMediaProxy();
+  if (!native) {
+    logger.warn('Android 原生本地代理不可用');
+    return null;
+  }
 
   try {
-    return await startProxyServer(DEFAULT_PORT);
+    const result = await native.start({ preferredPort: DEFAULT_PORT });
+    const origin = typeof result?.origin === 'string' ? result.origin : null;
+    if (!origin) return null;
+    nativeOrigin = origin;
+    return origin;
   } catch (error) {
-    logger.warn(`本地预缓存代理不可用，回退直连: ${String(error)}`);
+    logger.warn(`原生本地代理不可用: ${String(error)}`);
     return null;
   }
 }
 
-/** 只有 HLS 才值得走本地代理；MP4 等直连，避免白白过一遍 JS */
+/** 只有 HLS 需要经过本地代理，MP4 等直连。 */
 export function isHlsUrl(url: string | undefined | null): boolean {
   if (!url) return false;
   return url.toLowerCase().includes('m3u8');
 }
 
-/** 把播放地址包成本地代理地址；非 HLS 或代理不可用时原样返回 */
+/** 把播放地址交给原生代理包装；失败时返回原地址。 */
 export async function resolvePlayUrl(url: string): Promise<string> {
   if (!isHlsUrl(url)) return url;
-  const origin = await ensureLocalProxy();
-  return origin ? buildProxyUrl(origin, url) : url;
+  if (!(await ensureLocalProxy())) return url;
+
+  try {
+    const wrapped = await getNativeMediaProxy()?.wrapUrl(url);
+    return typeof wrapped === 'string' && wrapped ? wrapped : url;
+  } catch (error) {
+    logger.warn(`原生代理包装播放地址失败: ${String(error)}`);
+    return url;
+  }
 }
 
-/**
- * 批量包装剧集地址。整份列表里没有 HLS 时不会启动代理。
- */
+/** 批量包装剧集地址；整份列表没有 HLS 时不启动代理。 */
 export async function mapEpisodesWithLocalProxy(urls: string[]): Promise<string[]> {
   if (!urls.some((url) => isHlsUrl(url))) return urls;
+  if (!(await ensureLocalProxy())) return urls;
 
-  const origin = await ensureLocalProxy();
-  if (!origin) return urls;
-
-  return urls.map((url) => (isHlsUrl(url) ? buildProxyUrl(origin, url) : url));
+  try {
+    const wrapped = await getNativeMediaProxy()?.wrapUrls(urls);
+    return Array.isArray(wrapped) && wrapped.length === urls.length ? wrapped : urls;
+  } catch (error) {
+    logger.warn(`原生代理包装剧集地址失败: ${String(error)}`);
+    return urls;
+  }
 }

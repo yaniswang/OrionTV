@@ -1,10 +1,11 @@
 import React, { useRef, useState, useEffect } from "react";
-import { View, StyleSheet, Text, ActivityIndicator, Dimensions, AppState, AppStateStatus } from "react-native";
+import { View, StyleSheet, Text, ActivityIndicator, Dimensions, AppState, AppStateStatus, Platform } from "react-native";
 import Video, { VideoRef, ResizeMode, OnPlaybackStateChangedData, ViewType } from 'react-native-video';
 import { useKeepAwake } from "expo-keep-awake";
 import { GestureDetector, Gesture, GestureHandlerRootView } from 'react-native-gesture-handler';
 import SystemSetting from 'react-native-system-setting'
 import { AnimatedVerticalProgress } from "@/components/AnimatedVerticalProgress";
+import { gammaToLinear, linearToGamma } from "@/utils/BrightnessUtils";
 
 interface LivePlayerProps {
   streamUrl: string | null;
@@ -130,7 +131,8 @@ export default function LivePlayer({ streamUrl, streamUa, channelTitle, onScreen
     let next = direction === 'up' ? brightness + 0.05 : brightness - 0.05;
     next = Math.max(0, Math.min(1, next));
     next = Math.round(next * 100) / 100;
-    SystemSetting.setAppBrightness(next);
+    const linear = Platform.OS === 'android' ? gammaToLinear(next) : next;
+    SystemSetting.setAppBrightness(linear);
     setBrightness(next)
     setBrightnessBarShow(new Date().getTime());
   };
@@ -151,7 +153,8 @@ export default function LivePlayer({ streamUrl, streamUa, channelTitle, onScreen
       const volume = await SystemSetting.getVolume()
       setVolume(Math.round(volume * 100) / 100);
       const brightness = await SystemSetting.getAppBrightness();
-      setBrightness(Math.round(brightness * 100) / 100);
+      const normalized = Platform.OS === 'android' ? linearToGamma(brightness) : brightness;
+      setBrightness(Math.round(normalized * 100) / 100);
       lastT_Y.current = 0;
     })
     .onUpdate((e) => {

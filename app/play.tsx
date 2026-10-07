@@ -20,9 +20,14 @@ import { useVideoHandlers } from "@/hooks/useVideoHandlers";
 import Logger from '@/utils/Logger';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { GestureDetector, Gesture, GestureHandlerRootView } from 'react-native-gesture-handler';
-import SystemSetting from 'react-native-system-setting'
 import { Immersive } from 'react-native-immersive';
 import { AnimatedVerticalProgress } from "@/components/AnimatedVerticalProgress";
+import NetInfo from '@react-native-community/netinfo';
+import { DLNAStatusPanel } from "@/components/DLNAStatusPanel";
+import { DLNADeviceModal } from "@/components/DLNADeviceModal";
+import { usePlaybackController } from "@/hooks/usePlaybackController";
+import useDlnaStore from "@/stores/dlnaStore";
+import { stopProxyServer } from "@/services/localProxy";
 
 const logger = Logger.withTag('PlayScreen');
 
@@ -98,10 +103,14 @@ export default function PlayScreen() {
   const videoRef = useRef<VideoRef>(null);
   const router = useRouter();
   const [volume, setVolume] = useState(-1);
+  const volumeRef = useRef(-1);
   const [volumeBarShow, setVolumeBarShow] = useState(-1);
   const [brightness, setBrightness] = useState(-1);
+  const brightnessRef = useRef(-1);
   const [brightnessBarShow, setBrightnessBarShow] = useState(-1);
   const [gestureMode, setGestureMode] = useState('');
+  const [showDlnaDeviceModal, setShowDlnaDeviceModal] = useState(false);
+  const gestureReadPendingRef = useRef(false);
 
   useKeepAwake();
 
@@ -142,7 +151,7 @@ export default function PlayScreen() {
   const { detail } = useDetailStore();
   const source = sourceStr || detail?.source;
   const id = videoId || detail?.id.toString();
-  const title = videoTitle || detail?.title;
+  const title = videoTitle || detail?.title || "";
   
   const {
     isDetialLoading,
@@ -150,7 +159,6 @@ export default function PlayScreen() {
     showControls,
     showLockControls,
     // showNextEpisodeOverlay,
-    playbackRate,
     isLandscapeMode,
     episodes,
     currentEpisodeIndex,
@@ -160,23 +168,39 @@ export default function PlayScreen() {
     handleVideoEnd,
     handleVideoPlaybackStateChanged,
     setShowControls,
-    togglePlayPause,
-    setPlaybackRate,
     // setShowNextEpisodeOverlay,
     savePlayRecord,
     reset,
     loadVideo,
-    seek,
   } = usePlayerStore();
   const currentEpisode = usePlayerStore(selectCurrentEpisode);
+  const {
+    isCasting,
+    isLoading,
+    loadingText,
+    playbackRate,
+    setPlaybackRate,
+    togglePlayPause,
+    seekBy,
+    previewSeekBy,
+    commitSeek,
+    playEpisode,
+    syncCurrentMedia,
+    disableCast,
+    getVolume: getPlaybackVolume,
+    setVolume: setPlaybackVolume,
+    getBrightness: getPlaybackBrightness,
+    setBrightness: setPlaybackBrightness,
+  } = usePlaybackController();
+
 
   // 切到集数更少的源时，当前集号可能越界，纠正回最后一集。
   // 必须放在 effect 里：渲染期间改状态会触发 React 的 setState-in-render 与 getSnapshot 警告。
   useEffect(() => {
     if (episodes.length > 0 && currentEpisodeIndex >= episodes.length) {
-      usePlayerStore.getState().playEpisode(episodes.length - 1);
+      void playEpisode(episodes.length - 1);
     }
-  }, [episodes.length, currentEpisodeIndex]);
+  }, [episodes.length, currentEpisodeIndex, playEpisode]);
 
   // 使用Video事件处理hook
   const { videoProps } = useVideoHandlers({
@@ -209,6 +233,87 @@ export default function PlayScreen() {
     }
   }, [isLandscapeMode]);
 
+  const dlnaPhase = useDlnaStore((state) => state.phase);
+  const lastCastUrlRef = useRef<string | null>(null);
+  const autoOpenedDlnaDeviceModalRef = useRef(false);
+
+  useEffect(() => {
+    if (!isCasting) {
+      autoOpenedDlnaDeviceModalRef.current = false;
+      setShowDlnaDeviceModal(false);
+      return;
+    }
+
+    if (
+      autoOpenedDlnaDeviceModalRef.current &&
+      (dlnaPhase === 'connecting' || dlnaPhase === 'connected')
+    ) {
+      autoOpenedDlnaDeviceModalRef.current = false;
+      setShowDlnaDeviceModal(false);
+      return;
+    }
+
+    if (dlnaPhase !== 'selecting' || autoOpenedDlnaDeviceModalRef.current || showDlnaDeviceModal) {
+      return;
+    }
+
+    const castState = useDlnaStore.getState();
+    if (!castState.currentDevice && !castState.connectingDeviceId) {
+      autoOpenedDlnaDeviceModalRef.current = true;
+      setShowDlnaDeviceModal(true);
+    }
+  }, [dlnaPhase, isCasting, showDlnaDeviceModal]);
+
+  useEffect(() => {
+    if (!isCasting) {
+      lastCastUrlRef.current = null;
+      return;
+    }
+    if (dlnaPhase !== 'connected' || !currentEpisode?.url) return;
+    if (lastCastUrlRef.current === currentEpisode.url) return;
+    if (lastCastUrlRef.current === null) {
+      lastCastUrlRef.current = currentEpisode.url;
+      return;
+    }
+    lastCastUrlRef.current = currentEpisode.url;
+    void syncCurrentMedia({ positionMillis: 0, play: true });
+  }, [currentEpisode?.url, dlnaPhase, isCasting, syncCurrentMedia]);
+
+  useEffect(() => {
+    let previousIp: string | null | undefined;
+    return NetInfo.addEventListener((state) => {
+      const ipAddress =
+        state.type === 'wifi' || state.type === 'ethernet'
+          ? (state.details as { ipAddress?: string | null } | null)?.ipAddress ?? null
+          : null;
+      const changed = previousIp !== undefined && previousIp !== ipAddress;
+      previousIp = ipAddress;
+      if (!changed || !source || !id || !title || !videoYear) return;
+
+      const castState = useDlnaStore.getState();
+      const resumePosition = castState.enabled
+        ? castState.positionMillis
+        : usePlayerStore.getState().status.positionMillis;
+      Toast.show({ type: 'info', text1: '网络已变化', text2: '正在重新加载播放' });
+      void (async () => {
+        if (castState.enabled) {
+          await castState.disableCast({ restoreLocal: false, stopRemote: true });
+        }
+        await stopProxyServer();
+        const player = usePlayerStore.getState();
+        await loadVideo({
+          source,
+          id: parseInt(id, 10),
+          episodeIndex: player.currentEpisodeIndex,
+          title,
+          year: videoYear,
+          stype: videoStype,
+          position: resumePosition,
+        });
+      })();
+    });
+  }, [source, id, title, videoYear, videoStype, loadVideo]);
+
   // TV遥控器处理 - 总是调用hook，但根据设备类型决定是否使用结果
   const tvRemoteHandler = useTVRemoteHandler();
 
@@ -231,35 +336,39 @@ export default function PlayScreen() {
     logger.info(`[PERF] PlayScreen useEffect END - took ${(perfEnd - perfStart).toFixed(2)}ms`);
 
     return () => {
-      logger.info(`[PERF] PlayScreen unmounting - calling reset()`);
+      logger.info(`[PERF] PlayScreen unmounting - stopping cast and calling reset()`);
+      void useDlnaStore.getState().disableCast({ restoreLocal: false, stopRemote: true });
+      void stopProxyServer();
       reset(); // Reset state when component unmounts
     };
   }, [episodeIndex, source, position, setVideoRef, reset, loadVideo, id, q, title, videoYear, videoStype]);
 
   // 调节音量 (右侧)
   const handleVolume = (direction:string) => {
-    let next = direction === 'up' ? volume + 0.05 : volume - 0.05;
+    let next = direction === 'up' ? volumeRef.current + 0.05 : volumeRef.current - 0.05;
     next = Math.max(0, Math.min(1, next));
     next = Math.round(next * 100) / 100;
-    SystemSetting.setVolume(next);
+    volumeRef.current = next;
+    void setPlaybackVolume(next);
     setVolume(next);
     setVolumeBarShow(new Date().getTime());
   };
 
   // 调节亮度 (左侧)
   const handleBrightness = (direction:string) => {
-    let next = direction === 'up' ? brightness + 0.05 : brightness - 0.05;
+    let next = direction === 'up' ? brightnessRef.current + 0.05 : brightnessRef.current - 0.05;
     next = Math.max(0, Math.min(1, next));
     next = Math.round(next * 100) / 100;
-    SystemSetting.setAppBrightness(next);
+    brightnessRef.current = next;
+    void setPlaybackBrightness(next);
     setBrightness(next)
     setBrightnessBarShow(new Date().getTime());
   };
 
-  // 快进/快退
+  // 快进/快退：拖动期间只更新本地临时进度，手势结束后才提交。
   const handleSeek = (direction:string) => {
-    let seconds = direction == 'right' ? 20000 : -20000;
-    seek(seconds)
+    const deltaMillis = direction === 'right' ? 20000 : -20000;
+    previewSeekBy(deltaMillis);
   };
 
   // 单击显示控制条
@@ -276,11 +385,11 @@ export default function PlayScreen() {
   .runOnJS(true)
   .onStart((e) => {
     if (showLockControls) return;
-    setPlaybackRate(2);
+    void setPlaybackRate(2);
   })
   .onEnd(() => {
     if (showLockControls) return;
-    setPlaybackRate(1);
+    void setPlaybackRate(1);
   })
 
   // --- 1. 双击手势 (播放/暂停) ---
@@ -292,11 +401,11 @@ export default function PlayScreen() {
       const { x } = event;
       if (x < screenWidth * 0.1) {
         // 快退
-        seek(-10000);
+        void seekBy(-10000);
       }
       else if(x > screenWidth * 0.9) {
         // 快进
-        seek(10000);
+        void seekBy(10000);
       }
       else {
         togglePlayPause()
@@ -310,18 +419,33 @@ export default function PlayScreen() {
   // --- 2. 平移手势 (快进、音量、亮度) ---
   const panGesture = Gesture.Pan()
     .runOnJS(true)
-    .onBegin(async (event) => {
-      // 拖动开始时刷新音量和亮度值
-      const volume = await SystemSetting.getVolume()
-      setVolume(Math.round(volume * 100) / 100);
-      const brightness = await SystemSetting.getAppBrightness();
-      setBrightness(Math.round(brightness * 100) / 100)
-      lastT_X.current = 0;
-      lastT_Y.current = 0;
+    .onBegin(async () => {
+      gestureReadPendingRef.current = true;
+      try {
+        const [volumeResult, brightnessResult] = await Promise.allSettled([
+          getPlaybackVolume(),
+          getPlaybackBrightness(),
+        ]);
+        if (volumeResult.status === 'fulfilled' && typeof volumeResult.value === 'number') {
+          const nextVolume = Math.round(volumeResult.value * 100) / 100;
+          volumeRef.current = nextVolume;
+          setVolume(nextVolume);
+        }
+        if (brightnessResult.status === 'fulfilled' && typeof brightnessResult.value === 'number') {
+          const nextBrightness = Math.round(brightnessResult.value * 100) / 100;
+          brightnessRef.current = nextBrightness;
+          setBrightness(nextBrightness);
+        }
+      } finally {
+        lastT_X.current = 0;
+        lastT_Y.current = 0;
+        gestureReadPendingRef.current = false;
+      }
     })
     .onUpdate((e) => {
+      if (gestureReadPendingRef.current) return;
       if (showLockControls) return;
-      const { x, translationX, translationY, velocityX, velocityY } = e;
+      const { x, translationX, translationY } = e;
 
       const deltaX = translationX - lastT_X.current;
       lastT_X.current = translationX;
@@ -379,6 +503,7 @@ export default function PlayScreen() {
       }
     })
     .onFinalize(() => {
+      void commitSeek();
       setGestureMode('');
       accumulativeX.current = 0;
       accumulativeY.current = 0;
@@ -388,11 +513,14 @@ export default function PlayScreen() {
   const composedGesture = Gesture.Race(panGesture, taps);
   
   const handelBack = async() => {
-    // 页面跳转前保存播放记录
+    // 页面跳转前保存播放记录；投屏时先关闭远端，避免留下无法控制的电视播放。
     try {
-      await savePlayRecord({ }, { immediate: true });
-    }
-    catch (e) {}
+      if (isCasting) {
+        await disableCast({ restoreLocal: false, stopRemote: true });
+      } else {
+        await savePlayRecord({}, { immediate: true });
+      }
+    } catch (e) {}
     router.back();
   };
   
@@ -409,7 +537,7 @@ export default function PlayScreen() {
     const backHandler = BackHandler.addEventListener("hardwareBackPress", backAction);
 
     return () => backHandler.remove();
-  }, [showControls, setShowControls, router]);
+  }, [showControls, setShowControls, router, isCasting, disableCast]);
 
   useEffect(() => {
     let timeoutId: NodeJS.Timeout | null = null;
@@ -436,8 +564,16 @@ export default function PlayScreen() {
 
   return (
     <ThemedView focusable style={dynamicStyles.container}>
-      {/* 条件渲染Video组件：只有在有有效URL时才渲染 */}
-      {currentEpisode?.url ? (
+      {/* 投屏时卸载本机 Video，主画面固定为 DLNA 设备切换列表。 */}
+      {isCasting ? (
+        <GestureHandlerRootView style={{ flex: 1 }}>
+          <GestureDetector gesture={composedGesture}>
+            <View style={{ flex: 1 }} collapsable={false}>
+              <DLNAStatusPanel />
+            </View>
+          </GestureDetector>
+        </GestureHandlerRootView>
+      ) : currentEpisode?.url ? (
         <GestureHandlerRootView style={{ flex: 1 }}>
           <GestureDetector gesture={composedGesture}>
             <View style={dynamicStyles.videoContainer}>
@@ -450,15 +586,20 @@ export default function PlayScreen() {
       )}
 
       {showControls && (
-        <PlayerControls showControls={showControls} setShowControls={setShowControls} handelBack={handelBack} />
+        <PlayerControls
+          showControls={showControls}
+          setShowControls={setShowControls}
+          handelBack={handelBack}
+          onOpenDlnaDeviceModal={() => setShowDlnaDeviceModal(true)}
+        />
       )}
 
       {!showControls && (<SeekingBar />)}
 
-      {/* 只在Video组件存在且正在加载时显示加载动画覆盖层 */}
-      {currentEpisode?.url && isVideoLoading && (
+      {/* 本地/投屏统一消费控制器的加载状态 */}
+      {currentEpisode?.url && isLoading && (
         <View style={dynamicStyles.loadingContainer}>
-          <VideoLoadingAnimation showProgressBar loadingText="加载视频中..." />
+          <VideoLoadingAnimation showProgressBar loadingText={loadingText} />
         </View>
       )}
 
@@ -466,13 +607,19 @@ export default function PlayScreen() {
       {currentEpisode?.url && (<EpisodeSelectionModal />)}
       {currentEpisode?.url && (<SourceSelectionModal />)}
       {currentEpisode?.url && (<SpeedSelectionModal />)}
+      <DLNADeviceModal
+        visible={isCasting && showDlnaDeviceModal}
+        onClose={() => setShowDlnaDeviceModal(false)}
+      />
       
-      <View style={dynamicStyles.brightnessBar}>
-        <AnimatedVerticalProgress progress={brightness} forceShow={brightnessBarShow} />
-      </View>
-      <View style={dynamicStyles.volumeBar}>
-        <AnimatedVerticalProgress progress={volume} forceShow={volumeBarShow} />
-      </View>
+      <>
+        <View style={dynamicStyles.brightnessBar}>
+          <AnimatedVerticalProgress progress={brightness} forceShow={brightnessBarShow} />
+        </View>
+        <View style={dynamicStyles.volumeBar}>
+          <AnimatedVerticalProgress progress={volume} forceShow={volumeBarShow} />
+        </View>
+      </>
     </ThemedView>
   );
 }

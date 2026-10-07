@@ -11,6 +11,7 @@ import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { getCommonResponsiveStyles } from "@/utils/ResponsiveStyles";
 import { FontAwesome } from "@expo/vector-icons";
 import { SpeedTestIcon } from "./SpeedTestIcon";
+import { usePlaybackController } from "@/hooks/usePlaybackController";
 
 const logger = Logger.withTag('SourceSelectionModal');
 
@@ -26,35 +27,16 @@ export const SourceSelectionModal: React.FC = () => {
   // 只订阅需要的字段：播放进度每 500ms 更新一次，整店订阅会让这个弹窗跟着每秒重渲染两次
   const showSourceModal = usePlayerStore((s) => s.showSourceModal);
   const setShowSourceModal = usePlayerStore((s) => s.setShowSourceModal);
-  const loadVideo = usePlayerStore((s) => s.loadVideo);
-  const currentEpisodeIndex = usePlayerStore((s) => s.currentEpisodeIndex);
   const searchResults = useDetailStore((s) => s.searchResults);
   const detail = useDetailStore((s) => s.detail);
-  const setDetail = useDetailStore((s) => s.setDetail);
   const allSourcesLoaded = useDetailStore((s) => s.allSourcesLoaded);
   const testingSource = useDetailStore((s) => s.testingSource);
+  const { selectSource } = usePlaybackController();
 
   // 按源（而不是列表下标）选择：测速过程中列表会随时按倍率重排，用下标会点错源
   const onSelectSource = async (item: SearchResultWithResolution) => {
     logger.debug("onSelectSource", item.source, item.id, detail?.id);
-    if (item.id !== detail?.id) {
-      const newDetail = item;
-      setDetail(newDetail);
-      
-      // Reload the video with the new source, preserving current position
-      // 播放位置在按下这一刻再取，避免订阅 status 导致弹窗被进度更新反复重渲染
-      const { status } = usePlayerStore.getState();
-      const currentPosition = status?.isLoaded ? status.positionMillis : undefined;
-      loadVideo({
-        source: newDetail.source,
-        id: newDetail.id.toString(),
-        episodeIndex: currentEpisodeIndex,
-        title: newDetail.title,
-        year: newDetail.year,
-        stype: newDetail.episodes.length > 1 ? 'tv' : 'movie',
-        position: currentPosition
-      });
-    }
+    await selectSource(item);
     setShowSourceModal(false);
   };
 

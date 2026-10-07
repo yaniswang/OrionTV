@@ -1,4 +1,9 @@
-const { withDangerousMod, withAndroidManifest, withMainApplication } = require('@expo/config-plugins');
+const {
+  withDangerousMod,
+  withAndroidManifest,
+  withMainApplication,
+  withAppBuildGradle,
+} = require('@expo/config-plugins');
 const fs = require('fs');
 const path = require('path');
 
@@ -51,6 +56,11 @@ function withCertFiles(config) {
       fs.copyFileSync(path.join(projectRoot, 'plugins/isrg_root_x1.cer'), path.join(rawDir, 'isrg_root_x1.cer'));
       fs.copyFileSync(path.join(projectRoot, 'plugins/isrg_root_x2.cer'), path.join(rawDir, 'isrg_root_x2.cer'));
       fs.copyFileSync(path.join(projectRoot, 'plugins/LegacyTls.kt'), path.join(javaDir, 'LegacyTls.kt'));
+      fs.copyFileSync(path.join(projectRoot, 'plugins/MediaProxyModule.kt'), path.join(javaDir, 'MediaProxyModule.kt'));
+      fs.copyFileSync(path.join(projectRoot, 'plugins/MediaProxyPlaylist.kt'), path.join(javaDir, 'MediaProxyPlaylist.kt'));
+      const testDir = path.join(projectRoot, 'android/app/src/test/java/com/oriontv');
+      fs.mkdirSync(testDir, { recursive: true });
+      fs.copyFileSync(path.join(projectRoot, 'plugins/MediaProxyPlaylistTest.kt'), path.join(testDir, 'MediaProxyPlaylistTest.kt'));
       console.log('✅ ISRG 根证书和旧 Android TLS 支持代码已复制到原生 Android 目录');
 
       return config;
@@ -84,8 +94,55 @@ function withLegacyTlsMainApplication(config) {
 }
 
 // 导出组合后的插件
+// 4. 注册流式回源的原生模块
+function withMediaProxyPackage(config) {
+  return withMainApplication(config, (config) => {
+    const mainApplication = config.modResults;
+    let contents = mainApplication.contents;
+
+    if (!contents.includes('MediaProxyPackage()')) {
+      const target = /return PackageList\(this\)\.packages/;
+      if (!target.test(contents)) {
+        throw new Error('无法在 MainApplication.getPackages 中注册 MediaProxyPackage');
+      }
+      contents = contents.replace(
+        target,
+        'val packages = PackageList(this).packages\n            packages.add(MediaProxyPackage())\n            return packages',
+      );
+      mainApplication.contents = contents;
+    }
+
+    return config;
+  });
+}
+
 module.exports = function withAndroidCert(config) {
-  return withLegacyTlsMainApplication(
-    withNetworkSecurityConfigManifest(withCertFiles(config)),
+  return withMediaProxyUnitTest(
+    withMediaProxyPackage(
+      withLegacyTlsMainApplication(
+        withNetworkSecurityConfigManifest(withCertFiles(config)),
+      ),
+    ),
   );
 };
+
+// 4.5 让原生清单改写逻辑能在 JVM 上跑等价性单测
+function withMediaProxyUnitTest(config) {
+  return withAppBuildGradle(config, (config) => {
+    const gradle = config.modResults;
+    if (gradle.language !== 'groovy') return config;
+    if (!gradle.contents.includes('MediaProxyUnitTest')) {
+      const anchor = 'implementation("com.facebook.react:react-android")';
+      if (!gradle.contents.includes(anchor)) {
+        throw new Error('无法在 app/build.gradle 中注入 JUnit 依赖');
+      }
+      gradle.contents = gradle.contents.replace(
+        anchor,
+        `${anchor}
+    // MediaProxyUnitTest: 原生清单改写与原 JS 实现的等价性单测
+    testImplementation("junit:junit:4.13.2")`,
+      );
+    }
+    return config;
+  });
+}

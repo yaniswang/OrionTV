@@ -55,8 +55,8 @@ interface DetailState {
 }
 
 /**
- * 有推荐源时，测速队列要等视频起播再放行；playerStore 在 isPlaying 变 true 时调用 startSpeedTest()。
- * 无推荐源路径不会挂到这里，保持 PING 完立即测。
+ * 推荐源完整测速通过后，后续 WS 测速队列要等视频起播再放行；playerStore 在 isPlaying 变 true 时调用 startSpeedTest()。
+ * 推荐源完整测速失败或无推荐源时不会挂到这里，保持原有完整测速流程。
  */
 let releaseSpeedTestGate: (() => void) | null = null;
 
@@ -131,7 +131,7 @@ const useDetailStore = create<DetailState>((set, get) => ({
     const testQueue: PingedSource[] = [];
     /** 当前正在测速的源；为 null 表示这一时刻没有源在测，图标该落到刚插进来的源上 */
     let measuringSource: string | null = null;
-    /** 有推荐源时先挂起测速，等视频起播再放行；无推荐源时始终为 false */
+    /** 推荐源完整测速通过后先挂起后续 WS 测速，等视频起播再放行；否则始终为 false */
     let waitingForPlayback = false;
     /** 被闸门挡住的等待者，视频起播或 init 被中止时唤醒 */
     const speedTestWaiters: (() => void)[] = [];
@@ -169,15 +169,16 @@ const useDetailStore = create<DetailState>((set, get) => ({
         }
       } catch (e) {
         if ((e as Error).name !== 'AbortError') {
-          logger.error(`M3U8 ping 失败 ${searchResult.source_name}`, e);
+          logger.error(`[PING] ${searchResult.source_name} 失败`, e);
         }
       }
 
       if (!probe) return null;
 
       logger.info(
-        `[PERF] M3U8 ping ${searchResult.source_name} [${urlTag(m3u8Url)}|${useProxy ? '代理' : '直连'}]: ` +
-          `${(performance.now() - pingStart).toFixed(2)}ms (${JSON.stringify(probe)})`,
+        `[PING] ${searchResult.source_name} [${useProxy ? '代理' : '直连'}] 完成：` +
+          `${(performance.now() - pingStart).toFixed(2)}ms，分片数=${segments?.length ?? 0}，` +
+          `首片状态=${probe.blocked ? '不可用' : '正常'}，url=${urlTag(m3u8Url)}`,
       );
       // insertSeq 先占位，真正插表时（mergePinged）才赋真实值
       return { ...searchResult, probe, segments, m3u8Url, useProxy, insertSeq: -1 };
@@ -185,8 +186,8 @@ const useDetailStore = create<DetailState>((set, get) => ({
 
     /**
      * 展示顺序：
-     * 1. 插表的先后就是列表顺序：有推荐源时不 PING，源一到就插表（推荐源最前）；
-     *    没推荐源时 PING 完一个插一个。插表的同一条源也同时进测速队列，
+     * 1. 插表的先后就是列表顺序：推荐源完整测速通过后先插表（推荐源最前）；
+     *    有推荐源时其它 WS 源不 PING，没推荐源时 PING 完一个插一个。插表的同一条源也同时进测速队列，
      *    所以测速始终顺着列表往下走，不会在列表里跳。
      * 2. 每测完一个源，只在"已测源"内部按倍率重排（倍率高的靠前），
      *    未测源保持插表顺序原地不动，而且始终排在已测源后面。
@@ -216,8 +217,8 @@ const useDetailStore = create<DetailState>((set, get) => ({
         searchResults: results,
         sources: results.map((r) => ({ source: r.source, source_name: r.source_name })),
         // 只在还没选中源时自动选第一个：
-        // 没有推荐源 -> 第一个 ping 返回就自动选中并开始播放；
-        // 有推荐源 -> 它已经选中并在播了，后面其它源的 ping 不会改当前选择
+        // 没有推荐源（或推荐源完整测速失败）-> 第一个 ping 返回就自动选中并开始播放；
+        // 推荐源完整测速通过 -> 它已经选中并在播了，后面其它源的插入不会改当前选择
         detail: state.detail ?? results[0] ?? null,
         ...(extra ?? {}),
       }));
@@ -240,7 +241,7 @@ const useDetailStore = create<DetailState>((set, get) => ({
       }
       if (added) {
         publishResults(extra);
-        set({ loading: false }); // ping 结束就可以开始播放
+        set({ loading: false });
       }
     };
 
@@ -254,8 +255,12 @@ const useDetailStore = create<DetailState>((set, get) => ({
      * 写结果时"测速中"图标该落在哪个源上：队列里还有就交给队首，
      * 没有就置空（这批测完了）。和倍率写进同一次 set，
      * 分开写会出现"刚测完的源还挂着图标"或者"一个图标都没有"的中间帧。
+     * 有推荐源时，起播前其它源还在闸门后等待，不能提前显示"测速中"。
      */
-    const nextTestingSource = () => (testQueue.length > 0 ? testQueue[0].source : null);
+    const nextTestingSource = () => {
+      if (waitingForPlayback) return null;
+      return testQueue.length > 0 ? testQueue[0].source : null;
+    };
 
     /**
      * 查完整测速缓存：先查这条源当前要走的路由，再查另一条。
@@ -271,9 +276,9 @@ const useDetailStore = create<DetailState>((set, get) => ({
       return other ? { info: other, useProxy: otherProxy } : null;
     };
 
-    /** 完整测速一个源：测完立刻按倍率重排 */
-    const measureOneInner = async (item: PingedSource) => {
-      if (signal.aborted) return;
+    /** 完整测速一个源：测完立刻按倍率重排；返回是否至少成功加载了一个分片 */
+    const measureOneInner = async (item: PingedSource): Promise<boolean> => {
+      if (signal.aborted) return false;
 
       // 完整测速缓存（按域名，独立于 ping）：命中就不用再下分片
       const cached = findCachedSpeed(item);
@@ -281,15 +286,16 @@ const useDetailStore = create<DetailState>((set, get) => ({
         item.useProxy = cached.useProxy;
         item.probe = { ...item.probe, ...cached.info };
         logger.info(
-          `[PERF] 完整测速 ${item.source_name}: 命中缓存（${cached.useProxy ? '代理' : '直连'}），倍数 ${cached.info.segmentRatio}`,
+          `[测速] ${item.source_name} 命中缓存：路线=${cached.useProxy ? '代理' : '直连'}，` +
+            `倍率=${cached.info.segmentRatio}`,
         );
         publishResults({ testingSource: nextTestingSource() });
-        return;
+        return true;
       }
 
       /**
        * 取某个路由（代理 / 直连）下要下载的分片。
-       * ping 过的源直接复用 ping 时解析出来的分片；跳过 PING 的源（有推荐源时）现拉清单。
+       * ping 过的源直接复用 ping 时解析出来的分片；WS 其它源跳过 PING 时现拉清单。
        * 换路由时也必须重新拉清单——代理清单解析出来的分片地址是代理地址，拿去当直连测就测错了。
        */
       const segmentsForRoute = async (useProxy: boolean): Promise<M3U8Segment[]> => {
@@ -302,61 +308,80 @@ const useDetailStore = create<DetailState>((set, get) => ({
 
       /** 测一个路由：连清单都拉不到分片（403/404 等）就返回 null，表示这条路不可用 */
       const measureRoute = async (useProxy: boolean): Promise<M3U8ProbeInfo | null> => {
+        const route = useProxy ? '代理' : '直连';
+        logger.info(`[测速] ${item.source_name} [${route}] 开始`);
         const segments = await segmentsForRoute(useProxy);
         if (signal.aborted) return null;
         if (segments.length === 0) {
-          const route = useProxy ? '代理' : '直连';
           logger.info(
-            `[PERF] ${item.source_name} ${route}拿不到分片清单，判定该路由不可用` +
-              `（原因见上一条 M3U8 清单日志）: ${urlTag(item.m3u8Url)}`,
+            `[测速] ${item.source_name} [${route}] 不可用：拿不到分片清单（见上一条清单日志）`,
           );
           return null;
         }
-        return await measureM3U8Speed(
+        const measured = await measureM3U8Speed(
           item.m3u8Url,
           segments,
           signal,
           item.probe,
           useProxy ? proxyPrefix : undefined,
+          `${item.source_name}|${route}`,
         );
+        logger.info(
+          `[测速] ${item.source_name} [${route}] 结果：` +
+            `倍率=${measured.segmentRatio}，加载=${measured.segmentLoadMs ?? '-'}ms，` +
+            `分片总时长=${measured.segmentDurationMs != null ? (measured.segmentDurationMs / 1000).toFixed(1) : '-'}s`,
+        );
+        return measured;
       };
 
       let info = await measureRoute(item.useProxy);
-      if (signal.aborted) return;
+      if (signal.aborted) return false;
 
       if (item.useProxy && (!info || info.blocked || info.segmentRatio < PROXY_FALLBACK_SEGMENT_RATIO)) {
         // 代理不可用（非 200）或未达到优秀：再测直连，谁好用谁
+        const proxyRatio = info?.segmentRatio ?? 0;
+        logger.info(
+          `[测速] ${item.source_name} [代理] 未达标（${proxyRatio} < ${PROXY_FALLBACK_SEGMENT_RATIO}），开始对比直连`,
+        );
         const direct = await measureRoute(false);
-        if (signal.aborted) return;
-        if (direct && !direct.blocked && direct.segmentRatio > (info?.segmentRatio ?? 0)) {
-          logger.info(`[PERF] ${item.source_name} 代理不达标，改用直连`);
+        if (signal.aborted) return false;
+        if (direct && !direct.blocked && direct.segmentRatio > proxyRatio) {
+          logger.info(
+            `[测速] ${item.source_name} 切换路线：代理 -> 直连（${proxyRatio} -> ${direct.segmentRatio}）`,
+          );
           info = direct;
           item.useProxy = false;
+        } else {
+          logger.info(`[测速] ${item.source_name} 直连不可用或更慢，保留代理路线`);
         }
       }
 
       if (!info) {
-        logger.info(`[PERF] 完整测速 ${item.source_name}: 代理和直连都不可用，跳过`);
-        return;
+        logger.info(`[测速] ${item.source_name} 结束：代理和直连都不可用`);
+        return false;
       }
 
+      const measuredSuccessfully = info.segmentLoadMs != null;
       item.probe = info;
       item.segments = null;
       testedCount++;
       logger.info(
-        `[PERF] 完整测速 ${item.source_name} [${urlTag(item.m3u8Url)}|${item.useProxy ? '代理' : '直连'}]: 倍数 ${info.segmentRatio}` +
-          `（${info.segmentLoadMs}ms 加载 ${info.segmentDurationMs}ms 时长）`,
+        `[测速] ${item.source_name} 最终路线=${item.useProxy ? '代理' : '直连'}，` +
+          `倍率=${info.segmentRatio}，加载=${info.segmentLoadMs ?? '-'}ms，` +
+          `分片总时长=${info.segmentDurationMs != null ? (info.segmentDurationMs / 1000).toFixed(1) : '-'}s，` +
+          `url=${urlTag(item.m3u8Url)}`,
       );
       publishResults({ testingSource: nextTestingSource() });
+      return measuredSuccessfully;
     };
 
     /**
-     * 测速队列：源一插进列表就进队（有推荐源时是 WS 一到，没推荐源时是 PING 完），
+     * 测速队列：源一插进列表就进队（有推荐源时 WS 其它源一到就插，没推荐源时 PING 完插），
      * 队列里一个测完再测下一个。
      * 用 promise 串起来，源与源之间严格顺序，又不会挡住后面的搜索。
-     * 跳过 PING 的源 segments 是 null，测速时会自己拉清单，所以这里不能把它挡掉。
+     * WS 其它源跳过 PING，segments 是 null，测速时会自己拉清单，所以这里不能把它挡掉。
      */
-    /** 有推荐源时，真正开测前先等视频起播；abort 也要唤醒，避免 init 永远挂在队列上 */
+    /** 有推荐源时，WS 其它源真正开测前先等视频起播；abort 也要唤醒，避免 init 永远挂在队列上 */
     const waitForSpeedTestGate = (): Promise<void> => {
       if (!waitingForPlayback) return Promise.resolve();
       return new Promise((resolve) => {
@@ -384,7 +409,7 @@ const useDetailStore = create<DetailState>((set, get) => ({
       if (!item || (item.segments !== null && item.segments.length === 0)) return;
       testQueue.push(item);
       testChain = testChain.then(async () => {
-        // 有推荐源时，等视频真正开始播放再测；abort 时也会被唤醒
+        // 有推荐源时，后续 WS 源等视频起播后再测；无推荐源时闸门始终是放行的
         await waitForSpeedTestGate();
         if (signal.aborted) return;
         // 队列是 FIFO，队首就是自己：真正开测时出队，"测速中"图标跟着队首走
@@ -405,12 +430,16 @@ const useDetailStore = create<DetailState>((set, get) => ({
 
     /**
      * 造一条"还没测速"的源（只造对象，不写进列表）。
-     * 有推荐源时用它——PING 和测速作用重复（都是为了优选出优秀的源），
-     * 所以推荐源和其它源都跳过 PING，直接进测速队列。
+     * 有推荐源时给 WS 的其它源用它——推荐源已经单独完整测速过，
+     * 其它源不重复 PING，直接进测速队列。
      */
     const makeUnmeasuredSource = (searchResult: SearchResult): PingedSource | null => {
       const m3u8Url = searchResult.episodes?.[0];
       if (!m3u8Url || pinged.has(searchResult.source)) return null;
+      const useProxy = !!proxyPrefix;
+      logger.info(
+        `[测速] ${searchResult.source_name} 跳过 PING，初始路线=${useProxy ? '代理' : '直连'}`,
+      );
       return {
         ...searchResult,
         // 跳过 PING：ping 耗时和倍率都留 0
@@ -418,24 +447,25 @@ const useDetailStore = create<DetailState>((set, get) => ({
         segments: null,
         m3u8Url,
         // 还没测速，没法比较代理和直连，配了代理就先按代理播
-        useProxy: !!proxyPrefix,
+        useProxy,
         insertSeq: -1,
       };
     };
 
     /**
-     * 一条源可以用了（有推荐源时不 PING、WS 一到就用；没推荐源时 PING 完就用）：
+     * 一条源可以用了（推荐源完整测速通过后插入；有推荐源时 WS 其它源一到就用；没推荐源时 PING 完就用）：
      * 插进列表 + 立刻进测速队列。两条路径共用这一个入口，逻辑完全一致。
      * 此刻没有源在测的话，"测速中"图标在同一次 set 里就落到它身上，
      * 保证"出现在列表里"和"进测速队列"是同一帧，不会出现列表里有它却干等着不测的空档。
      */
-    const insertAndEnqueue = (item: PingedSource | null): PingedSource | null => {
+    const insertAndEnqueue = (item: PingedSource | null, enqueue = true): PingedSource | null => {
       if (!item || pinged.has(item.source)) return null;
       item.insertSeq = insertSeq++;
       // 没有源在测、队列也是空的：图标立刻落到这条新源上（和它出现在列表里同一次 set）
       const iconIdle = !waitingForPlayback && measuringSource === null && testQueue.length === 0;
       mergePinged([item], iconIdle ? { testingSource: item.source } : undefined);
-      enqueueForTest(item);
+      // 推荐源已经在插入前完成过完整测速，插入时不需要再入测速队列
+      if (enqueue) enqueueForTest(item);
       return item;
     };
 
@@ -450,12 +480,12 @@ const useDetailStore = create<DetailState>((set, get) => ({
       );
     };
 
-    /** 是否有推荐源（有的话它已经在播了，其它源可以攒齐再测） */
+    /** 推荐源是否完整测速通过（通过后它已经在播，其它源可以攒齐再测） */
     let hasPreferredSource = false;
 
     try {
       // WS 搜索尽早发起：服务端搜完所有源本身要几秒，越早发起结果越早出来
-      // （推荐源不 ping 直接播，所以这里发的搜索是给"其它源"用的）
+      // （推荐源会直接完整测速，所以这里发的搜索是给"其它源"用的）
       const searchAllStart = performance.now();
       logger.info(`[PERF] API searchVideos (background) START - query: "${q}", title: "${title}"`);
       const wsMessagesPromise = api.searchVideosWs(q || title, signal);
@@ -485,19 +515,20 @@ const useDetailStore = create<DetailState>((set, get) => ({
         // 检查preferred source结果
         if (preferredResult.length > 0) {
           logger.info(`[SUCCESS] Preferred source "${preferredSource}" found ${preferredResult.length} results for "${q}"`);
-          // 推荐源跳过 PING：优先命中 id 的那条，先直接拿来播放
+          // 推荐源跳过 PING，直接完整测速；成功才插入播放，失败继续用 WS 结果自动切源
           const preferred = preferredResult.find(item => String(item.id) === String(id)) ?? preferredResult[0];
-          // 此刻还没别的源入队，插进去就排在列表/测速队列第一位，不等 WS 返回
           const preferredItem = makeUnmeasuredSource(preferred);
-          if (preferredItem) {
-            // 有推荐源：先关上测速闸门，源照常插队，等视频起播再真正开测
+          const measured = preferredItem ? await measureOneInner(preferredItem) : false;
+          if (signal.aborted) return;
+          if (preferredItem && measured) {
+            // 先标记有推荐源并打开起播闸门，后续 WS 源才会等起播后再测
             hasPreferredSource = true;
             waitingForPlayback = true;
             releaseSpeedTestGate = releaseSpeedTest;
-          }
-          insertAndEnqueue(preferredItem);
-          if (preferredItem) {
-            logger.info(`[PERF] 推荐源 ${preferred.source_name} 跳过 PING 直接播放，并排到测速队列第一位`);
+            insertAndEnqueue(preferredItem, false);
+            logger.info(`[测速] 推荐源 ${preferred.source_name} 完整测速通过，开始播放并排到列表第一位`);
+          } else {
+            logger.warn(`[FALLBACK] 推荐源 "${preferredSource}" 完整测速失败，自动切换其它源`);
           }
         } else {
           if (preferredSearchError) {
@@ -552,11 +583,11 @@ const useDetailStore = create<DetailState>((set, get) => ({
 
           // WS 一条返回就 ping：ping 完立刻进测速队列，队列马上按顺序测，
           // 不用等所有源都搜完（第一个 ping 返回时如果没有推荐源就会自动开始播放）；
-          // 有推荐源时跳过 PING，直接进列表并排队测速
+          // 有推荐源时 WS 其它源跳过 PING，直接进列表并排队测速
           const fresh = takeFresh();
           if (fresh.length > 0) {
             if (hasPreferredSource) {
-              // 有推荐源：跳过 PING，WS 结果直接显示在列表里，然后按顺序测速
+              // 有推荐源：WS 其它源跳过 PING，直接显示在列表里，然后按顺序测速
               for (const searchResult of fresh) {
                 insertAndEnqueue(makeUnmeasuredSource(searchResult));
               }

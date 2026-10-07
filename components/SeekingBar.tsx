@@ -1,6 +1,6 @@
 import React from "react";
 import { View, StyleSheet, Text } from "react-native";
-import usePlayerStore from "@/stores/playerStore";
+import { usePlaybackController } from "@/hooks/usePlaybackController";
 
 const formatTime = (milliseconds: number) => {
   if (!milliseconds) return "00:00";
@@ -24,7 +24,7 @@ const formatTime = (milliseconds: number) => {
 };
 
 export const SeekingBar = () => {
-  const { isSeeking, seekPosition, progressPosition, bufferedPosition, status, playbackRate } = usePlayerStore();
+  const { isSeeking, seekPosition, progressPosition, bufferedPosition, status, playbackRate } = usePlaybackController();
   
   if (!((isSeeking && status?.isLoaded) || playbackRate != 1)) {
     return null;

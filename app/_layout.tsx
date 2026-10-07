@@ -5,6 +5,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
 import { Platform, View, StyleSheet } from "react-native";
 import Toast from "react-native-toast-message";
+import SystemSetting from "react-native-system-setting";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -40,6 +41,13 @@ export default function RootLayout() {
     initializeApp();
     initUpdateStore(); // 初始化更新存储
   }, [loadSettings]);
+
+  useEffect(() => {
+    // Android 的窗口亮度会保留上次手势设置的固定值；启动时恢复为跟随系统。
+    if (Platform.OS === 'android') {
+      void SystemSetting.setAppBrightness(-1);
+    }
+  }, []);
 
   useEffect(() => {
     if (serverConfig) {

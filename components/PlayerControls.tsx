@@ -1,42 +1,68 @@
 import React from "react";
 import { View, Text, StyleSheet, Pressable, Platform } from "react-native";
-import { Pause, Play, SkipForward, List, Tv, ArrowDownToDot, ArrowUpFromDot, Gauge, Unlock, Lock, ChevronLeft, Send } from "lucide-react-native";
+import {
+  Pause,
+  Play,
+  SkipForward,
+  List,
+  Tv,
+  ArrowDownToDot,
+  ArrowUpFromDot,
+  Gauge,
+  Unlock,
+  Lock,
+  ChevronLeft,
+  Send,
+  Cast,
+  Power,
+  MonitorSmartphone,
+} from "lucide-react-native";
 import { ThemedText } from "@/components/ThemedText";
 import { MediaButton } from "@/components/MediaButton";
 import { FontAwesome } from "@expo/vector-icons";
 import { StyledButton } from "./StyledButton";
-
 import usePlayerStore from "@/stores/playerStore";
 import useDetailStore from "@/stores/detailStore";
 import { useSources } from "@/stores/sourceStore";
-import { useSettingsStore } from "@/stores/settingsStore";
-
-import {Battery} from '@brightlayer-ui/react-native-progress-icons';
+import { Battery } from '@brightlayer-ui/react-native-progress-icons';
 import { useBatteryLevel, useBatteryState, BatteryState } from 'expo-battery';
 import { format } from 'date-fns';
+import { usePlaybackController } from '@/hooks/usePlaybackController';
 
 interface PlayerControlsProps {
   showControls: boolean;
   setShowControls: (show: boolean) => void;
   handelBack: () => Promise<void>;
+  onOpenDlnaDeviceModal: () => void;
 }
 
-export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, setShowControls, handelBack }) => {
+export const PlayerControls: React.FC<PlayerControlsProps> = ({
+  showControls,
+  setShowControls,
+  handelBack,
+  onOpenDlnaDeviceModal,
+}) => {
   const batteryLevel = useBatteryLevel();
   const batteryState = useBatteryState();
   const {
-    currentEpisodeIndex,
-    episodes,
+    isCasting,
     status,
-    showLockControls,
-    toggleLock,
-    isSeeking,
-    seekPosition,
     progressPosition,
     bufferedPosition,
+    isSeeking,
+    seekPosition,
     playbackRate,
     togglePlayPause,
     playEpisode,
+    enableCast,
+    disableCast,
+  } = usePlaybackController();
+
+  const {
+    currentEpisodeIndex,
+    episodes,
+    showLockControls,
+    toggleLock,
     setShowEpisodeModal,
     setShowSourceModal,
     setShowSpeedModal,
@@ -61,32 +87,34 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
   const formatTime = (milliseconds: number) => {
     if (!milliseconds) return "00:00";
     const seconds = Math.floor(milliseconds / 1000);
-
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     const remainingSeconds = seconds % 60;
 
     if (hours === 0) {
-      // 不到一小时，格式为 00:00
-      return `${minutes.toString().padStart(2, '0')}:${remainingSeconds
-        .toString()
-        .padStart(2, '0')}`;
-    } else {
-      // 超过一小时，格式为 00:00:00
-      return `${hours.toString().padStart(2, '0')}:${minutes
-        .toString()
-        .padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+      return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
     }
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
 
   const onPlayNextEpisode = () => {
-    if (hasNextEpisode) {
-      playEpisode(currentEpisodeIndex + 1);
-    }
+    if (hasNextEpisode) void playEpisode(currentEpisodeIndex + 1);
   };
 
   const durationMillis = status.durationMillis || 0;
   const seekPositionMillis = seekPosition * durationMillis;
+  const castIconAvailable = !Platform.isTV && (Platform.OS === 'android' || Platform.OS === 'ios');
+
+  const onIntroPress = () => {
+    setIntroEndTime(isCasting ? status.positionMillis : undefined);
+  };
+
+  const onOutroPress = () => {
+    setOutroStartTime(
+      isCasting ? status.positionMillis : undefined,
+      isCasting ? status.durationMillis : undefined,
+    );
+  };
 
   return (
     <View style={styles.controlContainer}>
@@ -100,29 +128,44 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
           {videoTitle} {episodes.length > 1 && currentEpisodeTitle ? `- ${currentEpisodeTitle}` : ""}{" "}
           {currentSourceName ? `(${currentSourceName})` : ""}
         </Text>
-        {/* 纸飞机 = 当前这个源实际走了远端代理（数据经中转转发）；源因非 200 或太慢回退直连时不显示 */}
         {detail?.useProxy && <Send color="#00bb5e" size={18} />}
       </View>
+
       <View style={styles.topRightContainer}>
-        <Text style={styles.topTimeText}>
-          {format(new Date(), 'HH:mm')}
-        </Text>
-        {!Platform.isTV && (<Battery percent={batteryLevel*100} size={30} color={'#00bb5ea0'} charging={batteryState === BatteryState.CHARGING} outlined={false}/>)}
+        <Text style={styles.topTimeText}>{format(new Date(), 'HH:mm')}</Text>
+        {!Platform.isTV && (
+          <Battery
+            percent={batteryLevel * 100}
+            size={30}
+            color={'#00bb5ea0'}
+            charging={batteryState === BatteryState.CHARGING}
+            outlined={false}
+          />
+        )}
+        {castIconAvailable && !(showLockControls && isCasting) && (
+          <Pressable
+            onPress={() => void (isCasting ? disableCast({ restoreLocal: true, stopRemote: true }) : enableCast())}
+            style={styles.castButton}
+          >
+            {isCasting ? <Power color="white" size={24} /> : <Cast color="white" size={24} />}
+          </Pressable>
+        )}
       </View>
+
       {!Platform.isTV && (
         <View style={styles.lockContainer}>
           <StyledButton onPress={toggleLock} variant="ghost">
-            {showLockControls && (<Lock color="white" size={20} />)}
-            {!showLockControls && (<Unlock color="white" size={20} />)}
+            {showLockControls ? <Lock color="white" size={20} /> : <Unlock color="white" size={20} />}
           </StyledButton>
         </View>
       )}
+
       {!showLockControls && (
         <View style={styles.controlsOverlay}>
           <View style={styles.bottomControlsContainer}>
             <View style={styles.bottomTimesContainer}>
               <ThemedText style={{ color: "white", marginTop: 5 }}>
-                {status?.isLoaded
+                {status.isLoaded
                   ? `${formatTime(isSeeking ? seekPositionMillis : status.positionMillis)} / ${formatTime(status.durationMillis || 0)}`
                   : "00:00 / 00:00"}
               </ThemedText>
@@ -130,20 +173,11 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
 
             <View style={styles.progressBarContainer}>
               <View style={styles.progressBarBackground} />
-              <View
-                style={[
-                  styles.bufferedBarFilled,
-                  {
-                    width: `${bufferedPosition * 100}%`,
-                  },
-                ]}
-              />
+              <View style={[styles.bufferedBarFilled, { width: `${bufferedPosition * 100}%` }]} />
               <View
                 style={[
                   styles.progressBarFilled,
-                  {
-                    width: `${(isSeeking ? seekPosition : progressPosition) * 100}%`,
-                  },
+                  { width: `${(isSeeking ? seekPosition : progressPosition) * 100}%` },
                 ]}
               />
               <Pressable style={styles.progressBarTouchable} />
@@ -151,13 +185,13 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
 
             <View style={styles.bottomControls}>
               {episodes.length > 1 && (
-                <MediaButton onPress={setIntroEndTime} timeLabel={introEndTime ? formatTime(introEndTime) : undefined}>
+                <MediaButton onPress={onIntroPress} timeLabel={introEndTime ? formatTime(introEndTime) : undefined}>
                   <ArrowDownToDot color="white" size={24} />
                 </MediaButton>
               )}
 
-              <MediaButton onPress={togglePlayPause} hasTVPreferredFocus={showControls}>
-                {status?.isLoaded && status.isPlaying ? (
+              <MediaButton onPress={() => void togglePlayPause()} hasTVPreferredFocus={showControls}>
+                {status.isLoaded && status.isPlaying ? (
                   <Pause color="white" size={24} />
                 ) : (
                   <Play color="white" size={24} />
@@ -171,7 +205,7 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
               )}
 
               {episodes.length > 1 && (
-                <MediaButton onPress={setOutroStartTime} timeLabel={outroStartTime ? formatTime(outroStartTime) : undefined}>
+                <MediaButton onPress={onOutroPress} timeLabel={outroStartTime ? formatTime(outroStartTime) : undefined}>
                   <ArrowUpFromDot color="white" size={24} />
                 </MediaButton>
               )}
@@ -186,39 +220,40 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({ showControls, se
                 <Tv color="white" size={24} />
               </MediaButton>
 
-              <MediaButton onPress={() => setShowSpeedModal(true)} timeLabel={playbackRate !== 1.0 ? `${playbackRate}x` : undefined}>
+              <MediaButton
+                onPress={() => setShowSpeedModal(true)}
+                timeLabel={playbackRate !== 1.0 ? `${playbackRate}x` : undefined}
+              >
                 <Gauge color="white" size={24} />
               </MediaButton>
 
               <MediaButton onPress={toggleFavorite}>
                 <FontAwesome
-                    name={isFavorited ? "heart" : "heart-o"}
-                    size={20}
-                    color={isFavorited ? "#feff5f" : "#ccc"}
-                  />
+                  name={isFavorited ? "heart" : "heart-o"}
+                  size={20}
+                  color={isFavorited ? "#feff5f" : "#ccc"}
+                />
               </MediaButton>
+
+              {isCasting && castIconAvailable && (
+                <MediaButton onPress={onOpenDlnaDeviceModal}>
+                  <MonitorSmartphone color="white" size={24} />
+                </MediaButton>
+              )}
             </View>
           </View>
         </View>
       )}
+
       {showLockControls && (
         <View style={styles.lockBottomBarContainer}>
-          <View style={{...styles.progressBarContainer, marginTop: 0}}>
+          <View style={{ ...styles.progressBarContainer, marginTop: 0 }}>
             <View style={styles.progressBarBackground} />
-            <View
-              style={[
-                styles.bufferedBarFilled,
-                {
-                  width: `${bufferedPosition * 100}%`,
-                },
-              ]}
-            />
+            <View style={[styles.bufferedBarFilled, { width: `${bufferedPosition * 100}%` }]} />
             <View
               style={[
                 styles.progressBarFilled,
-                {
-                  width: `${(isSeeking ? seekPosition : progressPosition) * 100}%`,
-                },
+                { width: `${(isSeeking ? seekPosition : progressPosition) * 100}%` },
               ]}
             />
             <Pressable style={styles.progressBarTouchable} />
@@ -298,20 +333,6 @@ const styles = StyleSheet.create({
     top: -10,
     zIndex: 10,
   },
-  controlButton: {
-    padding: 10,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  resolutionText: {
-    color: "white",
-    fontSize: 16,
-    fontWeight: "bold",
-    backgroundColor: "rgba(0,0,0,0.5)",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
   topTitleText: {
     color: "white",
     fontSize: 16,
@@ -320,7 +341,7 @@ const styles = StyleSheet.create({
   },
   topLeftContainer: {
     position: "absolute",
-    top:20,
+    top: 20,
     left: 10,
     display: 'flex',
     flexDirection: 'row',
@@ -340,12 +361,23 @@ const styles = StyleSheet.create({
     display: 'flex',
     flexDirection: 'row',
     alignItems: 'center',
-    top:20,
+    top: 20,
     right: 10,
+  },
+  castButton: {
+    minWidth: 48,
+    minHeight: 48,
+    padding: 12,
+    marginLeft: 4,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   lockContainer: {
     position: "absolute",
-    left:0,
+    left: 0,
     top: '50%',
     marginTop: -35,
     zIndex: 999,
@@ -355,5 +387,5 @@ const styles = StyleSheet.create({
     bottom: 0,
     width: '100%',
     justifyContent: "space-between",
-  }
+  },
 });
