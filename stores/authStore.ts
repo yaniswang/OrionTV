@@ -2,7 +2,7 @@ import { create } from "zustand";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { api } from "@/services/api";
 import { useSettingsStore } from "./settingsStore";
-import Toast from "react-native-toast-message";
+import Toast from "@/utils/Toast";
 import Logger from "@/utils/Logger";
 
 const logger = Logger.withTag('AuthStore');

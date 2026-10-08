@@ -2,7 +2,7 @@
 import * as FileSystem from 'expo-file-system';
 import * as IntentLauncher from 'expo-intent-launcher';
 // import * as Device from 'expo-device';
-import Toast from 'react-native-toast-message';
+import Toast from '@/utils/Toast';
 import { version as currentVersion } from '../package.json';
 import { UPDATE_CONFIG } from '../constants/UpdateConfig';
 import Logger from '@/utils/Logger';

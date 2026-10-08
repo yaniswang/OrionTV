@@ -71,6 +71,11 @@ export const usePlaybackController = () => {
     const detail = useDetailStore.getState().detail;
     if (detail?.source === item.source && detail?.id === item.id) return;
 
+    // 切源前抓取统一续播快照；本地与投屏使用同一份位置和播放状态。
+    const casting = isCasting;
+    const resumePosition = status.isLoaded ? status.positionMillis : undefined;
+    const resumePlaying = status.isPlaying;
+
     await useDetailStore.getState().setDetail(item);
     const player = usePlayerStore.getState();
     const episodeIndex = Math.min(
@@ -85,15 +90,13 @@ export const usePlaybackController = () => {
       year: item.year || '',
       stype: item.episodes.length > 1 ? 'tv' : 'movie',
       episodeIndex,
-      position: isCasting ? 0 : player.status.isLoaded ? player.status.positionMillis : undefined,
+      position: resumePosition,
     });
-    if (isCasting) {
-      // 换源沿用当前投屏进度与播放状态，不从头开始。
+    if (casting) {
       // 不阻塞 selectSource，保持和本地一致：弹窗关闭后再显示投屏加载提示。
-      const castState = useDlnaStore.getState();
       void syncCastMedia({
-        positionMillis: castState.positionMillis,
-        play: castState.isPlaying,
+        positionMillis: resumePosition ?? 0,
+        play: resumePlaying,
       });
     }
   };

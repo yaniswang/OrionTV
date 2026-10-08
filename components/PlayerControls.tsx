@@ -16,10 +16,10 @@ import {
   Cast,
   Power,
   MonitorSmartphone,
+  Heart,
 } from "lucide-react-native";
 import { ThemedText } from "@/components/ThemedText";
 import { MediaButton } from "@/components/MediaButton";
-import { FontAwesome } from "@expo/vector-icons";
 import { StyledButton } from "./StyledButton";
 import usePlayerStore from "@/stores/playerStore";
 import useDetailStore from "@/stores/detailStore";
@@ -28,6 +28,7 @@ import { Battery } from '@brightlayer-ui/react-native-progress-icons';
 import { useBatteryLevel, useBatteryState, BatteryState } from 'expo-battery';
 import { format } from 'date-fns';
 import { usePlaybackController } from '@/hooks/usePlaybackController';
+import { buildPlaybackTitle } from '@/utils/PlaybackTitleUtils';
 
 interface PlayerControlsProps {
   showControls: boolean;
@@ -82,6 +83,12 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
   const currentEpisodeTitle = currentEpisode?.title;
   const currentSource = resources.find((r) => r.source === detail?.source);
   const currentSourceName = currentSource?.source_name;
+  const displayTitle = buildPlaybackTitle({
+    title: videoTitle,
+    episodeCount: episodes.length,
+    episodeTitle: currentEpisodeTitle,
+    sourceName: currentSourceName,
+  });
   const hasNextEpisode = currentEpisodeIndex < (episodes.length || 0) - 1;
 
   const formatTime = (milliseconds: number) => {
@@ -104,6 +111,7 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
   const durationMillis = status.durationMillis || 0;
   const seekPositionMillis = seekPosition * durationMillis;
   const castIconAvailable = !Platform.isTV && (Platform.OS === 'android' || Platform.OS === 'ios');
+  const batteryPercent = batteryLevel >= 0 ? Math.round(batteryLevel * 100) : null;
 
   const onIntroPress = () => {
     setIntroEndTime(isCasting ? status.positionMillis : undefined);
@@ -124,25 +132,30 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
             <ChevronLeft color="white" size={26} />
           </Pressable>
         )}
-        <Text style={styles.topTitleText}>
-          {videoTitle} {episodes.length > 1 && currentEpisodeTitle ? `- ${currentEpisodeTitle}` : ""}{" "}
-          {currentSourceName ? `(${currentSourceName})` : ""}
-        </Text>
+        <Text style={styles.topTitleText}>{displayTitle}</Text>
         {detail?.useProxy && <Send color="#00bb5e" size={18} />}
       </View>
 
+      <View style={styles.topCenterContainer} pointerEvents="none">
+        <Text style={styles.topCenterTimeText}>{format(new Date(), 'HH:mm')}</Text>
+      </View>
+
       <View style={styles.topRightContainer}>
-        <Text style={styles.topTimeText}>{format(new Date(), 'HH:mm')}</Text>
         {!Platform.isTV && (
-          <Battery
-            percent={batteryLevel * 100}
-            size={30}
-            color={'#00bb5ea0'}
-            charging={batteryState === BatteryState.CHARGING}
-            outlined={false}
-          />
+          <>
+            {batteryPercent !== null && (
+              <Text style={styles.batteryPercentText}>{batteryPercent}%</Text>
+            )}
+            <Battery
+              percent={batteryPercent ?? 0}
+              size={30}
+              color={'#00bb5ea0'}
+              charging={batteryState === BatteryState.CHARGING}
+              outlined={false}
+            />
+          </>
         )}
-        {castIconAvailable && !(showLockControls && isCasting) && (
+        {castIconAvailable && !showLockControls && (
           <Pressable
             onPress={() => void (isCasting ? disableCast({ restoreLocal: true, stopRemote: true }) : enableCast())}
             style={styles.castButton}
@@ -228,10 +241,10 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
               </MediaButton>
 
               <MediaButton onPress={toggleFavorite}>
-                <FontAwesome
-                  name={isFavorited ? "heart" : "heart-o"}
-                  size={20}
-                  color={isFavorited ? "#feff5f" : "#ccc"}
+                <Heart
+                  size={24}
+                  color={isFavorited ? "#feff5f" : "white"}
+                  fill={isFavorited ? "#feff5f" : "transparent"}
                 />
               </MediaButton>
 
@@ -278,7 +291,7 @@ const styles = StyleSheet.create({
     width: '100%',
     backgroundColor: "rgba(0, 0, 0, 0.4)",
     justifyContent: "space-between",
-    padding: 20,
+    padding: 16,
   },
   bottomControlsContainer: {
     width: "100%",
@@ -291,9 +304,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    gap: 10,
+    gap: 6,
     flexWrap: "wrap",
-    marginTop: 15,
+    marginTop: 10,
   },
   progressBarContainer: {
     width: "100%",
@@ -343,6 +356,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: 20,
     left: 10,
+    height: 48,
     display: 'flex',
     flexDirection: 'row',
     alignItems: 'center',
@@ -350,11 +364,26 @@ const styles = StyleSheet.create({
   topBackButton: {
     padding: 5,
   },
-  topTimeText: {
+  topCenterContainer: {
+    position: "absolute",
+    top: 20,
+    left: 0,
+    right: 0,
+    height: 48,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  topCenterTimeText: {
     color: "white",
     fontSize: 16,
     fontWeight: "bold",
-    marginRight: 5,
+    lineHeight: 48,
+  },
+  batteryPercentText: {
+    color: "white",
+    fontSize: 14,
+    fontWeight: "bold",
+    marginRight: 4,
   },
   topRightContainer: {
     position: "absolute",
@@ -363,6 +392,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     top: 20,
     right: 10,
+    minHeight: 48,
   },
   castButton: {
     minWidth: 48,

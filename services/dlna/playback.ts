@@ -88,6 +88,26 @@ export function shouldHandleRemoteTerminalState(
 }
 
 /**
+ * 播放确认前，STOPPED/NO_MEDIA_PRESENT 可能只是设备刚订阅时补发的旧状态；
+ * 此时不能据此停止等待位置推进。
+ */
+export function shouldIgnoreUnconfirmedTerminalState(
+  transportState: DLNATransportState,
+  playbackConfirmed: boolean,
+): boolean {
+  if (playbackConfirmed) return false;
+  return transportState === 'STOPPED' || transportState === 'NO_MEDIA_PRESENT';
+}
+
+/** 标准 TransportState=PLAYING 可作为播放已开始的确认；位置推进作为另一条确认路径。 */
+export function shouldConfirmPlaybackFromTransportState(
+  transportState: DLNATransportState,
+  playbackConfirmed: boolean,
+): boolean {
+  return !playbackConfirmed && transportState === 'PLAYING';
+}
+
+/**
  * 被控端在缓冲阶段就可能上报 PLAYING，只有再次采样到更大的播放位置，
  * 才能确认远端真正开始播放。
  */

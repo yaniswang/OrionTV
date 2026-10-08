@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Toast from 'react-native-toast-message';
+import Toast from '@/utils/Toast';
 import { DlnaController } from '@/services/dlna/control';
 import { startDlnaDiscovery, type DLNADiscoveryHandle } from '@/services/dlna/discovery';
 import { subscribeToDlnaEvents, type DLNAEventSubscription } from '@/services/dlna/events';
@@ -20,9 +20,13 @@ import {
   isRemotePositionAtEnd,
   resolveRemoteDuration,
   shouldApplyRemotePosition,
+  shouldConfirmPlaybackFromTransportState,
   shouldHandleRemoteTerminalState,
+  shouldIgnoreUnconfirmedTerminalState,
 } from '@/services/dlna/playback';
+import { buildPlaybackTitle } from '@/utils/PlaybackTitleUtils';
 import Logger from '@/utils/Logger';
+import { notifyPlaybackSkip } from '@/utils/PlaybackSkipNotice';
 
 const logger = Logger.withTag('DLNA');
 const LAST_DEVICE_KEY = 'oriontv_dlna_last_device';
@@ -33,6 +37,8 @@ const POSITION_POLL_INTERVAL_MS = 500;
 /** 切换投屏媒体后等待远端确认播放的加载提示最长展示时间。 */
 const MEDIA_LOADING_TIMEOUT_MS = 60000;
 const REMOTE_POSITION_RANGE_TOLERANCE_MS = 2000;
+/** 新媒体的停止事件与旧媒体切换事件之间允许出现的短暂窗口。 */
+const MEDIA_TRANSITION_TERMINAL_GRACE_MS = 3000;
 
 interface LocalPlaybackSnapshot {
   positionMillis: number;
@@ -88,6 +94,8 @@ let terminalSyncBusy = false;
 let pendingAutoConnectId: string | null = null;
 let autoConnectTriggered = false;
 let sessionId = 0;
+let mediaSyncGeneration = 0;
+let mediaTransitionUntil = 0;
 let mediaLoadStartedAt = 0;
 let expectedRemoteDurationMillis = 0;
 let lastSyncedUri: string | null = null;
@@ -116,16 +124,21 @@ function resolveIntroPosition(positionMillis: number): number {
 
 function getCastMetadata(): { title: string; coverUrl?: string } {
   const player = usePlayerStore.getState();
-  const detail = useDetailStore.getState().detail;
+  const detailState = useDetailStore.getState();
+  const detail = detailState.detail;
   const index = player.currentEpisodeIndex;
-  const episode = player.episodes[index] ?? selectCurrentEpisode(player);
+  const episode = player.episodes[index];
   const fallbackTitle = episode?.title || detail?.title || 'OrionTV';
   if (!detail) return { title: fallbackTitle };
 
-  const isSeries = detail.episodes.length > 1;
-  const episodeNumber = Math.max(1, index + 1);
+  const sourceName = detailState.sources.find((item) => item.source === detail.source)?.source_name;
   return {
-    title: isSeries ? `${detail.title} 第${episodeNumber}集` : detail.title,
+    title: buildPlaybackTitle({
+      title: detail.title,
+      episodeCount: detail.episodes.length,
+      episodeTitle: episode?.title,
+      sourceName,
+    }),
     coverUrl: detail.poster || undefined,
   };
 }
@@ -311,6 +324,7 @@ const useDlnaStore = create<DLNAState>((set, get) => {
     if (positionMillis < durationMillis - outroStartTime) return false;
 
     skipOutroBusy = true;
+    notifyPlaybackSkip('outro');
     void get().playEpisode(player.currentEpisodeIndex + 1).finally(() => {
       skipOutroBusy = false;
     });
@@ -325,7 +339,7 @@ const useDlnaStore = create<DLNAState>((set, get) => {
     const pollState = get();
     // 等待确认开始播放时不能依赖 isPlaying：远端缓冲会先发 TRANSITIONING，
     // 若此时停掉轮询就永远等不到播放确认。
-    const awaitingPlayback = !pollState.playbackConfirmed && pollState.mediaLoading;
+    const awaitingPlayback = !pollState.playbackConfirmed;
     if (!pollState.isPlaying && !awaitingPlayback) return;
     if (pollState.isSeeking) return;
     positionPollBusy = true;
@@ -340,7 +354,7 @@ const useDlnaStore = create<DLNAState>((set, get) => {
       }
       const position = await activeController.getPositionInfo();
       if (session !== sessionId || controller !== activeController) return;
-      const stillAwaitingPlayback = !get().playbackConfirmed && get().mediaLoading;
+      const stillAwaitingPlayback = !get().playbackConfirmed;
       if (!get().isPlaying && !stillAwaitingPlayback) return;
 
       const nextDurationMillis = Math.max(position.trackDurationMillis, get().durationMillis);
@@ -354,15 +368,28 @@ const useDlnaStore = create<DLNAState>((set, get) => {
       // 被控端缓冲阶段就可能报 PLAYING：
       // 提供可用位置时，等 RelTime 真正推进才算开始播放；
       // 位置不可用（NOT_IMPLEMENTED 或超出时长）时，只能接受 PLAYING。
-      if (
-        !get().playbackConfirmed &&
-        (transportState === 'PLAYING' || transportState === 'UNKNOWN')
-      ) {
-        if (!positionUsable) {
-          set({ playbackConfirmed: true, playbackEstablished: true });
+      if (!get().playbackConfirmed) {
+        if (
+          positionUsable &&
+          hasRemotePlaybackStarted(positionProgressAnchorMillis, position.positionMillis)
+        ) {
+          set({
+            playbackConfirmed: true,
+            playbackEstablished: true,
+            transportState: 'PLAYING',
+            isPlaying: true,
+          });
           endMediaLoading();
-        } else if (hasRemotePlaybackStarted(positionProgressAnchorMillis, position.positionMillis)) {
-          set({ playbackConfirmed: true, playbackEstablished: true });
+        } else if (
+          !positionUsable &&
+          (transportState === 'PLAYING' || transportState === 'UNKNOWN')
+        ) {
+          set({
+            playbackConfirmed: true,
+            playbackEstablished: true,
+            transportState: 'PLAYING',
+            isPlaying: true,
+          });
           endMediaLoading();
         } else {
           positionProgressAnchorMillis = position.positionMillis;
@@ -471,6 +498,8 @@ const useDlnaStore = create<DLNAState>((set, get) => {
     options: { autoPlay?: boolean } = {},
   ) => {
     sessionId += 1;
+    mediaSyncGeneration += 1;
+    mediaTransitionUntil = 0;
     stopPositionPolling();
     endMediaLoading();
     positionProgressAnchorMillis = null;
@@ -554,7 +583,17 @@ const useDlnaStore = create<DLNAState>((set, get) => {
         if (!controller) return;
 
         const previous = get();
-        const nextTransportState = update.transportState ?? previous.transportState;
+        const reportedTransportState = update.transportState;
+        const inMediaTransition = Date.now() < mediaTransitionUntil;
+        const ignoreTransitionTerminal = !!reportedTransportState &&
+          inMediaTransition &&
+          (reportedTransportState === 'STOPPED' || reportedTransportState === 'NO_MEDIA_PRESENT');
+        const ignoreUnconfirmedTerminal = ignoreTransitionTerminal ||
+          (!!reportedTransportState &&
+            shouldIgnoreUnconfirmedTerminalState(reportedTransportState, previous.playbackConfirmed));
+        const nextTransportState = ignoreUnconfirmedTerminal
+          ? previous.transportState
+          : reportedTransportState ?? previous.transportState;
 
         const durationMillis = update.durationMillis !== undefined
           ? resolveRemoteDuration(
@@ -564,10 +603,13 @@ const useDlnaStore = create<DLNAState>((set, get) => {
               expectedRemoteDurationMillis,
             )
           : previous.durationMillis;
-        const nextIsPlaying = update.transportState ? nextTransportState === 'PLAYING' : previous.isPlaying;
-        // 设备在缓冲阶段也会报 PLAYING，这里不能据此确认已开始播放；
-        // playbackConfirmed 只由位置推进确认，避免加载提示被提前关掉或永久卡住。
-        const nextPlaybackConfirmed = previous.playbackConfirmed;
+        const nextIsPlaying = reportedTransportState && !ignoreUnconfirmedTerminal ? nextTransportState === 'PLAYING' : previous.isPlaying;
+        // PLAYING 事件和位置推进都是标准可用的播放确认路径；任一确认后结束加载提示。
+        const playbackConfirmedByState = shouldConfirmPlaybackFromTransportState(
+          nextTransportState,
+          previous.playbackConfirmed,
+        );
+        const nextPlaybackConfirmed = previous.playbackConfirmed || playbackConfirmedByState;
         // 位置只由 GetPositionInfo 轮询更新，事件里不携带位置，避免两个来源互相覆盖。
         const nextPosition = previous.isSeeking && durationMillis > 0
           ? previous.seekPosition * durationMillis
@@ -578,10 +620,12 @@ const useDlnaStore = create<DLNAState>((set, get) => {
           transportState: nextTransportState,
           isPlaying: nextIsPlaying,
           playbackConfirmed: nextPlaybackConfirmed,
+          playbackEstablished: previous.playbackEstablished || playbackConfirmedByState,
           positionMillis: nextPosition,
           durationMillis,
           error: null,
         });
+        if (playbackConfirmedByState) endMediaLoading();
         if (maybeSkipOutro(nextPosition, durationMillis)) return;
 
         if (nextIsPlaying) {
@@ -595,7 +639,7 @@ const useDlnaStore = create<DLNAState>((set, get) => {
           shouldHandleRemoteTerminalState(
             nextTransportState,
             previous.playbackConfirmed,
-            suppressAutoAdvance,
+            suppressAutoAdvance || inMediaTransition,
           )
         ) {
           void syncTerminalRemoteState(
@@ -620,6 +664,7 @@ const useDlnaStore = create<DLNAState>((set, get) => {
     activeController: DlnaController,
     targetPositionMillis: number,
     session: number,
+    isCurrent: () => boolean = () => true,
   ): Promise<number> => {
     const deadline = Date.now() + REMOTE_DURATION_READY_TIMEOUT_MS;
     let latestDuration = 0;
@@ -628,10 +673,11 @@ const useDlnaStore = create<DLNAState>((set, get) => {
       !isRemoteDurationReady(latestDuration, targetPositionMillis) &&
       Date.now() < deadline
     ) {
-      if (session !== sessionId) return latestDuration;
+      if (session !== sessionId || !isCurrent()) return latestDuration;
       try {
         latestDuration = (await activeController.getPositionInfo()).trackDurationMillis;
       } catch {}
+      if (session !== sessionId || !isCurrent()) return latestDuration;
       if (isRemoteDurationReady(latestDuration, targetPositionMillis)) break;
       await delay(REMOTE_DURATION_RETRY_INTERVAL_MS);
     }
@@ -648,6 +694,7 @@ const useDlnaStore = create<DLNAState>((set, get) => {
     let effectivePosition = startPosition;
     let nextController: DlnaController | null = null;
     if (current.connectingDeviceId) return;
+    mediaTransitionUntil = Date.now() + MEDIA_TRANSITION_TERMINAL_GRACE_MS;
     await stopEventSubscription();
     set({
       phase: 'connecting',
@@ -690,6 +737,9 @@ const useDlnaStore = create<DLNAState>((set, get) => {
       await nextController.play(String(get().playbackRate));
 
       effectivePosition = resolveIntroPosition(effectivePosition);
+      if (startPosition <= 0 && effectivePosition > 0) {
+        notifyPlaybackSkip('intro');
+      }
       if (effectivePosition > 0) {
         const remoteDuration = await waitForRemoteDuration(nextController, effectivePosition, session);
         if (session !== sessionId) {
@@ -900,7 +950,10 @@ const useDlnaStore = create<DLNAState>((set, get) => {
     },
 
     syncCurrentMedia: async (options = {}) => {
-      if (!controller || get().phase !== 'connected') return;
+      const activeController = controller;
+      if (!activeController || get().phase !== 'connected') return;
+      const session = sessionId;
+      const initialMediaSyncGeneration = mediaSyncGeneration;
       const requestedPositionMillis = options.positionMillis ?? 0;
       const positionMillis = resolveIntroPosition(requestedPositionMillis);
       const shouldPlay = options.play ?? true;
@@ -908,14 +961,25 @@ const useDlnaStore = create<DLNAState>((set, get) => {
       if (!episode?.url) return;
       let loadingGeneration: number | null = null;
       let awaitingPlaybackConfirmation = false;
+      let syncGeneration = 0;
+      const isCurrentSync = () =>
+        session === sessionId &&
+        controller === activeController &&
+        (syncGeneration > 0
+          ? syncGeneration === mediaSyncGeneration
+          : mediaSyncGeneration === initialMediaSyncGeneration);
       try {
         set({ isSeeking: false, seekPosition: 0 });
         const uri = await resolveCastUri(episode.url);
+        if (!isCurrentSync()) return;
         const metadata = getCastMetadata();
         logger.info(`切换投屏地址: ${uri}`);
         if (!options.force && lastSyncedUri === uri && requestedPositionMillis === 0 && shouldPlay) {
           return;
         }
+
+        syncGeneration = ++mediaSyncGeneration;
+        mediaTransitionUntil = Date.now() + MEDIA_TRANSITION_TERMINAL_GRACE_MS;
         loadingGeneration = beginMediaLoading();
         set({ playbackConfirmed: false });
         positionProgressAnchorMillis = null;
@@ -923,23 +987,38 @@ const useDlnaStore = create<DLNAState>((set, get) => {
         suppressAutoAdvance = true;
         expectedRemoteDurationMillis = 0;
         mediaLoadStartedAt = Date.now();
-        await controller.setAvTransportUri(uri, metadata.title, 'auto', metadata.coverUrl);
+        await activeController.setAvTransportUri(uri, metadata.title, 'auto', metadata.coverUrl);
+        if (!isCurrentSync()) return;
+
         let effectivePosition = positionMillis;
         if (positionMillis > 0) {
-          await controller.play(String(get().playbackRate));
-          const remoteDuration = await waitForRemoteDuration(controller, positionMillis, sessionId);
+          if (requestedPositionMillis <= 0) {
+            notifyPlaybackSkip('intro');
+          }
+          await activeController.play(String(get().playbackRate));
+          if (!isCurrentSync()) return;
+          const remoteDuration = await waitForRemoteDuration(
+            activeController,
+            positionMillis,
+            session,
+            isCurrentSync,
+          );
+          if (!isCurrentSync()) return;
           if (isRemoteDurationReady(remoteDuration, positionMillis)) {
-            await controller.seekTo(positionMillis);
+            await activeController.seekTo(positionMillis);
+            if (!isCurrentSync()) return;
           } else {
             effectivePosition = 0;
             Toast.show({ type: 'info', text1: '电视端未返回完整时长', text2: '已从视频开头播放' });
           }
         }
         if (shouldPlay) {
-          await controller.play(String(get().playbackRate));
+          await activeController.play(String(get().playbackRate));
+          if (!isCurrentSync()) return;
           awaitingPlaybackConfirmation = true;
         } else {
-          await controller.pause();
+          await activeController.pause();
+          if (!isCurrentSync()) return;
         }
         set({
           transportState: shouldPlay ? 'PLAYING' : 'PAUSED_PLAYBACK',
@@ -948,21 +1027,23 @@ const useDlnaStore = create<DLNAState>((set, get) => {
           isPlaying: shouldPlay,
           error: null,
         });
-        if (shouldPlay) startPositionPolling(sessionId);
+        if (shouldPlay) startPositionPolling(session);
         else stopPositionPolling();
       } catch (error) {
+        if (!isCurrentSync()) return;
         if (loadingGeneration !== null) endMediaLoading(loadingGeneration);
         const message = error instanceof Error ? error.message : '切换投屏视频失败';
         set({ error: message });
         Toast.show({ type: 'error', text1: message });
       } finally {
-        if (loadingGeneration !== null && !awaitingPlaybackConfirmation) {
-          endMediaLoading(loadingGeneration);
+        if (syncGeneration > 0 && isCurrentSync()) {
+          if (loadingGeneration !== null && !awaitingPlaybackConfirmation) {
+            endMediaLoading(loadingGeneration);
+          }
+          suppressAutoAdvance = false;
         }
-        suppressAutoAdvance = false;
       }
     },
-
     togglePlayPause: async () => {
       if (!controller || get().phase !== 'connected') return;
       try {

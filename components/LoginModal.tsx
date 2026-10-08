@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Modal, View, TextInput, StyleSheet, ActivityIndicator, Alert, Keyboard, InteractionManager } from "react-native";
 import { usePathname } from "expo-router";
-import Toast from "react-native-toast-message";
+import Toast from "@/utils/Toast";
 import useAuthStore from "@/stores/authStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import useHomeStore from "@/stores/homeStore";

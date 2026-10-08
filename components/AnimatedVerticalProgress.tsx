@@ -10,24 +10,28 @@ export const AnimatedVerticalProgress = ({ progress, forceShow }) => {
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
+    Animated.timing(animatedHeight, {
+      toValue: progress * 100, // 对应高度百分比
+      duration: 500,
+      useNativeDriver: false, // 布局属性高度不支持原生驱动
+    }).start();
+  }, [progress]);
+
+  useEffect(() => {
     if (forceShow == -1) {
+      setIsVisible(false);
       return;
     }
-    Animated.timing(animatedHeight, {
-        toValue: progress * 100, // 对应高度百分比
-        duration: 500,
-        useNativeDriver: false, // 布局属性高度不支持原生驱动
-      }).start();
     setIsVisible(true);
     if (showTimer.current) clearTimeout(showTimer.current);
     showTimer.current = setTimeout(() => setIsVisible(false), 1000);
     return () => {
       if (showTimer.current) clearTimeout(showTimer.current);
     }
-  }, [progress, forceShow]);
+  }, [forceShow]);
 
   return (
-    <View style={{ opacity: forceShow && isVisible ? 1 : 0, width: 15, height: 150, backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: 8, justifyContent: 'flex-end' }}>
+    <View style={{ opacity: forceShow !== -1 && isVisible ? 1 : 0, width: 15, height: 150, backgroundColor: 'rgba(255,255,255,0.3)', borderRadius: 8, justifyContent: 'flex-end' }}>
       <Animated.View style={{
         width: '100%',
         borderRadius: 8,

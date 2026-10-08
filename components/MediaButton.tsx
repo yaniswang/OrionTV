@@ -15,8 +15,8 @@ export const MediaButton = ({ timeLabel, ...props }: StyledButtonProps) => (
 
 const styles = StyleSheet.create({
   mediaControlButton: {
-    padding: 12,
-    minWidth: 80,
+    padding: 8,
+    minWidth: 64,
   },
   timeLabel: {
     position: "absolute",

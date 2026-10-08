@@ -4,7 +4,8 @@ import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
 import { Platform, View, StyleSheet } from "react-native";
-import Toast from "react-native-toast-message";
+import { ToastPosition, Toasts } from '@backpackapp-io/react-native-toast';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import SystemSetting from "react-native-system-setting";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
@@ -90,23 +91,30 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
-        <View style={styles.container}>
-          <Stack>
-            <Stack.Screen name="index" options={{ headerShown: false }} />
-            <Stack.Screen name="detail" options={{ headerShown: false }} />
-            {Platform.OS !== "web" && <Stack.Screen name="play" options={{ headerShown: false }} />}
-            <Stack.Screen name="search" options={{ headerShown: false }} />
-            <Stack.Screen name="live" options={{ headerShown: false }} />
-            <Stack.Screen name="settings" options={{ headerShown: false }} />
-            <Stack.Screen name="favorites" options={{ headerShown: false }} />
-            <Stack.Screen name="+not-found" />
-          </Stack>
-        </View>
-        <Toast />
-        <LoginModal />
-        <UpdateModal />
-      </ThemeProvider>
+      <GestureHandlerRootView style={styles.container}>
+        <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
+          <View style={styles.container}>
+            <Stack>
+              <Stack.Screen name="index" options={{ headerShown: false }} />
+              <Stack.Screen name="detail" options={{ headerShown: false }} />
+              {Platform.OS !== "web" && <Stack.Screen name="play" options={{ headerShown: false }} />}
+              <Stack.Screen name="search" options={{ headerShown: false }} />
+              <Stack.Screen name="live" options={{ headerShown: false }} />
+              <Stack.Screen name="settings" options={{ headerShown: false }} />
+              <Stack.Screen name="favorites" options={{ headerShown: false }} />
+              <Stack.Screen name="+not-found" />
+            </Stack>
+          </View>
+          <Toasts
+            defaultPosition={ToastPosition.TOP}
+            defaultDuration={4000}
+            globalLimit={3}
+            overrideDarkMode={false}
+          />
+          <LoginModal />
+          <UpdateModal />
+        </ThemeProvider>
+      </GestureHandlerRootView>
     </SafeAreaProvider>
   );
 }

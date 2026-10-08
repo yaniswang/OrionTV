@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import Toast from "react-native-toast-message";
+import Toast from "@/utils/Toast";
 import { VideoRef, OnLoadData, OnProgressData, OnPlaybackStateChangedData } from 'react-native-video';
 import { RefObject } from "react";
 import { PlayRecord, PlayRecordManager, PlayerSettingsManager, FavoriteManager } from "@/services/storage";
@@ -7,6 +7,7 @@ import useDetailStore, { episodesSelectorBySource } from "./detailStore";
 import { mapEpisodesWithLocalProxy } from "@/services/localProxy";
 import { useSettingsStore } from "@/stores/settingsStore";
 import Logger from '@/utils/Logger';
+import { notifyPlaybackSkip } from '@/utils/PlaybackSkipNotice';
 
 const logger = Logger.withTag('PlayerStore');
 
@@ -142,7 +143,8 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       isDetialLoading: true,
     });
     
-    const needsDetailInit = !detail || !episodes || episodes.length === 0 || detail.title !== title || detail.source !== source || !useDetailStore.getState().allSourcesLoaded;
+    // 切源优先使用 searchResults 中已有的数据，不能因后台测速未完成而重新 init 并重排源列表。
+    const needsDetailInit = !detail || !episodes || episodes.length === 0 || detail.title !== title || detail.source !== source;
     logger.info(`[PERF] Detail check - needsInit: ${needsDetailInit}, hasDetail: ${!!detail}, episodesCount: ${episodes?.length || 0}`);
     
     if (needsDetailInit) {
@@ -576,7 +578,11 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     try {
       const { videoRef, initialPosition, introEndTime, status  } = get();
       // 1. 先设置位置（如果需要）
+      const skipIntro = !initialPosition && !!introEndTime && introEndTime > 0;
       const jumpPosition = initialPosition || introEndTime || 0;
+      if (skipIntro) {
+        notifyPlaybackSkip('intro');
+      }
       if (jumpPosition > 0) {
         logger.info(`[PERF] Setting initial position to ${jumpPosition}ms`);
         await videoRef?.current?.seek(jumpPosition / 1000);
@@ -697,6 +703,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       positionMillis >= durationMillis - outroStartTime
     ) {
       if (currentEpisodeIndex < episodes.length - 1) {
+        notifyPlaybackSkip('outro');
         playEpisode(currentEpisodeIndex + 1);
         return; // Stop further processing for this update
       }

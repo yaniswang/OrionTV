@@ -13,7 +13,7 @@ import { SeekingBar } from "@/components/SeekingBar";
 import VideoLoadingAnimation from "@/components/VideoLoadingAnimation";
 import useDetailStore from "@/stores/detailStore";
 import { useTVRemoteHandler } from "@/hooks/useTVRemoteHandler";
-import Toast from "react-native-toast-message";
+import Toast from "@/utils/Toast";
 import usePlayerStore, { selectCurrentEpisode } from "@/stores/playerStore";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { useVideoHandlers } from "@/hooks/useVideoHandlers";
@@ -185,7 +185,6 @@ export default function PlayScreen() {
     previewSeekBy,
     commitSeek,
     playEpisode,
-    syncCurrentMedia,
     disableCast,
     getVolume: getPlaybackVolume,
     setVolume: setPlaybackVolume,
@@ -194,6 +193,32 @@ export default function PlayScreen() {
   } = usePlaybackController();
 
 
+  const previousCastingRef = useRef(isCasting);
+
+  // 退出投屏后重新读取本地音量和亮度，更新显示值并保持进度条隐藏，作为下一次手势的初始值。
+  useEffect(() => {
+    const wasCasting = previousCastingRef.current;
+    previousCastingRef.current = isCasting;
+    if (!wasCasting || isCasting) return;
+
+    void Promise.allSettled([
+      getPlaybackVolume(),
+      getPlaybackBrightness(),
+    ]).then(([volumeResult, brightnessResult]) => {
+      if (volumeResult.status === 'fulfilled' && typeof volumeResult.value === 'number') {
+        const nextVolume = Math.round(volumeResult.value * 100) / 100;
+        volumeRef.current = nextVolume;
+        setVolume(nextVolume);
+        setVolumeBarShow(-1);
+      }
+      if (brightnessResult.status === 'fulfilled' && typeof brightnessResult.value === 'number') {
+        const nextBrightness = Math.round(brightnessResult.value * 100) / 100;
+        brightnessRef.current = nextBrightness;
+        setBrightness(nextBrightness);
+        setBrightnessBarShow(-1);
+      }
+    });
+  }, [isCasting, getPlaybackVolume, getPlaybackBrightness]);
   // 切到集数更少的源时，当前集号可能越界，纠正回最后一集。
   // 必须放在 effect 里：渲染期间改状态会触发 React 的 setState-in-render 与 getSnapshot 警告。
   useEffect(() => {
@@ -234,7 +259,6 @@ export default function PlayScreen() {
   }, [isLandscapeMode]);
 
   const dlnaPhase = useDlnaStore((state) => state.phase);
-  const lastCastUrlRef = useRef<string | null>(null);
   const autoOpenedDlnaDeviceModalRef = useRef(false);
 
   useEffect(() => {
@@ -264,20 +288,6 @@ export default function PlayScreen() {
     }
   }, [dlnaPhase, isCasting, showDlnaDeviceModal]);
 
-  useEffect(() => {
-    if (!isCasting) {
-      lastCastUrlRef.current = null;
-      return;
-    }
-    if (dlnaPhase !== 'connected' || !currentEpisode?.url) return;
-    if (lastCastUrlRef.current === currentEpisode.url) return;
-    if (lastCastUrlRef.current === null) {
-      lastCastUrlRef.current = currentEpisode.url;
-      return;
-    }
-    lastCastUrlRef.current = currentEpisode.url;
-    void syncCurrentMedia({ positionMillis: 0, play: true });
-  }, [currentEpisode?.url, dlnaPhase, isCasting, syncCurrentMedia]);
 
   useEffect(() => {
     let previousIp: string | null | undefined;
@@ -429,12 +439,10 @@ export default function PlayScreen() {
         if (volumeResult.status === 'fulfilled' && typeof volumeResult.value === 'number') {
           const nextVolume = Math.round(volumeResult.value * 100) / 100;
           volumeRef.current = nextVolume;
-          setVolume(nextVolume);
         }
         if (brightnessResult.status === 'fulfilled' && typeof brightnessResult.value === 'number') {
           const nextBrightness = Math.round(brightnessResult.value * 100) / 100;
           brightnessRef.current = nextBrightness;
-          setBrightness(nextBrightness);
         }
       } finally {
         lastT_X.current = 0;

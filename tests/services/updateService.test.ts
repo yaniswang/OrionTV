@@ -33,8 +33,11 @@ jest.mock("react-native-blob-util", () => ({
   },
 }));
 
-jest.mock("react-native-toast-message", () => ({
-  show: jest.fn(),
+jest.mock("@/utils/Toast", () => ({
+  __esModule: true,
+  default: {
+    show: jest.fn(),
+  },
 }));
 
 jest.mock("@/utils/Logger", () => ({

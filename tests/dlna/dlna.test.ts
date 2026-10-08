@@ -23,7 +23,9 @@ import {
   isRemotePositionAtEnd,
   resolveRemoteDuration,
   shouldApplyRemotePosition,
+  shouldConfirmPlaybackFromTransportState,
   shouldHandleRemoteTerminalState,
+  shouldIgnoreUnconfirmedTerminalState,
 } from '@/services/dlna/playback';
 import type { DLNADevice } from '@/services/dlna/types';
 import {
@@ -151,10 +153,24 @@ describe('DLNA 时间与 SOAP', () => {
     expect(hasRemotePlaybackStarted(120_000, 120_500)).toBe(true);
     expect(hasRemotePlaybackStarted(120_500, 120_000)).toBe(false);
   });
+  it('标准 PLAYING 状态可直接确认播放已开始', () => {
+    expect(shouldConfirmPlaybackFromTransportState('PLAYING', false)).toBe(true);
+    expect(shouldConfirmPlaybackFromTransportState('TRANSITIONING', false)).toBe(false);
+    expect(shouldConfirmPlaybackFromTransportState('STOPPED', false)).toBe(false);
+    expect(shouldConfirmPlaybackFromTransportState('PLAYING', true)).toBe(false);
+  });
+
   it('手机主动切换媒体时忽略远端停止事件', () => {
     expect(shouldHandleRemoteTerminalState('STOPPED', false, false)).toBe(false);
     expect(shouldHandleRemoteTerminalState('NO_MEDIA_PRESENT', false, false)).toBe(false);
     expect(shouldHandleRemoteTerminalState('STOPPED', true, true)).toBe(false);
+  });
+
+  it('播放确认前忽略终止状态，但不能忽略真实播放状态', () => {
+    expect(shouldIgnoreUnconfirmedTerminalState('STOPPED', false)).toBe(true);
+    expect(shouldIgnoreUnconfirmedTerminalState('NO_MEDIA_PRESENT', false)).toBe(true);
+    expect(shouldIgnoreUnconfirmedTerminalState('PLAYING', false)).toBe(false);
+    expect(shouldIgnoreUnconfirmedTerminalState('STOPPED', true)).toBe(false);
   });
 
   it('已确认播放后远端停止事件仍需处理', () => {

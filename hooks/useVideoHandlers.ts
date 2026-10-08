@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import { ResizeMode, OnLoadData, OnPlaybackStateChangedData, ViewType } from 'react-native-video';
-import Toast from 'react-native-toast-message';
+import Toast from '@/utils/Toast';
 import usePlayerStore from '@/stores/playerStore';
 import Logger from '@/utils/Logger';
 const logger = Logger.withTag('useVideoHandlers');

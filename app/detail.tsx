@@ -9,6 +9,7 @@ import useDetailStore, { EXCELLENT_SEGMENT_RATIO } from "@/stores/detailStore";
 import { SpeedTestIcon } from "@/components/SpeedTestIcon";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { FontAwesome } from "@expo/vector-icons";
+import { Heart } from "lucide-react-native";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { getCommonResponsiveStyles } from "@/utils/ResponsiveStyles";
 import ResponsiveNavigation from "@/components/navigation/ResponsiveNavigation";
@@ -126,10 +127,10 @@ export default function DetailScreen() {
                   {detail.title}
                 </ThemedText>
                 <StyledButton onPress={toggleFavorite} variant="ghost" style={dynamicStyles.favoriteButton}>
-                  <FontAwesome
-                    name={isFavorited ? "heart" : "heart-o"}
-                    size={20}
-                    color={isFavorited ? "#feff5f" : "#ccc"}
+                  <Heart
+                    size={24}
+                    color={isFavorited ? "#feff5f" : "white"}
+                    fill={isFavorited ? "#feff5f" : "transparent"}
                   />
                 </StyledButton>
               </View>
@@ -233,10 +234,10 @@ export default function DetailScreen() {
                   {detail.title}
                 </ThemedText>
                 <StyledButton onPress={toggleFavorite} variant="ghost" style={dynamicStyles.favoriteButton}>
-                  <FontAwesome
-                    name={isFavorited ? "heart" : "heart-o"}
+                  <Heart
                     size={24}
-                    color={isFavorited ? "#feff5f" : "#ccc"}
+                    color={isFavorited ? "#feff5f" : "white"}
+                    fill={isFavorited ? "#feff5f" : "transparent"}
                   />
                 </StyledButton>
               </View>

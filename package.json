@@ -2,7 +2,7 @@
   "name": "OrionTV",
   "private": true,
   "main": "expo-router/entry",
-  "version": "1.4.3",
+  "version": "1.4.4",
   "scripts": {
     "start": "cross-env EXPO_TV=1 EXPO_USE_METRO_WORKSPACE_ROOT=1 expo start",
     "android": "node scripts/run-android.js",
@@ -30,6 +30,7 @@
     "react-native": "npm:react-native-tvos@~0.74.2-0"
   },
   "dependencies": {
+    "@backpackapp-io/react-native-toast": "^0.15.1",
     "@brightlayer-ui/react-native-progress-icons": "^2.2.2",
     "@expo/vector-icons": "^14.0.0",
     "@react-native-async-storage/async-storage": "^2.2.0",
@@ -72,7 +73,6 @@
     "react-native-svg": "^15.12.0",
     "react-native-system-setting": "^1.7.6",
     "react-native-tcp-socket": "^6.0.6",
-    "react-native-toast-message": "^2.3.3",
     "react-native-udp": "4.1.7",
     "react-native-url-polyfill": "^4.0.0",
     "react-native-video": "6.18.0",

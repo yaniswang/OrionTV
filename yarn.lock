@@ -946,6 +946,18 @@
     "@babel/helper-string-parser" "^7.27.1"
     "@babel/helper-validator-identifier" "^7.28.5"
 
+"@backpackapp-io/react-native-toast@^0.13.0":
+  version "0.13.0"
+  resolved "https://registry.yarnpkg.com/@backpackapp-io/react-native-toast/-/react-native-toast-0.13.0.tgz#f53feead8cb9bc6556370ad102e5b748e92a1d90"
+  integrity sha512-kutFSE1vi77ybNV24JSnKQ4WUgWZ+LcYsrdAyl5ztEWGP7FRsfinsuaOrBQwDBGxm0rzMFeKM5K7fRHa/Hvy8A==
+
+"@backpackapp-io/react-native-toast@^0.15.1":
+  version "0.15.1"
+  resolved "https://registry.yarnpkg.com/@backpackapp-io/react-native-toast/-/react-native-toast-0.15.1.tgz#734212ba37a41fa313f29a3ea56be4245dc6784b"
+  integrity sha512-elToeJZaM/NT8JlN9g/VAh1bJE47tkPDiy3MeYOKGI5YEfKBMjFmG+vxaEbfe5QKW1uVW0X9y/SI6kojLeWuSQ==
+  dependencies:
+    "@backpackapp-io/react-native-toast" "^0.13.0"
+
 "@bcoe/v8-coverage@^0.2.3":
   version "0.2.3"
   resolved "https://registry.yarnpkg.com/@bcoe/v8-coverage/-/v8-coverage-0.2.3.tgz#75a2e8b51cb758a7553d6804a5932d7aace75c39"
@@ -8275,11 +8287,6 @@ react-native-tcp-socket@^6.0.6:
   dependencies:
     buffer "^5.4.3"
     eventemitter3 "^4.0.7"
-
-react-native-toast-message@^2.3.3:
-  version "2.3.3"
-  resolved "https://registry.yarnpkg.com/react-native-toast-message/-/react-native-toast-message-2.3.3.tgz#e301508d386a9902ff6b4559ecc6674f8cfdf97a"
-  integrity sha512-4IIUHwUPvKHu4gjD0Vj2aGQzqPATiblL1ey8tOqsxOWRPGGu52iIbL8M/mCz4uyqecvPdIcMY38AfwRuUADfQQ==
 
 react-native-udp@4.1.7:
   version "4.1.7"
