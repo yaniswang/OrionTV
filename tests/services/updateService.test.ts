@@ -63,6 +63,8 @@ describe("UpdateService.checkVersion", () => {
     const assetUrl = "https://github.com/yaniswang/OrionTV/releases/download/v1.4.2/orionTV.1.4.2-universal.apk";
     const json = jest.fn().mockResolvedValue({
       tag_name: "v1.4.2",
+      body: "- 修复投屏问题\n- 修复其它小问题",
+      published_at: "2026-10-08T03:40:39Z",
       assets: [
         {
           name: "orionTV.1.4.2-universal.apk",
@@ -81,6 +83,8 @@ describe("UpdateService.checkVersion", () => {
     expect(versionInfo).toEqual({
       version: "1.4.2",
       downloadUrl: `https://v4.gh-proxy.org/${assetUrl}`,
+      releaseNotes: "- 修复投屏问题\n- 修复其它小问题",
+      publishedAt: "2026-10-08T03:40:39Z",
     });
   });
 });

@@ -12,6 +12,8 @@ interface UpdateState {
   currentVersion: string;
   remoteVersion: string;
   downloadUrl: string;
+  releaseNotes: string;
+  publishedAt: string;
   downloading: boolean;
   downloadProgress: number;
   downloadedPath: string | null;
@@ -41,6 +43,8 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
   currentVersion: updateService.getCurrentVersion(),
   remoteVersion: '',
   downloadUrl: '',
+  releaseNotes: '',
+  publishedAt: '',
   downloading: false,
   downloadProgress: 0,
   downloadedPath: null,
@@ -70,6 +74,8 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
       set({
         remoteVersion: versionInfo.version,
         downloadUrl: versionInfo.downloadUrl,
+        releaseNotes: versionInfo.releaseNotes,
+        publishedAt: versionInfo.publishedAt,
         updateAvailable: isUpdateAvailable,
         lastCheckTime: Date.now(),
         skipVersion,
@@ -188,6 +194,8 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
       error: null,
       showUpdateModal: false,
       isLatestVersion: false, // 重置时也要重置这个状态
+      releaseNotes: '',
+      publishedAt: '',
     });
   },
 }));

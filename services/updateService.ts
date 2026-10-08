@@ -14,6 +14,8 @@ const logger = Logger.withTag('UpdateService');
 interface VersionInfo {
   version: string;
   downloadUrl: string;
+  releaseNotes: string;
+  publishedAt: string;
 }
 
 interface GitHubReleaseAsset {
@@ -23,6 +25,8 @@ interface GitHubReleaseAsset {
 
 interface GitHubRelease {
   tag_name?: string;
+  body?: string;
+  published_at?: string;
   assets?: GitHubReleaseAsset[];
 }
 
@@ -75,6 +79,8 @@ class UpdateService {
         return {
           version: remoteVersion,
           downloadUrl: UPDATE_CONFIG.getDownloadUrl(apkAsset.browser_download_url),
+          releaseNotes: release.body?.trim() ?? '',
+          publishedAt: release.published_at ?? '',
         };
       } catch (e) {
         logger.warn(`checkVersion attempt ${attempt}/${maxRetries}`, e);
