@@ -18,6 +18,7 @@ import {
   isRemoteDurationReady,
   hasRemotePlaybackStarted,
   isRemotePositionAtEnd,
+  isSameRemoteTrackUri,
   resolveRemoteDuration,
   shouldApplyRemotePosition,
   shouldConfirmPlaybackFromTransportState,
@@ -32,6 +33,8 @@ const logger = Logger.withTag('DLNA');
 const LAST_DEVICE_KEY = 'oriontv_dlna_last_device';
 const REMOTE_DURATION_READY_TIMEOUT_MS = 15000;
 const REMOTE_DURATION_RETRY_INTERVAL_MS = 250;
+/** 首次等待总时长超时后，继续在后台等待新媒体就绪并补发恢复点 Seek。 */
+const REMOTE_RESUME_RETRY_TIMEOUT_MS = 60000;
 /** 播放中按标准 GetPositionInfo 同步远端时间，非播放状态不轮询。 */
 const POSITION_POLL_INTERVAL_MS = 500;
 /** 切换投屏媒体后等待远端确认播放的加载提示最长展示时间。 */
@@ -663,6 +666,7 @@ const useDlnaStore = create<DLNAState>((set, get) => {
   const waitForRemoteDuration = async (
     activeController: DlnaController,
     targetPositionMillis: number,
+    expectedTrackUri: string,
     session: number,
     isCurrent: () => boolean = () => true,
   ): Promise<number> => {
@@ -675,7 +679,10 @@ const useDlnaStore = create<DLNAState>((set, get) => {
     ) {
       if (session !== sessionId || !isCurrent()) return latestDuration;
       try {
-        latestDuration = (await activeController.getPositionInfo()).trackDurationMillis;
+        const position = await activeController.getPositionInfo();
+        latestDuration = isSameRemoteTrackUri(position.trackUri, expectedTrackUri)
+          ? position.trackDurationMillis
+          : 0;
       } catch {}
       if (session !== sessionId || !isCurrent()) return latestDuration;
       if (isRemoteDurationReady(latestDuration, targetPositionMillis)) break;
@@ -685,6 +692,38 @@ const useDlnaStore = create<DLNAState>((set, get) => {
     return latestDuration;
   };
 
+  /** 首次等待超时后，在新媒体确实就绪时补发一次恢复点 Seek，避免偶发从 0 播放。 */
+  const restoreRemotePositionWhenReady = async (
+    activeController: DlnaController,
+    targetPositionMillis: number,
+    expectedTrackUri: string,
+    session: number,
+    isCurrent: () => boolean,
+  ): Promise<void> => {
+    const deadline = Date.now() + REMOTE_RESUME_RETRY_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      if (session !== sessionId || !isCurrent()) return;
+      try {
+        const position = await activeController.getPositionInfo();
+        if (session !== sessionId || !isCurrent()) return;
+        if (
+          isSameRemoteTrackUri(position.trackUri, expectedTrackUri) &&
+          isRemoteDurationReady(position.trackDurationMillis, targetPositionMillis)
+        ) {
+          await activeController.seekTo(targetPositionMillis);
+          if (session !== sessionId || !isCurrent()) return;
+          set({
+            positionMillis: targetPositionMillis,
+            durationMillis: position.trackDurationMillis,
+          });
+          logger.info(`电视端时长就绪，已补发恢复点 Seek: ${targetPositionMillis}ms`);
+          return;
+        }
+      } catch {}
+      await delay(REMOTE_DURATION_RETRY_INTERVAL_MS);
+    }
+  };
+
   const connectDevice = async (device: DLNADevice, startPosition: number, shouldPlay: boolean) => {
     const current = get();
     const session = sessionId;
@@ -692,6 +731,7 @@ const useDlnaStore = create<DLNAState>((set, get) => {
     // 首次投屏无论手机当前是否暂停都强制播放；已投屏后切换设备才沿用远端状态。
     const remoteShouldPlay = current.currentDevice ? shouldPlay : true;
     let effectivePosition = startPosition;
+    let retryResumePosition = false;
     let nextController: DlnaController | null = null;
     if (current.connectingDeviceId) return;
     mediaTransitionUntil = Date.now() + MEDIA_TRANSITION_TERMINAL_GRACE_MS;
@@ -741,7 +781,7 @@ const useDlnaStore = create<DLNAState>((set, get) => {
         notifyPlaybackSkip('intro');
       }
       if (effectivePosition > 0) {
-        const remoteDuration = await waitForRemoteDuration(nextController, effectivePosition, session);
+        const remoteDuration = await waitForRemoteDuration(nextController, effectivePosition, uri, session);
         if (session !== sessionId) {
           try { await nextController.stop(); } catch {}
           return;
@@ -754,9 +794,8 @@ const useDlnaStore = create<DLNAState>((set, get) => {
             set({ isSeekSupported: false });
           }
         } else {
-          logger.warn(`电视端未在 ${REMOTE_DURATION_READY_TIMEOUT_MS}ms 内返回完整时长（当前 ${remoteDuration}ms，目标 ${effectivePosition}ms），取消恢复点 Seek`);
-          effectivePosition = 0;
-          Toast.show({ type: 'info', text1: '电视端未返回完整时长', text2: '已从视频开头播放' });
+          logger.warn(`电视端未在 ${REMOTE_DURATION_READY_TIMEOUT_MS}ms 内返回新媒体完整时长（当前 ${remoteDuration}ms，目标 ${effectivePosition}ms），继续后台等待`);
+          retryResumePosition = true;
         }
       }
 
@@ -792,6 +831,15 @@ const useDlnaStore = create<DLNAState>((set, get) => {
       });
       if (remoteShouldPlay) startPositionPolling(session);
       else stopPositionPolling();
+      if (retryResumePosition) {
+        void restoreRemotePositionWhenReady(
+          nextController,
+          effectivePosition,
+          uri,
+          session,
+          () => session === sessionId && controller === nextController,
+        );
+      }
       void startEventSubscription(resolvedDevice, session);
     } catch (error) {
       const message = error instanceof Error ? error.message : '连接电视失败';
@@ -961,6 +1009,7 @@ const useDlnaStore = create<DLNAState>((set, get) => {
       if (!episode?.url) return;
       let loadingGeneration: number | null = null;
       let awaitingPlaybackConfirmation = false;
+      let retryResumePosition = false;
       let syncGeneration = 0;
       const isCurrentSync = () =>
         session === sessionId &&
@@ -1000,6 +1049,7 @@ const useDlnaStore = create<DLNAState>((set, get) => {
           const remoteDuration = await waitForRemoteDuration(
             activeController,
             positionMillis,
+            uri,
             session,
             isCurrentSync,
           );
@@ -1008,8 +1058,8 @@ const useDlnaStore = create<DLNAState>((set, get) => {
             await activeController.seekTo(positionMillis);
             if (!isCurrentSync()) return;
           } else {
-            effectivePosition = 0;
-            Toast.show({ type: 'info', text1: '电视端未返回完整时长', text2: '已从视频开头播放' });
+            logger.warn(`电视端未在 ${REMOTE_DURATION_READY_TIMEOUT_MS}ms 内返回新媒体完整时长（当前 ${remoteDuration}ms，目标 ${positionMillis}ms），继续后台等待`);
+            retryResumePosition = true;
           }
         }
         if (shouldPlay) {
@@ -1029,6 +1079,15 @@ const useDlnaStore = create<DLNAState>((set, get) => {
         });
         if (shouldPlay) startPositionPolling(session);
         else stopPositionPolling();
+        if (retryResumePosition) {
+          void restoreRemotePositionWhenReady(
+            activeController,
+            effectivePosition,
+            uri,
+            session,
+            isCurrentSync,
+          );
+        }
       } catch (error) {
         if (!isCurrentSync()) return;
         if (loadingGeneration !== null) endMediaLoading(loadingGeneration);

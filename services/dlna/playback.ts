@@ -32,6 +32,24 @@ export function isRemoteDurationReady(
   return durationMillis > targetPositionMillis + REMOTE_SEEK_DURATION_MARGIN_MS;
 }
 
+/**
+ * 确认 GetPositionInfo 返回的是本次新设置的媒体。
+ * 部分电视在 SetAVTransportURI 后会短暂返回旧媒体的时长；若此时 Seek，
+ * 请求可能落在旧媒体上，导致新媒体最终从 0 开始播放。
+ * 设备不提供 TrackURI 时无法校验，继续沿用旧逻辑。
+ */
+export function isSameRemoteTrackUri(remoteTrackUri: string, expectedTrackUri: string): boolean {
+  const remote = remoteTrackUri.trim();
+  const expected = expectedTrackUri.trim();
+  if (!remote || !expected || remote === expected) return true;
+
+  try {
+    return new URL(remote).href === new URL(expected).href;
+  } catch {
+    return false;
+  }
+}
+
 export function isRemotePositionAtEnd(
   positionMillis: number,
   durationMillis: number,

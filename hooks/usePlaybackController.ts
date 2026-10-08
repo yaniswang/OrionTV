@@ -71,10 +71,18 @@ export const usePlaybackController = () => {
     const detail = useDetailStore.getState().detail;
     if (detail?.source === item.source && detail?.id === item.id) return;
 
-    // 切源前抓取统一续播快照；本地与投屏使用同一份位置和播放状态。
-    const casting = isCasting;
-    const resumePosition = status.isLoaded ? status.positionMillis : undefined;
-    const resumePlaying = status.isPlaying;
+    // 切源前从实时 store 抓取统一续播快照，避免使用上一帧渲染状态。
+    const castState = useDlnaStore.getState();
+    const localState = usePlayerStore.getState();
+    const casting = castState.enabled;
+    const resumePosition = casting
+      ? castState.phase === 'connected'
+        ? castState.positionMillis
+        : undefined
+      : localState.status.isLoaded
+        ? localState.status.positionMillis
+        : undefined;
+    const resumePlaying = casting ? castState.isPlaying : localState.status.isPlaying;
 
     await useDetailStore.getState().setDetail(item);
     const player = usePlayerStore.getState();

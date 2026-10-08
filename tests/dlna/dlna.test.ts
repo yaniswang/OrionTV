@@ -21,6 +21,7 @@ import {
   hasRemotePlaybackStarted,
   isRemoteDurationReady,
   isRemotePositionAtEnd,
+  isSameRemoteTrackUri,
   resolveRemoteDuration,
   shouldApplyRemotePosition,
   shouldConfirmPlaybackFromTransportState,
@@ -139,6 +140,27 @@ describe('DLNA 时间与 SOAP', () => {
     expect(isRemoteDurationReady(50_000, 211_000)).toBe(false);
     expect(isRemoteDurationReady(2_541_000, 211_000)).toBe(true);
     expect(isRemoteDurationReady(0, 0)).toBe(true);
+  });
+
+  it('用 TrackURI 排除 SetAVTransportURI 后旧媒体的时长', () => {
+    expect(
+      isSameRemoteTrackUri(
+        'http://192.168.1.2:9000/new/index.m3u8?token=1',
+        'http://192.168.1.2:9000/new/index.m3u8?token=1',
+      ),
+    ).toBe(true);
+    expect(
+      isSameRemoteTrackUri(
+        'http://192.168.1.2:9000/old/index.m3u8',
+        'http://192.168.1.2:9000/new/index.m3u8',
+      ),
+    ).toBe(false);
+    expect(
+      isSameRemoteTrackUri(
+        '',
+        'http://192.168.1.2:9000/new/index.m3u8',
+      ),
+    ).toBe(true);
   });
 
   it('识别远端终止事件是否属于正常播放结束', () => {
