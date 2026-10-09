@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Modal, View, TextInput, StyleSheet, ActivityIndicator, Alert, Keyboard, InteractionManager } from "react-native";
 import { usePathname } from "expo-router";
-import Toast from "@/utils/Toast";
+import Toast, { ModalToastRoot } from "@/utils/Toast";
 import useAuthStore from "@/stores/authStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import useHomeStore from "@/stores/homeStore";
+import useAccountStore from "@/stores/accountStore";
 import { api } from "@/services/api";
 import { LoginCredentialsManager } from "@/services/storage";
 import { ThemedView } from "./ThemedView";
@@ -22,6 +23,8 @@ const LoginModal = () => {
   const passwordInputRef = useRef<TextInput>(null);
   const pathname = usePathname();
   const isSettingsPage = pathname.includes("settings");
+  // 服务器有用户体系时登录交给新的账号表单，这里只保留 localstorage 模式的密码登录
+  const isAccountFlowActive = useAccountStore((state) => state.enabled);
 
   const [isModalReady, setIsModalReady] = useState(false);
 
@@ -142,49 +145,51 @@ const LoginModal = () => {
   return (
     <Modal
       transparent={true}
-      visible={isLoginModalVisible && !isSettingsPage}
+      visible={isLoginModalVisible && !isSettingsPage && !isAccountFlowActive}
       animationType="fade"
       onRequestClose={hideLoginModal}
     >
-      <View style={styles.overlay}>
-        <ThemedView style={styles.container}>
-          <ThemedText style={styles.title}>需要登录</ThemedText>
-          <ThemedText style={styles.subtitle}>服务器需要验证您的身份</ThemedText>
-          {serverConfig?.StorageType !== "localstorage" && (
+      <ModalToastRoot>
+        <View style={styles.overlay}>
+          <ThemedView style={styles.container}>
+            <ThemedText style={styles.title}>需要登录</ThemedText>
+            <ThemedText style={styles.subtitle}>服务器需要验证您的身份</ThemedText>
+            {serverConfig?.StorageType !== "localstorage" && (
+              <TextInput
+                ref={usernameInputRef}
+                style={styles.input}
+                placeholder="请输入用户名"
+                placeholderTextColor="#888"
+                value={username}
+                onChangeText={setUsername}
+                returnKeyType="next"
+                onSubmitEditing={handleUsernameSubmit}
+                blurOnSubmit={false}
+              />
+            )}
             <TextInput
-              ref={usernameInputRef}
+              ref={passwordInputRef}
               style={styles.input}
-              placeholder="请输入用户名"
+              placeholder="请输入密码"
               placeholderTextColor="#888"
-              value={username}
-              onChangeText={setUsername}
-              returnKeyType="next"
-              onSubmitEditing={handleUsernameSubmit}
-              blurOnSubmit={false}
+              secureTextEntry
+              value={password}
+              onChangeText={setPassword}
+              returnKeyType="go"
+              onSubmitEditing={handleLogin}
             />
-          )}
-          <TextInput
-            ref={passwordInputRef}
-            style={styles.input}
-            placeholder="请输入密码"
-            placeholderTextColor="#888"
-            secureTextEntry
-            value={password}
-            onChangeText={setPassword}
-            returnKeyType="go"
-            onSubmitEditing={handleLogin}
-          />
-          <StyledButton
-            text={isLoading ? "" : "登录"}
-            onPress={handleLogin}
-            disabled={isLoading}
-            style={styles.button}
-            hasTVPreferredFocus={!serverConfig || serverConfig.StorageType === "localstorage"}
-          >
-            {isLoading && <ActivityIndicator color="#fff" />}
-          </StyledButton>
-        </ThemedView>
-      </View>
+            <StyledButton
+              text={isLoading ? "" : "登录"}
+              onPress={handleLogin}
+              disabled={isLoading}
+              style={styles.button}
+              hasTVPreferredFocus={!serverConfig || serverConfig.StorageType === "localstorage"}
+            >
+              {isLoading && <ActivityIndicator color="#fff" />}
+            </StyledButton>
+          </ThemedView>
+        </View>
+      </ModalToastRoot>
     </Modal>
   );
 };

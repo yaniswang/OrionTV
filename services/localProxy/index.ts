@@ -82,6 +82,20 @@ export async function resolvePlayUrl(url: string): Promise<string> {
   }
 }
 
+/** 直播投屏：配置了 UA 时交给原生代理透传并补 UA；没有 UA 或代理不可用时返回原地址。 */
+export async function resolveLivePlayUrl(url: string, userAgent: string): Promise<string> {
+  if (!userAgent) return url;
+  if (!(await ensureLocalProxy())) return url;
+
+  try {
+    const wrapped = await getNativeMediaProxy()?.wrapLiveUrl?.(url, userAgent);
+    return typeof wrapped === 'string' && wrapped ? wrapped : url;
+  } catch (error) {
+    logger.warn(`原生代理包装直播地址失败: ${String(error)}`);
+    return url;
+  }
+}
+
 /** 批量包装剧集地址；整份列表没有 HLS 时不启动代理。 */
 export async function mapEpisodesWithLocalProxy(urls: string[]): Promise<string[]> {
   if (!urls.some((url) => isHlsUrl(url))) return urls;

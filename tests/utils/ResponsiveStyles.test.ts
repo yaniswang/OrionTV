@@ -76,7 +76,6 @@ describe("ResponsiveStyles", () => {
         const deviceType = "mobile";
         const scaleFactor = {
           mobile: 1.0,
-          tablet: 1.1,
           tv: 1.25,
         }[deviceType];
         return Math.round(size * scaleFactor);
@@ -114,22 +113,6 @@ describe("ResponsiveStyles", () => {
         justifyContent: "center",
         alignItems: "center",
       });
-    });
-
-    it("应该为 tablet 设备返回正确的样式", () => {
-      const tabletConfig: ResponsiveConfig = {
-        ...mockConfig,
-        deviceType: "tablet",
-        spacing: 20,
-      };
-
-      mockedDeviceUtils.getMinTouchTargetSize.mockReturnValue(48);
-
-      const styles = getCommonResponsiveStyles(tabletConfig);
-
-      expect(styles.safeContainer.paddingTop).toBe(30);
-      expect(styles.primaryButton.borderRadius).toBe(10);
-      expect(styles.primaryButton.minHeight).toBe(48);
     });
 
     it("应该为 tv 设备返回正确的样式", () => {
@@ -188,11 +171,6 @@ describe("ResponsiveStyles", () => {
       expect(result).toBe(16);
     });
 
-    it("应该为 tablet 设备返回缩放后的大小", () => {
-      const result = getResponsiveTextSize(16, "tablet");
-      expect(result).toBe(18); // 16 * 1.1 = 17.6, rounded to 18
-    });
-
     it("应该为 tv 设备返回缩放后的大小", () => {
       const result = getResponsiveTextSize(16, "tv");
       expect(result).toBe(20); // 16 * 1.25 = 20
@@ -204,8 +182,8 @@ describe("ResponsiveStyles", () => {
     });
 
     it("应该正确处理小数点", () => {
-      const result = getResponsiveTextSize(15, "tablet");
-      expect(result).toBe(17); // 15 * 1.1 = 16.5, rounded to 17
+      const result = getResponsiveTextSize(15, "tv");
+      expect(result).toBe(19); // 15 * 1.25 = 18.75, rounded to 19
     });
   });
 
@@ -213,11 +191,6 @@ describe("ResponsiveStyles", () => {
     it("应该为 mobile 设备返回缩放后的间距", () => {
       const result = getResponsiveSpacing(20, "mobile");
       expect(result).toBe(16); // 20 * 0.8 = 16
-    });
-
-    it("应该为 tablet 设备返回基础间距", () => {
-      const result = getResponsiveSpacing(20, "tablet");
-      expect(result).toBe(20);
     });
 
     it("应该为 tv 设备返回缩放后的间距", () => {

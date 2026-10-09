@@ -4,7 +4,6 @@ import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
 import { Platform, View, StyleSheet } from "react-native";
-import { ToastPosition, Toasts } from '@backpackapp-io/react-native-toast';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import SystemSetting from "react-native-system-setting";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -12,12 +11,14 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useRemoteControlStore } from "@/stores/remoteControlStore";
 import LoginModal from "@/components/LoginModal";
+import { AccountGate } from "@/components/accounts/AccountGate";
 import useAuthStore from "@/stores/authStore";
 import { useUpdateStore, initUpdateStore } from "@/stores/updateStore";
 import { UpdateModal } from "@/components/UpdateModal";
 import { UPDATE_CONFIG } from "@/constants/UpdateConfig";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import Logger from '@/utils/Logger';
+import { ToastHost } from '@/utils/Toast';
 
 const logger = Logger.withTag('RootLayout');
 
@@ -29,9 +30,9 @@ export default function RootLayout() {
   const [loaded, error] = useFonts({
     SpaceMono: require("../assets/fonts/SpaceMono-Regular.ttf"),
   });
-  const { loadSettings, remoteInputEnabled, apiBaseUrl, serverConfig } = useSettingsStore();
+  const { loadSettings, fetchLiveSource, remoteInputEnabled, apiBaseUrl, serverConfig } = useSettingsStore();
   const { startServer, stopServer } = useRemoteControlStore();
-  const { checkLoginStatus } = useAuthStore();
+  const { checkLoginStatus, isLoggedIn } = useAuthStore();
   const { checkForUpdate, lastCheckTime } = useUpdateStore();
   const responsiveConfig = useResponsiveLayout();
 
@@ -55,6 +56,13 @@ export default function RootLayout() {
       checkLoginStatus(apiBaseUrl);
     }
   }, [apiBaseUrl, serverConfig, checkLoginStatus]);
+
+  // 直播源接口需要登录：登录后（含启动时已登录）再拉取
+  useEffect(() => {
+    if (isLoggedIn) {
+      fetchLiveSource();
+    }
+  }, [isLoggedIn, apiBaseUrl, fetchLiveSource]);
 
   useEffect(() => {
     if (loaded || error) {
@@ -105,13 +113,9 @@ export default function RootLayout() {
               <Stack.Screen name="+not-found" />
             </Stack>
           </View>
-          <Toasts
-            defaultPosition={ToastPosition.TOP}
-            defaultDuration={4000}
-            globalLimit={3}
-            overrideDarkMode={false}
-          />
+          <ToastHost />
           <LoginModal />
+          <AccountGate />
           <UpdateModal />
         </ThemeProvider>
       </GestureHandlerRootView>

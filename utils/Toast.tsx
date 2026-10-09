@@ -2,9 +2,11 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import {
   ToastPosition,
+  Toasts,
   toast,
   type ToastOptions,
 } from '@backpackapp-io/react-native-toast';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Check, Info, X } from 'lucide-react-native';
 
 type LegacyToastType = 'success' | 'error' | 'info';
@@ -94,6 +96,9 @@ const Toast = {
 };
 
 const styles = StyleSheet.create({
+  modalRoot: {
+    flex: 1,
+  },
   card: {
     minHeight: 56,
     flexDirection: 'row',
@@ -123,5 +128,24 @@ const styles = StyleSheet.create({
     marginLeft: 10,
   },
 });
+
+/** 全局提示容器，挂在根布局 */
+export function ToastHost() {
+  return <Toasts defaultPosition={ToastPosition.TOP} defaultDuration={4000} globalLimit={3} overrideDarkMode={false} />;
+}
+
+/**
+ * 弹窗的根容器：Android 的 Modal 是独立窗口，根布局里的提示会被弹窗挡住，需要在 Modal 里再挂一份提示。
+ * 提示条内部使用手势，Modal 里要有自己的 GestureHandlerRootView。它必须包住整个弹窗内容：
+ * 原生的 GestureHandlerRootView 不支持 pointerEvents，若作为全屏层盖在内容上，会吃掉内容的触摸。
+ */
+export function ModalToastRoot({ children }: { children: React.ReactNode }) {
+  return (
+    <GestureHandlerRootView style={styles.modalRoot}>
+      {children}
+      <ToastHost />
+    </GestureHandlerRootView>
+  );
+}
 
 export default Toast;

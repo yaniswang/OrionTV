@@ -12,7 +12,7 @@ import type {
 } from '@/services/dlna/types';
 import usePlayerStore, { selectCurrentEpisode } from '@/stores/playerStore';
 import useDetailStore from '@/stores/detailStore';
-import { cancelProxyDownloads, ensureLocalProxy, isHlsUrl, isLanProxyOrigin, resolvePlayUrl } from '@/services/localProxy';
+import { cancelProxyDownloads, ensureLocalProxy, isHlsUrl, isLanProxyOrigin, resolveLivePlayUrl, resolvePlayUrl } from '@/services/localProxy';
 import { parseDeviceDescription } from '@/services/dlna/xml';
 import {
   isRemoteDurationReady,
@@ -42,11 +42,21 @@ const MEDIA_LOADING_TIMEOUT_MS = 60000;
 const REMOTE_POSITION_RANGE_TOLERANCE_MS = 2000;
 /** 新媒体的停止事件与旧媒体切换事件之间允许出现的短暂窗口。 */
 const MEDIA_TRANSITION_TERMINAL_GRACE_MS = 3000;
+/** 推送新媒体后，播放进度持续不前进超过该时长视为电视端加载失败。 */
+const REMOTE_LOAD_FAILURE_TIMEOUT_MS = 20000;
+const REMOTE_LOAD_CHECK_INTERVAL_MS = 1000;
 
 interface LocalPlaybackSnapshot {
   positionMillis: number;
   durationMillis: number;
   isPlaying: boolean;
+}
+
+/** 直播投屏的媒体：没有进度、片头片尾和播放记录。 */
+export interface LiveCastMedia {
+  url: string;
+  title: string;
+  userAgent: string;
 }
 
 interface DLNAState {
@@ -72,6 +82,9 @@ interface DLNAState {
   error: string | null;
   localSnapshot: LocalPlaybackSnapshot | null;
   enableCast: () => Promise<void>;
+  enableLiveCast: (media: LiveCastMedia) => Promise<void>;
+  /** 直播投屏中切换频道 */
+  castLiveChannel: (media: LiveCastMedia) => Promise<void>;
   disableCast: (options?: { restoreLocal?: boolean; stopRemote?: boolean }) => Promise<void>;
   refreshDevices: (options?: { autoConnectLast?: boolean }) => Promise<void>;
   selectDevice: (device: DLNADevice) => Promise<void>;
@@ -108,7 +121,11 @@ let mediaLoadingTimer: NodeJS.Timeout | null = null;
 let mediaLoadingGeneration = 0;
 /** 判定远端真正开始播放用的位置采样点。 */
 let positionProgressAnchorMillis: number | null = null;
+/** 加载失败检测的代际号：每次推送新媒体递增，旧的检测随之结束。 */
+let remoteLoadWatchGeneration = 0;
 let skipOutroBusy = false;
+/** 非空表示当前是直播投屏 */
+let liveMedia: LiveCastMedia | null = null;
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -120,12 +137,13 @@ function clampUnit(value: number): number {
 
 /** 与本地一致：没有指定续播位置时，从片头结束位置开始。 */
 function resolveIntroPosition(positionMillis: number): number {
-  if (positionMillis > 0) return positionMillis;
+  if (positionMillis > 0 || liveMedia) return positionMillis;
   const introEndTime = usePlayerStore.getState().introEndTime ?? 0;
   return introEndTime > 0 ? introEndTime : 0;
 }
 
 function getCastMetadata(): { title: string; coverUrl?: string } {
+  if (liveMedia) return { title: liveMedia.title };
   const player = usePlayerStore.getState();
   const detailState = useDetailStore.getState();
   const detail = detailState.detail;
@@ -263,7 +281,21 @@ async function refreshDeviceDescription(device: DLNADevice): Promise<DLNADevice>
   }
 }
 
+function getCastSourceUrl(): string | undefined {
+  if (liveMedia) return liveMedia.url;
+  return selectCurrentEpisode(usePlayerStore.getState())?.url;
+}
+
 async function resolveCastUri(uri: string): Promise<string> {
+  if (liveMedia) {
+    // 直播只在配置了 UA 时经过代理补 UA，其余直接透传原地址。
+    if (!liveMedia.userAgent) return uri;
+    const origin = await ensureLocalProxy();
+    if (!origin || !isLanProxyOrigin(origin)) {
+      throw new Error('未获取到局域网 IP，请确认手机与电视连接同一网络');
+    }
+    return resolveLivePlayUrl(uri, liveMedia.userAgent);
+  }
   if (!isHlsUrl(uri)) return uri;
   const origin = await ensureLocalProxy();
   if (!origin || !isLanProxyOrigin(origin)) {
@@ -275,7 +307,7 @@ async function resolveCastUri(uri: string): Promise<string> {
 const useDlnaStore = create<DLNAState>((set, get) => {
   const saveRemoteRecord = async () => {
     const state = get();
-    if (!state.currentDevice) return;
+    if (!state.currentDevice || liveMedia) return;
     await usePlayerStore.getState().savePlayRecord(
       {},
       {
@@ -318,7 +350,7 @@ const useDlnaStore = create<DLNAState>((set, get) => {
 
   /** 投屏下的跳过片尾：与本地 handleVideoProgress 一致，到点切下一集。 */
   const maybeSkipOutro = (positionMillis: number, durationMillis: number): boolean => {
-    if (skipOutroBusy || suppressAutoAdvance || get().mediaLoading) return false;
+    if (skipOutroBusy || suppressAutoAdvance || get().mediaLoading || liveMedia) return false;
     const player = usePlayerStore.getState();
     const outroStartTime = player.outroStartTime ?? 0;
     if (outroStartTime <= 0 || durationMillis <= 0) return false;
@@ -498,7 +530,7 @@ const useDlnaStore = create<DLNAState>((set, get) => {
   const disconnect = async (
     restoreLocal: boolean,
     stopRemote: boolean,
-    options: { autoPlay?: boolean } = {},
+    options: { autoPlay?: boolean; saveRecord?: boolean } = {},
   ) => {
     sessionId += 1;
     mediaSyncGeneration += 1;
@@ -513,7 +545,7 @@ const useDlnaStore = create<DLNAState>((set, get) => {
     const state = get();
     const positionMillis = state.positionMillis;
     const durationMillis = state.durationMillis;
-    if (restoreLocal && state.currentDevice) {
+    if (restoreLocal && state.currentDevice && options.saveRecord !== false) {
       await saveRemoteRecord();
     }
     if (stopRemote && controller) {
@@ -531,9 +563,10 @@ const useDlnaStore = create<DLNAState>((set, get) => {
     lastSyncedUri = null;
     terminalSyncBusy = false;
     set({ enabled: false, ...initialState() });
-    if (restoreLocal) {
+    if (restoreLocal && !liveMedia) {
       restoreLocalPlayback(positionMillis, durationMillis, options.autoPlay);
     }
+    liveMedia = null;
     set({ localSnapshot: null });
     suppressAutoAdvance = false;
   };
@@ -565,7 +598,7 @@ const useDlnaStore = create<DLNAState>((set, get) => {
       if (suppressAutoAdvance) return;
 
       suppressAutoAdvance = true;
-      if (isRemotePositionAtEnd(positionMillis, durationMillis)) {
+      if (!liveMedia && isRemotePositionAtEnd(positionMillis, durationMillis)) {
         Toast.show({ type: 'info', text1: '远端播放已结束', text2: '已同步进度到手机继续播放' });
         await disconnect(true, false, { autoPlay: true });
         return;
@@ -576,6 +609,56 @@ const useDlnaStore = create<DLNAState>((set, get) => {
     } finally {
       terminalSyncBusy = false;
     }
+  };
+
+  /**
+   * 推送新媒体后检测电视端是否真正加载成功：
+   * - 切换保护期过后电视仍处于 STOPPED / NO_MEDIA_PRESENT；
+   * - 或支持位置查询、但 20 秒内进度始终不前进。
+   * 任一成立即判定加载失败，停止投屏并退回本机播放。
+   */
+  const watchRemoteLoad = async (activeController: DlnaController, session: number) => {
+    const generation = ++remoteLoadWatchGeneration;
+    const isCurrent = () =>
+      generation === remoteLoadWatchGeneration && session === sessionId && controller === activeController;
+    const startedAt = Date.now();
+    let anchorMillis: number | null = null;
+    let positionSupported = false;
+
+    while (Date.now() - startedAt < REMOTE_LOAD_FAILURE_TIMEOUT_MS) {
+      await delay(REMOTE_LOAD_CHECK_INTERVAL_MS);
+      // 用户暂停后不再判定
+      if (!isCurrent() || !get().isPlaying) return;
+      try {
+        const position = await activeController.getPositionInfo();
+        if (!isCurrent()) return;
+        if (position.positionSupported) {
+          positionSupported = true;
+          if (hasRemotePlaybackStarted(anchorMillis, position.positionMillis)) return;
+          anchorMillis = anchorMillis ?? position.positionMillis;
+        }
+      } catch {}
+      if (Date.now() - startedAt >= MEDIA_TRANSITION_TERMINAL_GRACE_MS) {
+        const state = await activeController
+          .getTransportInfo()
+          .then((info) => info.state)
+          .catch(() => 'UNKNOWN' as DLNATransportState);
+        if (!isCurrent()) return;
+        if (state === 'STOPPED' || state === 'NO_MEDIA_PRESENT') {
+          await fallBackToLocal(session);
+          return;
+        }
+      }
+    }
+    if (isCurrent() && positionSupported) await fallBackToLocal(session);
+  };
+
+  const fallBackToLocal = async (session: number) => {
+    if (session !== sessionId) return;
+    logger.warn('电视端加载失败，退回本机播放');
+    Toast.show({ type: 'error', text1: '电视端加载失败', text2: '已切回本机播放' });
+    // 电视端没有真正播放过，不写入它的进度和时长
+    await disconnect(true, true, { autoPlay: true, saveRecord: false });
   };
 
   const startEventSubscription = async (device: DLNADevice, session: number) => {
@@ -734,6 +817,7 @@ const useDlnaStore = create<DLNAState>((set, get) => {
     let retryResumePosition = false;
     let nextController: DlnaController | null = null;
     if (current.connectingDeviceId) return;
+    remoteLoadWatchGeneration += 1;
     mediaTransitionUntil = Date.now() + MEDIA_TRANSITION_TERMINAL_GRACE_MS;
     await stopEventSubscription();
     set({
@@ -751,9 +835,9 @@ const useDlnaStore = create<DLNAState>((set, get) => {
     const resolvedDevice = await refreshDeviceDescription(device);
     if (session !== sessionId) return;
     try {
-      const episode = selectCurrentEpisode(usePlayerStore.getState());
-      if (!episode?.url) throw new Error('当前没有可投屏的播放地址');
-      const uri = await resolveCastUri(episode.url);
+      const sourceUrl = getCastSourceUrl();
+      if (!sourceUrl) throw new Error('当前没有可投屏的播放地址');
+      const uri = await resolveCastUri(sourceUrl);
       const metadata = getCastMetadata();
       logger.info(`投屏地址: ${uri}`);
       if (session !== sessionId) return;
@@ -829,7 +913,10 @@ const useDlnaStore = create<DLNAState>((set, get) => {
         capabilities,
         error: null,
       });
-      if (remoteShouldPlay) startPositionPolling(session);
+      if (remoteShouldPlay) {
+        startPositionPolling(session);
+        void watchRemoteLoad(nextController, session);
+      }
       else stopPositionPolling();
       if (retryResumePosition) {
         void restoreRemotePositionWhenReady(
@@ -899,6 +986,49 @@ const useDlnaStore = create<DLNAState>((set, get) => {
     });
   };
 
+  /** 剧集与直播共用：进入搜索状态，优先连接上次的设备（两者共用同一条记录）。 */
+  const beginCast = async (session: number, localSnapshot: LocalPlaybackSnapshot) => {
+    set({
+      enabled: true,
+      phase: 'scanning',
+      devices: [],
+      currentDevice: null,
+      connectingDeviceId: null,
+      connectingDeviceName: null,
+      playbackConfirmed: false,
+      playbackEstablished: false,
+      error: null,
+      localSnapshot,
+    });
+    const remembered = await loadRememberedDevice();
+    if (session !== sessionId) return;
+
+    pendingAutoConnectId = remembered?.id ?? null;
+    autoConnectTriggered = false;
+    if (remembered?.device) {
+      // 立即给切换设备弹窗一个可用条目；其余设备在后台继续扫描。
+      set({ devices: sortDevices([remembered.device]) });
+    }
+
+    if (remembered?.device) {
+      autoConnectTriggered = true;
+      const snapshot = get().localSnapshot;
+      await connectDevice(
+        remembered.device,
+        snapshot?.positionMillis ?? 0,
+        true,
+      );
+      if (session !== sessionId) return;
+      if (get().phase === 'connected' && get().currentDevice?.id === remembered.device.id) {
+        startDiscovery(false);
+        return;
+      }
+      autoConnectTriggered = false;
+    }
+
+    startDiscovery(!!pendingAutoConnectId);
+  };
+
   return {
     enabled: false,
     ...initialState(),
@@ -907,6 +1037,7 @@ const useDlnaStore = create<DLNAState>((set, get) => {
     enableCast: async () => {
       if (get().enabled) return;
       const session = ++sessionId;
+      liveMedia = null;
       const player = usePlayerStore.getState();
       const episode = selectCurrentEpisode(player);
       if (!episode?.url) {
@@ -929,49 +1060,34 @@ const useDlnaStore = create<DLNAState>((set, get) => {
       // 本地 Video 即将卸载，先取消它遗留的回源请求，避免投屏请求和旧预取一起排队。
       cancelProxyDownloads();
       usePlayerStore.setState({ showLockControls: false });
-      set({
-        enabled: true,
-        phase: 'scanning',
-        devices: [],
-        currentDevice: null,
-        connectingDeviceId: null,
-        connectingDeviceName: null,
-        playbackConfirmed: false,
-        playbackEstablished: false,
-        error: null,
-        localSnapshot: {
-          positionMillis: player.status.positionMillis,
-          durationMillis: player.status.durationMillis,
-          isPlaying: player.status.isPlaying,
-        },
+      await beginCast(session, {
+        positionMillis: player.status.positionMillis,
+        durationMillis: player.status.durationMillis,
+        isPlaying: player.status.isPlaying,
       });
-      const remembered = await loadRememberedDevice();
-      if (session !== sessionId) return;
+    },
 
-      pendingAutoConnectId = remembered?.id ?? null;
-      autoConnectTriggered = false;
-      if (remembered?.device) {
-        // 立即给切换设备弹窗一个可用条目；其余设备在后台继续扫描。
-        set({ devices: sortDevices([remembered.device]) });
-      }
-
-      if (remembered?.device) {
-        autoConnectTriggered = true;
-        const snapshot = get().localSnapshot;
-        await connectDevice(
-          remembered.device,
-          snapshot?.positionMillis ?? 0,
-          true,
-        );
+    enableLiveCast: async (media) => {
+      if (get().enabled) return;
+      const session = ++sessionId;
+      liveMedia = media;
+      if (media.userAgent) {
+        const origin = await ensureLocalProxy();
         if (session !== sessionId) return;
-        if (get().phase === 'connected' && get().currentDevice?.id === remembered.device.id) {
-          startDiscovery(false);
+        if (!origin || !isLanProxyOrigin(origin)) {
+          liveMedia = null;
+          Toast.show({ type: 'error', text1: '无法开启投屏', text2: '请确认手机已连接 Wi-Fi 或以太网' });
           return;
         }
-        autoConnectTriggered = false;
       }
+      await beginCast(session, { positionMillis: 0, durationMillis: 0, isPlaying: true });
+    },
 
-      startDiscovery(!!pendingAutoConnectId);
+    castLiveChannel: async (media) => {
+      if (!liveMedia || !get().enabled) return;
+      liveMedia = media;
+      // 未连上时只记下频道，连接时会读取最新频道；同一地址不会重复下发。
+      await get().syncCurrentMedia({ positionMillis: 0, play: true });
     },
 
     disableCast: async (options = {}) => {
@@ -1005,8 +1121,8 @@ const useDlnaStore = create<DLNAState>((set, get) => {
       const requestedPositionMillis = options.positionMillis ?? 0;
       const positionMillis = resolveIntroPosition(requestedPositionMillis);
       const shouldPlay = options.play ?? true;
-      const episode = selectCurrentEpisode(usePlayerStore.getState());
-      if (!episode?.url) return;
+      const sourceUrl = getCastSourceUrl();
+      if (!sourceUrl) return;
       let loadingGeneration: number | null = null;
       let awaitingPlaybackConfirmation = false;
       let retryResumePosition = false;
@@ -1019,7 +1135,7 @@ const useDlnaStore = create<DLNAState>((set, get) => {
           : mediaSyncGeneration === initialMediaSyncGeneration);
       try {
         set({ isSeeking: false, seekPosition: 0 });
-        const uri = await resolveCastUri(episode.url);
+        const uri = await resolveCastUri(sourceUrl);
         if (!isCurrentSync()) return;
         const metadata = getCastMetadata();
         logger.info(`切换投屏地址: ${uri}`);
@@ -1028,6 +1144,8 @@ const useDlnaStore = create<DLNAState>((set, get) => {
         }
 
         syncGeneration = ++mediaSyncGeneration;
+        // 推送新地址时电视会短暂停止，先结束上一次的加载检测
+        remoteLoadWatchGeneration += 1;
         mediaTransitionUntil = Date.now() + MEDIA_TRANSITION_TERMINAL_GRACE_MS;
         loadingGeneration = beginMediaLoading();
         set({ playbackConfirmed: false });
@@ -1077,7 +1195,10 @@ const useDlnaStore = create<DLNAState>((set, get) => {
           isPlaying: shouldPlay,
           error: null,
         });
-        if (shouldPlay) startPositionPolling(session);
+        if (shouldPlay) {
+          startPositionPolling(session);
+          void watchRemoteLoad(activeController, session);
+        }
         else stopPositionPolling();
         if (retryResumePosition) {
           void restoreRemotePositionWhenReady(

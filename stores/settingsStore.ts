@@ -63,7 +63,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     if (settings.apiBaseUrl) {
       api.setBaseUrl(settings.apiBaseUrl);
       await get().fetchServerConfig();
-      await get().fetchLiveSource();
     }
   },
   fetchServerConfig: async () => {
@@ -81,16 +80,21 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       set({ isLoadingServerConfig: false });
     }
   },
+  // 直播源接口需要登录，由 RootLayout 在登录后调用
   fetchLiveSource: async () => {
-    const ret = await api.getLiveSource();
-    const sources = ret.data;
-    if (sources.length>0) {
-      const source = sources[0];
-      set({ 
-        m3uUrl: source.url,
-        m3uUa: source.ua
-      });
-      logger.info(`Live source url: ${source.url}, ua: ${source.ua}`);
+    try {
+      const ret = await api.getLiveSource();
+      const sources = ret.data;
+      if (sources.length>0) {
+        const source = sources[0];
+        set({ 
+          m3uUrl: source.url,
+          m3uUa: source.ua
+        });
+        logger.info(`Live source url: ${source.url}, ua: ${source.ua}`);
+      }
+    } catch (error) {
+      logger.warn("Failed to fetch live source:", error);
     }
   },
   setApiBaseUrl: (url) => set({ apiBaseUrl: url }),

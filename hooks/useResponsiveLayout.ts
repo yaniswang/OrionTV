@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { Dimensions, Platform } from "react-native";
 
-export type DeviceType = "mobile" | "tablet" | "tv";
+/** mobile：手机布局（竖屏）；tv：大屏布局（TV、平板横屏、手机横屏）。遥控器相关行为另用 Platform.isTV 判断。 */
+export type DeviceType = "mobile" | "tv";
 
 export interface ResponsiveConfig {
   deviceType: DeviceType;
@@ -14,27 +15,22 @@ export interface ResponsiveConfig {
   screenHeight: number;
 }
 
-const BREAKPOINTS = {
-  mobile: { min: 0, max: 767 },
-  tablet: { min: 768, max: 1023 },
-  tv: { min: 1024, max: Infinity },
-};
+/** 大屏卡片占位宽度：VideoCard.tv 的 pressable 宽（海报 160 + 20） */
+const TV_CARD_SLOT_WIDTH = 180;
 
-const getDeviceType = (width: number): DeviceType => {
+/** 按宽高比例判断：宽大于高用大屏布局，否则用手机布局；TV 始终是大屏布局。 */
+export const getDeviceType = (width: number, height: number): DeviceType => {
   if (Platform.isTV) return "tv";
-
-  if (width >= BREAKPOINTS.tv.min) return "tv";
-  if (width >= BREAKPOINTS.tablet.min) return "tablet";
-  return "mobile";
+  return width > height ? "tv" : "mobile";
 };
 
-const getLayoutConfig = (
+export const getLayoutConfig = (
   deviceType: DeviceType,
   width: number,
   height: number,
   isPortrait: boolean
 ): ResponsiveConfig => {
-  const spacing = deviceType === "mobile" ? 8 : deviceType === "tablet" ? 12 : 16;
+  const spacing = deviceType === "mobile" ? 8 : 16;
 
   let columns: number;
   let cardWidth: number;
@@ -48,15 +44,12 @@ const getLayoutConfig = (
       cardHeight = cardWidth * 1.2; // 5:6 aspect ratio (reduced from 2:3)
       break;
 
-    case "tablet":
-      columns = isPortrait ? 3 : 4;
-      cardWidth = ((width - spacing) / columns) * 0.85; // 增大到85%
-      cardHeight = cardWidth * 1.4; // slightly less tall ratio
-      break;
-
     case "tv":
     default:
-      columns = 5;
+      // TV 保持固定 5 列；平板横屏、手机横屏按宽度放下尽量多的列（列表左右各有 spacing + 5 的内边距）
+      columns = Platform.isTV
+        ? 5
+        : Math.max(1, Math.floor((width - spacing * 2 - 10) / TV_CARD_SLOT_WIDTH));
       cardWidth = 160; // Fixed width for TV
       cardHeight = 240; // Fixed height for TV
       break;
@@ -90,13 +83,13 @@ export const useResponsiveLayout = (): ResponsiveConfig => {
 
   const { width, height } = dimensions;
   const isPortrait = height > width;
-  const deviceType = getDeviceType(width);
+  const deviceType = getDeviceType(width, height);
 
   return getLayoutConfig(deviceType, width, height, isPortrait);
 };
 
 // Utility hook for responsive values
-export const useResponsiveValue = <T>(values: { mobile: T; tablet: T; tv: T }): T => {
+export const useResponsiveValue = <T>(values: { mobile: T; tv: T }): T => {
   const { deviceType } = useResponsiveLayout();
   return values[deviceType];
 };
@@ -124,11 +117,11 @@ export const useResponsiveStyles = () => {
     },
 
     // Typography
-    titleFontSize: config.deviceType === "mobile" ? 18 : config.deviceType === "tablet" ? 22 : 28,
-    bodyFontSize: config.deviceType === "mobile" ? 14 : config.deviceType === "tablet" ? 16 : 18,
+    titleFontSize: config.deviceType === "mobile" ? 18 : 28,
+    bodyFontSize: config.deviceType === "mobile" ? 14 : 18,
 
     // Spacing
-    sectionSpacing: config.deviceType === "mobile" ? 16 : config.deviceType === "tablet" ? 20 : 24,
+    sectionSpacing: config.deviceType === "mobile" ? 16 : 24,
     itemSpacing: config.spacing,
   };
 };

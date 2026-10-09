@@ -8,11 +8,14 @@ import { ThemedText } from "@/components/ThemedText";
 import { api } from "@/services/api";
 import VideoCard from "@/components/VideoCard";
 import { useFocusEffect, useRouter } from "expo-router";
-import { Search, Settings, LogOut, Heart } from "lucide-react-native";
+import { Search, Settings, LogOut, Heart, ChevronDown } from "lucide-react-native";
 import { StyledButton } from "@/components/StyledButton";
 import useHomeStore, { RowItem, Category } from "@/stores/homeStore";
 import { PlayRecordManager } from "@/services/storage";
 import useAuthStore from "@/stores/authStore";
+import useAccountStore, { selectCurrentAccount } from "@/stores/accountStore";
+import { useAccountLoginEnabled } from "@/hooks/useMultiAccount";
+import { AccountAvatar } from "@/components/accounts/AccountAvatar";
 import CustomScrollView from "@/components/CustomScrollView";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { getCommonResponsiveStyles } from "@/utils/ResponsiveStyles";
@@ -50,7 +53,11 @@ export default function HomeScreen() {
     reset,
   } = useHomeStore();
   const apiConfigStatus = useApiConfig();
-  const { isLoggedIn, logout } = useAuthStore();
+  const { isLoggedIn } = useAuthStore();
+  const logout = useAccountStore((state) => state.logoutCurrent);
+  const multiAccountEnabled = useAccountLoginEnabled();
+  const currentAccount = useAccountStore(selectCurrentAccount);
+  const showAccountPanel = useAccountStore((state) => state.showPanel);
 
   useFocusEffect(
     useCallback(() => {
@@ -224,7 +231,7 @@ export default function HomeScreen() {
   // 检查是否需要显示API配置提示
   const shouldShowApiConfig = apiConfigStatus.needsConfiguration && selectedCategory && !selectedCategory.tags;
 
-  // TV端和平板端的顶部导航
+  // 大屏布局（TV、横屏）的顶部导航
   const renderHeader = () => {
     if (deviceType === "mobile") {
       // 移动端不显示顶部导航，使用底部Tab导航
@@ -255,10 +262,22 @@ export default function HomeScreen() {
           <StyledButton style={dynamicStyles.iconButton} onPress={() => router.push("/settings")} variant="ghost">
             <Settings color={colorScheme === "dark" ? "white" : "black"} size={24} />
           </StyledButton>
-          {isLoggedIn && (
-            <StyledButton style={dynamicStyles.iconButton} onPress={logout} variant="ghost">
-              <LogOut color={colorScheme === "dark" ? "white" : "black"} size={24} />
+          {isLoggedIn && multiAccountEnabled && currentAccount ? (
+            <StyledButton style={dynamicStyles.accountButton} onPress={showAccountPanel} variant="ghost">
+              <View style={dynamicStyles.accountButtonContent}>
+                <AccountAvatar username={currentAccount.username} color={currentAccount.color} size={32} />
+                <ThemedText style={dynamicStyles.accountName} numberOfLines={1}>
+                  {currentAccount.username}
+                </ThemedText>
+                <ChevronDown color="white" size={16} />
+              </View>
             </StyledButton>
+          ) : (
+            isLoggedIn && (
+              <StyledButton style={dynamicStyles.iconButton} onPress={logout} variant="ghost">
+                <LogOut color={colorScheme === "dark" ? "white" : "black"} size={24} />
+              </StyledButton>
+            )
           )}
         </View>
       </View>
@@ -269,7 +288,7 @@ export default function HomeScreen() {
   const dynamicStyles = StyleSheet.create({
     container: {
       flex: 1,
-      paddingTop: deviceType === "mobile" ? insets.top : deviceType === "tablet" ? insets.top + 20 : 40,
+      paddingTop: deviceType === "mobile" ? insets.top : 40,
     },
     headerContainer: {
       flexDirection: "row",
@@ -279,7 +298,7 @@ export default function HomeScreen() {
       marginBottom: spacing,
     },
     headerTitle: {
-      fontSize: deviceType === "mobile" ? 24 : deviceType === "tablet" ? 28 : 32,
+      fontSize: deviceType === "mobile" ? 24 : 32,
       fontWeight: "bold",
       paddingTop: 16,
     },
@@ -290,6 +309,22 @@ export default function HomeScreen() {
     iconButton: {
       borderRadius: 30,
       marginLeft: spacing / 2,
+    },
+    accountButton: {
+      borderRadius: 30,
+      marginLeft: spacing / 2,
+      paddingVertical: 4,
+      paddingLeft: 4,
+      paddingRight: 12,
+    },
+    accountButtonContent: {
+      flexDirection: "row",
+      alignItems: "center",
+    },
+    accountName: {
+      fontSize: 16,
+      maxWidth: 120,
+      marginHorizontal: 8,
     },
     categoryContainer: {
       paddingBottom: spacing / 2,

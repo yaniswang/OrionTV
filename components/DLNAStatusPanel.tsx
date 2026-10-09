@@ -31,7 +31,12 @@ const transportLabel = (state: string): string => {
   }
 };
 
-export const DLNAStatusPanel: React.FC = () => {
+interface DLNAStatusPanelProps {
+  /** 直播投屏时传入当前频道名：不显示进度，改为显示频道 */
+  liveTitle?: string;
+}
+
+export const DLNAStatusPanel: React.FC<DLNAStatusPanelProps> = ({ liveTitle }) => {
   const phase = useDlnaStore((state) => state.phase);
   const currentDevice = useDlnaStore((state) => state.currentDevice);
   const connectingDeviceName = useDlnaStore((state) => state.connectingDeviceName);
@@ -41,6 +46,7 @@ export const DLNAStatusPanel: React.FC = () => {
   const positionMillis = useDlnaStore((state) => state.positionMillis);
   const durationMillis = useDlnaStore((state) => state.durationMillis);
   const error = useDlnaStore((state) => state.error);
+  const mediaLoading = useDlnaStore((state) => state.mediaLoading);
 
   const deviceName = currentDevice?.friendlyName ?? connectingDeviceName ?? '未选择设备';
   const busy = phase === 'scanning' || phase === 'connecting';
@@ -80,15 +86,22 @@ export const DLNAStatusPanel: React.FC = () => {
         <Text style={styles.title}>{phaseLabel}</Text>
         {connected && <Text style={styles.deviceName}>{deviceName}</Text>}
         {connected && !!deviceMeta && <Text style={styles.deviceMeta}>{deviceMeta}</Text>}
-        {connected && (
+        {connected && liveTitle === undefined && (
           <Text style={styles.playbackText}>
             {playbackLabel}
             {durationMillis > 0 ? ` · ${formatTime(positionMillis)} / ${formatTime(durationMillis)}` : ''}
           </Text>
         )}
+        {connected && liveTitle !== undefined && (
+          <Text style={styles.playbackText}>
+            {mediaLoading ? '正在切换频道' : playbackLabel} · {liveTitle}
+          </Text>
+        )}
         {busy && <ActivityIndicator color="#00bb5e" size="large" />}
         {!!error && <Text style={styles.errorText}>{error}</Text>}
-        <Text style={styles.hint}>点击右下角的切换设备按钮可更换投屏设备</Text>
+        <Text style={styles.hint}>
+          {liveTitle === undefined ? '点击右下角的切换设备按钮可更换投屏设备' : '点击屏幕可切换频道或投屏设备'}
+        </Text>
       </View>
     </View>
   );

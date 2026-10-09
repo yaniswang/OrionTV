@@ -13,7 +13,6 @@ import { APIConfigSection } from "@/components/settings/APIConfigSection";
 import { M3u8ProxySection } from "@/components/settings/M3u8ProxySection";
 import { RemoteInputSection } from "@/components/settings/RemoteInputSection";
 import { UpdateSection } from "@/components/settings/UpdateSection";
-// import { VideoSourceSection } from "@/components/settings/VideoSourceSection";
 import Toast from "@/utils/Toast";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { getCommonResponsiveStyles } from "@/utils/ResponsiveStyles";
@@ -100,51 +99,6 @@ export default function SettingsScreen() {
     setHasChanges(true);
   };
 
-  // const sections = [
-  //   // 远程输入配置 - 仅在非手机端显示
-  //   deviceType !== "mobile" && {
-  //     component: (
-  //       <RemoteInputSection
-  //         onChanged={markAsChanged}
-  //         onFocus={() => {
-  //           setCurrentFocusIndex(0);
-  //           setCurrentSection("remote");
-  //         }}
-  //       />
-  //     ),
-  //     key: "remote",
-  //   },
-  //   {
-  //     component: (
-  //       <APIConfigSection
-  //         ref={apiSectionRef}
-  //         onChanged={markAsChanged}
-  //         hideDescription={deviceType === "mobile"}
-  //         onFocus={() => {
-  //           setCurrentFocusIndex(1);
-  //           setCurrentSection("api");
-  //         }}
-  //       />
-  //     ),
-  //     key: "api",
-  //   },
-  //   // {
-  //   //   component: (
-  //   //     <VideoSourceSection
-  //   //       onChanged={markAsChanged}
-  //   //       onFocus={() => {
-  //   //         setCurrentFocusIndex(3);
-  //   //         setCurrentSection("videoSource");
-  //   //       }}
-  //   //     />
-  //   //   ),
-  //   //   key: "videoSource",
-  //   // },
-  //   Platform.OS === "android" && {
-  //     component: <UpdateSection />,
-  //     key: "update",
-  //   },
-  // ].filter(Boolean);
   const rawSections = [
     deviceType !== "mobile" && {
       component: (
@@ -198,7 +152,7 @@ export default function SettingsScreen() {
   // TV遥控器事件处理 - 仅在TV设备上启用
   const handleTVEvent = React.useCallback(
     (event: any) => {
-      if (deviceType !== "tv") return;
+      if (!Platform.isTV) return;
 
       if (event.eventType === "down") {
         const nextIndex = Math.min(currentFocusIndex + 1, sections.length);
@@ -211,10 +165,10 @@ export default function SettingsScreen() {
         setCurrentFocusIndex(prevIndex);
       }
     },
-    [currentFocusIndex, sections.length, deviceType]
+    [currentFocusIndex, sections.length]
   );
 
-  useTVEventHandler(deviceType === "tv" ? handleTVEvent : () => { });
+  useTVEventHandler(Platform.isTV ? handleTVEvent : () => { });
 
   // 动态样式
   const dynamicStyles = createResponsiveStyles(deviceType, spacing, insets);
@@ -289,7 +243,6 @@ export default function SettingsScreen() {
 
 const createResponsiveStyles = (deviceType: string, spacing: number, insets: any) => {
   const isMobile = deviceType === "mobile";
-  const isTablet = deviceType === "tablet";
   const isTV = deviceType === "tv";
   const minTouchTarget = DeviceUtils.getMinTouchTargetSize();
 
@@ -306,7 +259,7 @@ const createResponsiveStyles = (deviceType: string, spacing: number, insets: any
       marginBottom: spacing,
     },
     title: {
-      fontSize: isMobile ? 24 : isTablet ? 28 : 32,
+      fontSize: isMobile ? 24 : 32,
       fontWeight: "bold",
       paddingTop: spacing,
       color: "white",
@@ -322,8 +275,8 @@ const createResponsiveStyles = (deviceType: string, spacing: number, insets: any
       alignItems: isMobile ? "center" : "flex-end",
     },
     saveButton: {
-      minHeight: isMobile ? minTouchTarget : isTablet ? 50 : 50,
-      width: isMobile ? "100%" : isTablet ? 140 : 120,
+      minHeight: isMobile ? minTouchTarget : 50,
+      width: isMobile ? "100%" : 120,
       maxWidth: isMobile ? 280 : undefined,
     },
     disabledButton: {

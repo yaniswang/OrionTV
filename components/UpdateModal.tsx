@@ -14,6 +14,7 @@ import { UPDATE_CONFIG } from "../constants/UpdateConfig";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import { StyledButton } from "./StyledButton";
 import { ThemedText } from "./ThemedText";
+import { ModalToastRoot } from "../utils/Toast";
 
 interface ReleaseNotesCardProps {
   lines: string[];
@@ -179,144 +180,146 @@ export function UpdateModal() {
       onRequestClose={handleLater}
       supportedOrientations={["portrait", "portrait-upside-down", "landscape", "landscape-left", "landscape-right"]}
     >
-      <View style={styles.overlay}>
-        <View
-          style={[
-            styles.container,
-            isLandscape ? styles.landscapeContainer : styles.portraitContainer,
-            isCompactLandscape && styles.compactContainer,
-          ]}
-        >
-          <View style={[styles.header, isCompactLandscape && styles.compactHeader]}>
-            <ThemedText style={[styles.title, isCompactLandscape && styles.compactTitle]}>
-              发现新版本
-            </ThemedText>
-
-            <View style={[styles.versionInfo, isCompactLandscape && styles.compactVersionInfo]}>
-              <ThemedText style={[styles.versionText, isCompactLandscape && styles.compactVersionText]}>
-                当前 v{currentVersion}
-              </ThemedText>
-              <ThemedText style={[styles.arrow, isCompactLandscape && styles.compactArrow]}>→</ThemedText>
-              <ThemedText
-                style={[
-                  styles.versionText,
-                  styles.newVersion,
-                  isCompactLandscape && styles.compactVersionText,
-                ]}
-              >
-                新版本 v{remoteVersion}
-              </ThemedText>
-            </View>
-          </View>
-
-          <ScrollView
-            style={styles.scrollView}
-            contentContainerStyle={[styles.scrollContent, isCompactLandscape && styles.compactScrollContent]}
-            showsVerticalScrollIndicator={false}
-          >
-            {showReleaseNotes && (
-              <View
-                style={[
-                  styles.mainBody,
-                  isLandscape && styles.mainBodyLandscape,
-                  isCompactLandscape && styles.compactMainBodyLandscape,
-                ]}
-              >
-                <ReleaseNotesCard
-                  lines={releaseNoteLines}
-                  publishedAt={formattedPublishedAt}
-                  showMeta={!isLandscape}
-                  compact={isCompactLandscape}
-                  style={isLandscape ? styles.releaseNotesCardLandscape : styles.releaseNotesCardPortrait}
-                />
-                {isLandscape && (
-                  <VersionInfoCard
-                    remoteVersion={remoteVersion}
-                    publishedAt={formattedPublishedAt}
-                    compact={isCompactLandscape}
-                    style={[
-                      styles.versionCard,
-                      deviceType === "mobile" && styles.versionCardMobile,
-                      isCompactLandscape && styles.compactVersionCard,
-                    ]}
-                  />
-                )}
-              </View>
-            )}
-
-            {downloading && (
-              <View style={styles.progressContainer}>
-                <View style={styles.progressBar}>
-                  <View style={[styles.progressFill, { width: `${downloadProgress}%` }]} />
-                </View>
-                <ThemedText style={styles.progressText}>{downloadProgress}%</ThemedText>
-              </View>
-            )}
-
-            {error && <ThemedText style={styles.errorText}>{error}</ThemedText>}
-          </ScrollView>
-
+      <ModalToastRoot>
+        <View style={styles.overlay}>
           <View
             style={[
-              styles.buttonContainer,
-              isLandscape && styles.buttonContainerLandscape,
-              isCompactLandscape && styles.compactButtonContainer,
+              styles.container,
+              isLandscape ? styles.landscapeContainer : styles.portraitContainer,
+              isCompactLandscape && styles.compactContainer,
             ]}
           >
-            <StyledButton
-              ref={updateButtonRef}
-              onPress={handleUpdate}
-              disabled={downloading && !downloadedPath}
-              variant="default"
-              isSelected
+            <View style={[styles.header, isCompactLandscape && styles.compactHeader]}>
+              <ThemedText style={[styles.title, isCompactLandscape && styles.compactTitle]}>
+                发现新版本
+              </ThemedText>
+
+              <View style={[styles.versionInfo, isCompactLandscape && styles.compactVersionInfo]}>
+                <ThemedText style={[styles.versionText, isCompactLandscape && styles.compactVersionText]}>
+                  当前 v{currentVersion}
+                </ThemedText>
+                <ThemedText style={[styles.arrow, isCompactLandscape && styles.compactArrow]}>→</ThemedText>
+                <ThemedText
+                  style={[
+                    styles.versionText,
+                    styles.newVersion,
+                    isCompactLandscape && styles.compactVersionText,
+                  ]}
+                >
+                  新版本 v{remoteVersion}
+                </ThemedText>
+              </View>
+            </View>
+
+            <ScrollView
+              style={styles.scrollView}
+              contentContainerStyle={[styles.scrollContent, isCompactLandscape && styles.compactScrollContent]}
+              showsVerticalScrollIndicator={false}
+            >
+              {showReleaseNotes && (
+                <View
+                  style={[
+                    styles.mainBody,
+                    isLandscape && styles.mainBodyLandscape,
+                    isCompactLandscape && styles.compactMainBodyLandscape,
+                  ]}
+                >
+                  <ReleaseNotesCard
+                    lines={releaseNoteLines}
+                    publishedAt={formattedPublishedAt}
+                    showMeta={!isLandscape}
+                    compact={isCompactLandscape}
+                    style={isLandscape ? styles.releaseNotesCardLandscape : styles.releaseNotesCardPortrait}
+                  />
+                  {isLandscape && (
+                    <VersionInfoCard
+                      remoteVersion={remoteVersion}
+                      publishedAt={formattedPublishedAt}
+                      compact={isCompactLandscape}
+                      style={[
+                        styles.versionCard,
+                        deviceType === "mobile" && styles.versionCardMobile,
+                        isCompactLandscape && styles.compactVersionCard,
+                      ]}
+                    />
+                  )}
+                </View>
+              )}
+
+              {downloading && (
+                <View style={styles.progressContainer}>
+                  <View style={styles.progressBar}>
+                    <View style={[styles.progressFill, { width: `${downloadProgress}%` }]} />
+                  </View>
+                  <ThemedText style={styles.progressText}>{downloadProgress}%</ThemedText>
+                </View>
+              )}
+
+              {error && <ThemedText style={styles.errorText}>{error}</ThemedText>}
+            </ScrollView>
+
+            <View
               style={[
-                isLandscape ? styles.landscapeButton : styles.button,
-                isCompactLandscape && styles.compactLandscapeButton,
+                styles.buttonContainer,
+                isLandscape && styles.buttonContainerLandscape,
+                isCompactLandscape && styles.compactButtonContainer,
               ]}
             >
-              {downloading && !downloadedPath ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <ThemedText style={[styles.buttonText, isCompactLandscape && styles.compactButtonText]}>
-                  {getButtonText()}
-                </ThemedText>
+              <StyledButton
+                ref={updateButtonRef}
+                onPress={handleUpdate}
+                disabled={downloading && !downloadedPath}
+                variant="default"
+                isSelected
+                style={[
+                  isLandscape ? styles.landscapeButton : styles.button,
+                  isCompactLandscape && styles.compactLandscapeButton,
+                ]}
+              >
+                {downloading && !downloadedPath ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <ThemedText style={[styles.buttonText, isCompactLandscape && styles.compactButtonText]}>
+                    {getButtonText()}
+                  </ThemedText>
+                )}
+              </StyledButton>
+
+              {!downloading && !downloadedPath && (
+                <>
+                  <StyledButton
+                    ref={laterButtonRef}
+                    onPress={handleLater}
+                    variant="default"
+                    style={[
+                      isLandscape ? styles.landscapeButton : styles.button,
+                      isCompactLandscape && styles.compactLandscapeButton,
+                    ]}
+                  >
+                    <ThemedText style={[styles.buttonText, isCompactLandscape && styles.compactButtonText]}>
+                      稍后再说
+                    </ThemedText>
+                  </StyledButton>
+
+                  <StyledButton
+                    ref={skipButtonRef}
+                    onPress={handleSkip}
+                    variant="default"
+                    style={[
+                      isLandscape ? styles.landscapeButton : styles.button,
+                      isCompactLandscape && styles.compactLandscapeButton,
+                    ]}
+                  >
+                    <ThemedText style={[styles.buttonText, isCompactLandscape && styles.compactButtonText]}>
+                      跳过此版本
+                    </ThemedText>
+                  </StyledButton>
+                </>
               )}
-            </StyledButton>
-
-            {!downloading && !downloadedPath && (
-              <>
-                <StyledButton
-                  ref={laterButtonRef}
-                  onPress={handleLater}
-                  variant="default"
-                  style={[
-                    isLandscape ? styles.landscapeButton : styles.button,
-                    isCompactLandscape && styles.compactLandscapeButton,
-                  ]}
-                >
-                  <ThemedText style={[styles.buttonText, isCompactLandscape && styles.compactButtonText]}>
-                    稍后再说
-                  </ThemedText>
-                </StyledButton>
-
-                <StyledButton
-                  ref={skipButtonRef}
-                  onPress={handleSkip}
-                  variant="default"
-                  style={[
-                    isLandscape ? styles.landscapeButton : styles.button,
-                    isCompactLandscape && styles.compactLandscapeButton,
-                  ]}
-                >
-                  <ThemedText style={[styles.buttonText, isCompactLandscape && styles.compactButtonText]}>
-                    跳过此版本
-                  </ThemedText>
-                </StyledButton>
-              </>
-            )}
+            </View>
           </View>
         </View>
-      </View>
+      </ModalToastRoot>
     </Modal>
   );
 }

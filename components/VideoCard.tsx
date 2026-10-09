@@ -5,7 +5,6 @@ import { API } from '@/services/api';
 
 // 导入不同平台的VideoCard组件
 import VideoCardMobile from './VideoCard.mobile';
-import VideoCardTablet from './VideoCard.tablet';
 import VideoCardTV from './VideoCard.tv';
 
 interface VideoCardProps extends React.ComponentProps<typeof TouchableOpacity> {
@@ -38,9 +37,6 @@ const VideoCard = React.forwardRef<any, VideoCardProps>((props, ref) => {
   switch (deviceType) {
     case 'mobile':
       return <VideoCardMobile {...props} ref={ref} />;
-    
-    case 'tablet':
-      return <VideoCardTablet {...props} ref={ref} />;
     
     case 'tv':
     default:

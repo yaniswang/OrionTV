@@ -352,7 +352,6 @@ export default function DetailScreen() {
 
 const createResponsiveStyles = (deviceType: string, spacing: number) => {
   const isTV = deviceType === 'tv';
-  const isTablet = deviceType === 'tablet';
   const isMobile = deviceType === 'mobile';
 
   return StyleSheet.create({
@@ -408,7 +407,7 @@ const createResponsiveStyles = (deviceType: string, spacing: number) => {
     },
     title: {
       paddingTop: 16,
-      fontSize: isMobile ? 20 : isTablet ? 24 : 28,
+      fontSize: isMobile ? 20 : 28,
       fontWeight: "bold",
       flexShrink: 1,
       color: 'white',
@@ -460,7 +459,7 @@ const createResponsiveStyles = (deviceType: string, spacing: number) => {
       marginBottom: spacing / 2,
     },
     sourcesTitle: {
-      fontSize: isMobile ? 16 : isTablet ? 18 : 20,
+      fontSize: isMobile ? 16 : 20,
       fontWeight: "bold",
       color: 'white',
     },
@@ -507,7 +506,7 @@ const createResponsiveStyles = (deviceType: string, spacing: number) => {
       paddingBottom: spacing * 2,
     },
     episodesTitle: {
-      fontSize: isMobile ? 16 : isTablet ? 18 : 20,
+      fontSize: isMobile ? 16 : 20,
       fontWeight: "bold",
       marginBottom: spacing / 2,
       color: 'white',

@@ -13,6 +13,7 @@ const STORAGE_KEYS = {
   PLAY_RECORDS: "mytv_play_records",
   SEARCH_HISTORY: "mytv_search_history",
   LOGIN_CREDENTIALS: "mytv_login_credentials",
+  ACCOUNTS: "mytv_accounts",
 } as const;
 
 // --- Type Definitions (aligned with api.ts) ---
@@ -45,6 +46,25 @@ export interface AppSettings {
 export interface LoginCredentials {
   username: string;
   password: string;
+}
+
+/** 本机保存的账号（仅 TV / PAD 多账号使用），按服务器地址 + 用户名区分 */
+export interface SavedAccount {
+  id: string;
+  serverUrl: string;
+  username: string;
+  /** 登出后清空，再次使用需要重新输入密码 */
+  password?: string;
+  color: string;
+  lastUsedAt: number;
+  /** 用保存的密码登录被服务器拒绝，需要重新输入密码 */
+  needsReauth?: boolean;
+}
+
+/** 打开应用时固定进入上次使用的账号（currentId），不提供启动选择 */
+export interface AccountsData {
+  accounts: SavedAccount[];
+  currentId: string | null;
 }
 
 // --- Helper ---
@@ -382,6 +402,30 @@ export class LoginCredentialsManager {
       await AsyncStorage.removeItem(STORAGE_KEYS.LOGIN_CREDENTIALS);
     } catch (error) {
       logger.error("Failed to clear login credentials:", error);
+    }
+  }
+}
+
+// --- AccountManager (Uses AsyncStorage) ---
+export class AccountManager {
+  static async get(): Promise<AccountsData> {
+    const defaultData: AccountsData = { accounts: [], currentId: null };
+    try {
+      const data = await AsyncStorage.getItem(STORAGE_KEYS.ACCOUNTS);
+      if (!data) return defaultData;
+      const parsed = JSON.parse(data);
+      return { accounts: parsed.accounts ?? [], currentId: parsed.currentId ?? null };
+    } catch (error) {
+      logger.info("Failed to get accounts:", error);
+      return defaultData;
+    }
+  }
+
+  static async save(data: AccountsData): Promise<void> {
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(data));
+    } catch (error) {
+      logger.error("Failed to save accounts:", error);
     }
   }
 }

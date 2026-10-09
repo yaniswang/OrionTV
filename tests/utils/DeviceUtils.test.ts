@@ -5,6 +5,7 @@ jest.mock("react-native", () => ({
   Dimensions: {
     get: jest.fn(),
   },
+  Platform: { isTV: false },
 }));
 
 const mockedDimensions = Dimensions as jest.Mocked<typeof Dimensions>;
@@ -15,18 +16,22 @@ describe("DeviceUtils", () => {
   });
 
   describe("getDeviceType", () => {
-    it("应该在宽度 >= 1024 时返回 tv", () => {
+    it("宽大于高时返回 tv（大屏布局）", () => {
       mockedDimensions.get.mockReturnValue({ width: 1024, height: 768 });
+      expect(DeviceUtils.getDeviceType()).toBe("tv");
+      mockedDimensions.get.mockReturnValue({ width: 852, height: 393 });
       expect(DeviceUtils.getDeviceType()).toBe("tv");
     });
 
-    it("应该在宽度 >= 768 且 < 1024 时返回 tablet", () => {
-      mockedDimensions.get.mockReturnValue({ width: 768, height: 1024 });
-      expect(DeviceUtils.getDeviceType()).toBe("tablet");
+    it("竖屏（含平板竖屏）返回 mobile", () => {
+      mockedDimensions.get.mockReturnValue({ width: 800, height: 1280 });
+      expect(DeviceUtils.getDeviceType()).toBe("mobile");
+      mockedDimensions.get.mockReturnValue({ width: 375, height: 812 });
+      expect(DeviceUtils.getDeviceType()).toBe("mobile");
     });
 
-    it("应该在宽度 < 768 时返回 mobile", () => {
-      mockedDimensions.get.mockReturnValue({ width: 375, height: 812 });
+    it("宽高相等时返回 mobile", () => {
+      mockedDimensions.get.mockReturnValue({ width: 500, height: 500 });
       expect(DeviceUtils.getDeviceType()).toBe("mobile");
     });
   });
@@ -52,18 +57,6 @@ describe("DeviceUtils", () => {
     it("应该在非移动设备上返回 false", () => {
       mockedDimensions.get.mockReturnValue({ width: 1024, height: 768 });
       expect(DeviceUtils.isMobile()).toBe(false);
-    });
-  });
-
-  describe("isTablet", () => {
-    it("应该在平板设备上返回 true", () => {
-      mockedDimensions.get.mockReturnValue({ width: 768, height: 1024 });
-      expect(DeviceUtils.isTablet()).toBe(true);
-    });
-
-    it("应该在非平板设备上返回 false", () => {
-      mockedDimensions.get.mockReturnValue({ width: 375, height: 812 });
-      expect(DeviceUtils.isTablet()).toBe(false);
     });
   });
 
@@ -97,14 +90,9 @@ describe("DeviceUtils", () => {
       expect(DeviceUtils.getMinTouchTargetSize()).toBe(44);
     });
 
-    it("应该为 tablet 设备返回 48", () => {
-      mockedDimensions.get.mockReturnValue({ width: 768, height: 1024 });
+    it("应该为 tv 设备返回 48（沿用原 tablet 值）", () => {
+      mockedDimensions.get.mockReturnValue({ width: 960, height: 540 });
       expect(DeviceUtils.getMinTouchTargetSize()).toBe(48);
-    });
-
-    it("应该为 tv 设备返回 60", () => {
-      mockedDimensions.get.mockReturnValue({ width: 1920, height: 1080 });
-      expect(DeviceUtils.getMinTouchTargetSize()).toBe(60);
     });
   });
 
@@ -114,14 +102,9 @@ describe("DeviceUtils", () => {
       expect(DeviceUtils.getOptimalFontSize(16)).toBe(16);
     });
 
-    it("应该为 tablet 设备返回基础大小 * 1.1", () => {
-      mockedDimensions.get.mockReturnValue({ width: 768, height: 1024 });
+    it("应该为 tv 设备返回基础大小 * 1.1（沿用原 tablet 值）", () => {
+      mockedDimensions.get.mockReturnValue({ width: 960, height: 540 });
       expect(DeviceUtils.getOptimalFontSize(16)).toBe(18);
-    });
-
-    it("应该为 tv 设备返回基础大小 * 1.25", () => {
-      mockedDimensions.get.mockReturnValue({ width: 1920, height: 1080 });
-      expect(DeviceUtils.getOptimalFontSize(16)).toBe(20);
     });
   });
 
@@ -131,14 +114,9 @@ describe("DeviceUtils", () => {
       expect(DeviceUtils.getOptimalSpacing(20)).toBe(16);
     });
 
-    it("应该为 tablet 设备返回基础间距 * 1.0", () => {
-      mockedDimensions.get.mockReturnValue({ width: 768, height: 1024 });
+    it("应该为 tv 设备返回基础间距 * 1.0（沿用原 tablet 值）", () => {
+      mockedDimensions.get.mockReturnValue({ width: 960, height: 540 });
       expect(DeviceUtils.getOptimalSpacing(20)).toBe(20);
-    });
-
-    it("应该为 tv 设备返回基础间距 * 1.5", () => {
-      mockedDimensions.get.mockReturnValue({ width: 1920, height: 1080 });
-      expect(DeviceUtils.getOptimalSpacing(20)).toBe(30);
     });
   });
 
@@ -179,18 +157,11 @@ describe("DeviceUtils", () => {
       expect(DeviceUtils.getSafeColumnCount(2)).toBe(2);
     });
 
-    it("应该在 tablet 设备上返回安全列数", () => {
-      mockedDimensions.get.mockReturnValue({ width: 768, height: 1024 });
-      // minCardWidth = 140, maxColumns = 768 / 140 = 5.485 = 5
-      expect(DeviceUtils.getSafeColumnCount(6)).toBe(5);
-      expect(DeviceUtils.getSafeColumnCount(3)).toBe(3);
-    });
-
     it("应该在 tv 设备上返回安全列数", () => {
-      mockedDimensions.get.mockReturnValue({ width: 1920, height: 1080 });
-      // minCardWidth = 160, maxColumns = 1920 / 160 = 12
-      expect(DeviceUtils.getSafeColumnCount(15)).toBe(12);
-      expect(DeviceUtils.getSafeColumnCount(8)).toBe(8);
+      mockedDimensions.get.mockReturnValue({ width: 960, height: 540 });
+      // minCardWidth = 140（沿用原 tablet 值）, maxColumns = 960 / 140 = 6.857 = 6
+      expect(DeviceUtils.getSafeColumnCount(8)).toBe(6);
+      expect(DeviceUtils.getSafeColumnCount(3)).toBe(3);
     });
   });
 
@@ -200,14 +171,9 @@ describe("DeviceUtils", () => {
       expect(DeviceUtils.getAnimationDuration(300)).toBe(300);
     });
 
-    it("应该为 tablet 设备返回基础持续时间 * 1.0", () => {
-      mockedDimensions.get.mockReturnValue({ width: 768, height: 1024 });
+    it("应该为 tv 设备返回基础持续时间 * 1.0（沿用原 tablet 值）", () => {
+      mockedDimensions.get.mockReturnValue({ width: 960, height: 540 });
       expect(DeviceUtils.getAnimationDuration(300)).toBe(300);
-    });
-
-    it("应该为 tv 设备返回基础持续时间 * 1.2", () => {
-      mockedDimensions.get.mockReturnValue({ width: 1920, height: 1080 });
-      expect(DeviceUtils.getAnimationDuration(300)).toBe(360);
     });
   });
 });

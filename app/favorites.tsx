@@ -109,7 +109,6 @@ export default function FavoritesScreen() {
 
 const createResponsiveStyles = (deviceType: string, spacing: number) => {
   const isMobile = deviceType === 'mobile';
-  const isTablet = deviceType === 'tablet';
   const isTV = deviceType === 'tv';
 
   return StyleSheet.create({
@@ -125,7 +124,7 @@ const createResponsiveStyles = (deviceType: string, spacing: number) => {
       marginBottom: spacing / 2,
     },
     headerTitle: {
-      fontSize: isMobile ? 24 : isTablet ? 28 : 32,
+      fontSize: isMobile ? 24 : 32,
       fontWeight: "bold",
       paddingTop: spacing,
       color: 'white',

@@ -20,6 +20,7 @@ import ResponsiveNavigation from "@/components/navigation/ResponsiveNavigation";
 import ResponsiveHeader from "@/components/navigation/ResponsiveHeader";
 import { DeviceUtils } from "@/utils/DeviceUtils";
 import Logger from '@/utils/Logger';
+import { isTVLongPressRelease } from '@/utils/TVLongPress';
 
 const logger = Logger.withTag('SearchScreen');
 
@@ -33,6 +34,8 @@ export default function SearchScreen() {
   const historyLongPressRef = useRef(false);
   const searchControllerRef = useRef<AbortController | null>(null);
   const [isInputFocused, setIsInputFocused] = useState(false);
+  // 遥控器选中的是外层容器，输入框本身要按 OK 后才获得焦点，两种状态都显示焦点边框
+  const [isInputWrapperFocused, setIsInputWrapperFocused] = useState(false);
   const { showModal: showRemoteModal, lastMessage, targetPage, clearMessage } = useRemoteControlStore();
   const { remoteInputEnabled } = useSettingsStore();
   const router = useRouter();
@@ -159,7 +162,12 @@ export default function SearchScreen() {
     handleSearch(historyKeyword);
   };
 
-  const handleHistoryLongPress = (historyKeyword: string) => {
+  const handleHistoryLongPress = (historyKeyword: string, event: unknown) => {
+    // TV 松手时会再发一次长按事件：本次长按到此结束，清掉标记以免吞掉下一次点击
+    if (isTVLongPressRelease(event)) {
+      historyLongPressRef.current = false;
+      return;
+    }
     historyLongPressRef.current = true;
     Alert.alert("删除搜索历史", `确定要删除"${historyKeyword}"吗？`, [
       { text: "取消", style: "cancel" },
@@ -252,7 +260,7 @@ export default function SearchScreen() {
             <Pressable
               key={item}
               onPress={() => handleHistoryPress(item)}
-              onLongPress={() => handleHistoryLongPress(item)}
+              onLongPress={(event) => handleHistoryLongPress(item, event)}
               delayLongPress={deviceType === 'mobile' ? 800 : 1000}
               style={({ focused }) => [
                 dynamicStyles.historyTag,
@@ -277,10 +285,12 @@ export default function SearchScreen() {
           style={[
             dynamicStyles.inputContainer,
             {
-              borderColor: isInputFocused ? Colors.dark.primary : "transparent",
+              borderColor: isInputFocused || isInputWrapperFocused ? Colors.dark.primary : "transparent",
             },
           ]}
           onPress={() => textInputRef.current?.focus()}
+          onFocus={() => setIsInputWrapperFocused(true)}
+          onBlur={() => setIsInputWrapperFocused(false)}
         >
           <TextInput
             ref={textInputRef}

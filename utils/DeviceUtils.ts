@@ -6,13 +6,10 @@ export const DeviceUtils = {
    * 检测当前设备类型
    */
   getDeviceType(): DeviceType {
-    // if (Platform.isTV) return "tv";
-
-    const { width } = Dimensions.get("window");
-
-    if (width >= 1024) return "tv";
-    if (width >= 768) return "tablet";
-    return "mobile";
+    if (Platform.isTV) return "tv";
+    const { width, height } = Dimensions.get("window");
+    // 与 useResponsiveLayout 一致：宽大于高用大屏布局，否则用手机布局
+    return width > height ? "tv" : "mobile";
   },
 
   /**
@@ -27,13 +24,6 @@ export const DeviceUtils = {
    */
   isMobile(): boolean {
     return this.getDeviceType() === "mobile";
-  },
-
-  /**
-   * 检测是否为平板设备
-   */
-  isTablet(): boolean {
-    return this.getDeviceType() === "tablet";
   },
 
   /**
@@ -58,10 +48,9 @@ export const DeviceUtils = {
     switch (deviceType) {
       case "mobile":
         return 44; // iOS HIG minimum
-      case "tablet":
-        return 48; // Material Design minimum
       case "tv":
-        return 60; // TV optimized
+        // 大屏沿用原平板档的值：常见 1080p 电视（960×540 dp）原来就落在平板档
+        return 48;
       default:
         return 44;
     }
@@ -74,8 +63,7 @@ export const DeviceUtils = {
     const deviceType = this.getDeviceType();
     const scaleFactor = {
       mobile: 1.0,
-      tablet: 1.1,
-      tv: 1.25,
+      tv: 1.1, // 沿用原平板档的值
     }[deviceType];
 
     return Math.round(baseSize * scaleFactor);
@@ -88,8 +76,7 @@ export const DeviceUtils = {
     const deviceType = this.getDeviceType();
     const scaleFactor = {
       mobile: 0.8,
-      tablet: 1.0,
-      tv: 1.5,
+      tv: 1.0, // 沿用原平板档的值
     }[deviceType];
 
     return Math.round(baseSpacing * scaleFactor);
@@ -115,7 +102,7 @@ export const DeviceUtils = {
    */
   getSafeColumnCount(preferredColumns: number): number {
     const { width } = Dimensions.get("window");
-    const minCardWidth = this.isMobile() ? 120 : this.isTablet() ? 140 : 160;
+    const minCardWidth = this.isMobile() ? 120 : 140; // 大屏沿用原平板档的值
     const maxColumns = Math.floor(width / minCardWidth);
 
     return Math.min(preferredColumns, maxColumns);
@@ -126,11 +113,9 @@ export const DeviceUtils = {
    */
   getAnimationDuration(baseDuration: number): number {
     const deviceType = this.getDeviceType();
-    // TV端动画稍慢，更符合10英尺体验
     const scaleFactor = {
       mobile: 1.0,
-      tablet: 1.0,
-      tv: 1.2,
+      tv: 1.0, // 沿用原平板档的值
     }[deviceType];
 
     return Math.round(baseDuration * scaleFactor);

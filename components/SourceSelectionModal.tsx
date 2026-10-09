@@ -130,7 +130,6 @@ const styles = StyleSheet.create({
 
 const createResponsiveStyles = (deviceType: string, spacing: number) => {
   const isTV = deviceType === 'tv';
-  const isTablet = deviceType === 'tablet';
   const isMobile = deviceType === 'mobile';
 
   return StyleSheet.create({

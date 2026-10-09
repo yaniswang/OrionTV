@@ -9,7 +9,6 @@ import { EpisodeSelectionModal } from "@/components/EpisodeSelectionModal";
 import { SourceSelectionModal } from "@/components/SourceSelectionModal";
 import { SpeedSelectionModal } from "@/components/SpeedSelectionModal";
 import { SeekingBar } from "@/components/SeekingBar";
-// import { NextEpisodeOverlay } from "@/components/NextEpisodeOverlay";
 import VideoLoadingAnimation from "@/components/VideoLoadingAnimation";
 import useDetailStore from "@/stores/detailStore";
 import { useTVRemoteHandler } from "@/hooks/useTVRemoteHandler";
@@ -52,14 +51,13 @@ LoadingContainer.displayName = "LoadingContainer";
 // 移到组件外部避免重复创建
 const createResponsiveStyles = (deviceType: string) => {
   const isMobile = deviceType === "mobile";
-  const isTablet = deviceType === "tablet";
 
   return StyleSheet.create({
     container: {
       flex: 1,
       backgroundColor: "black",
-      // 移动端和平板端可能需要状态栏处理
-      ...(isMobile || isTablet ? { paddingTop: 0 } : {}),
+      // 移动端可能需要状态栏处理
+      ...(isMobile ? { paddingTop: 0 } : {}),
     },
     videoContainer: {
       flex: 1,
@@ -158,7 +156,6 @@ export default function PlayScreen() {
     isVideoLoading,
     showControls,
     showLockControls,
-    // showNextEpisodeOverlay,
     isLandscapeMode,
     episodes,
     currentEpisodeIndex,
@@ -168,7 +165,6 @@ export default function PlayScreen() {
     handleVideoEnd,
     handleVideoPlaybackStateChanged,
     setShowControls,
-    // setShowNextEpisodeOverlay,
     savePlayRecord,
     reset,
     loadVideo,
@@ -611,7 +607,6 @@ export default function PlayScreen() {
         </View>
       )}
 
-      {/* <NextEpisodeOverlay visible={showNextEpisodeOverlay} onCancel={() => setShowNextEpisodeOverlay(false)} /> */}
       {currentEpisode?.url && (<EpisodeSelectionModal />)}
       {currentEpisode?.url && (<SourceSelectionModal />)}
       {currentEpisode?.url && (<SpeedSelectionModal />)}

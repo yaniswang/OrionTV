@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { View, StyleSheet, TouchableOpacity, Text, Platform } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
-import { Home, Search, Heart, Settings, Tv, LogOut } from 'lucide-react-native';
+import { Home, Search, Heart, Settings, Tv, LogOut, UserRound } from 'lucide-react-native';
 import { Colors } from '@/constants/Colors';
 import { useResponsiveLayout } from '@/hooks/useResponsiveLayout';
 import { DeviceUtils } from '@/utils/DeviceUtils';
 import useAuthStore from "@/stores/authStore";
+import useAccountStore from "@/stores/accountStore";
+import { useAccountLoginEnabled } from "@/hooks/useMultiAccount";
 
 interface TabItem {
   key: string;
@@ -23,6 +25,9 @@ const tabs: TabItem[] = [
   { key: 'logout', label: '登出', icon: LogOut, route: '/logout' },
 ];
 
+// 多账号启用时，「登出」换成打开账号面板（切换、添加、登出都在面板里）
+const accountTab: TabItem = { key: 'account', label: '账号', icon: UserRound, route: '/account' };
+
 interface MobileTabContainerProps {
   children: React.ReactNode;
 }
@@ -32,11 +37,16 @@ const MobileTabContainer: React.FC<MobileTabContainerProps> = ({ children }) => 
   const pathname = usePathname();
   const { spacing, deviceType } = useResponsiveLayout();
   
-  const { isLoggedIn, logout } = useAuthStore();
+  const { isLoggedIn } = useAuthStore();
+  const logout = useAccountStore((state) => state.logoutCurrent);
+  const showAccountPanel = useAccountStore((state) => state.showPanel);
+  const accountEnabled = useAccountLoginEnabled();
   // 在手机端过滤掉直播 tab
-  const filteredTabs = tabs.filter(item => {
-    return !(!isLoggedIn && item.key === 'logout');
-  });
+  const filteredTabs = tabs
+    .filter(item => {
+      return !(!isLoggedIn && item.key === 'logout');
+    })
+    .map(item => (accountEnabled && item.key === 'logout' ? accountTab : item));
   
   const handleTabPress = (route: string) => {
     if (route == '/live') {
@@ -44,6 +54,9 @@ const MobileTabContainer: React.FC<MobileTabContainerProps> = ({ children }) => 
     }
     else if (route === '/logout') {
       logout();
+    }
+    else if (route === '/account') {
+      showAccountPanel();
     }
     else {
       router.replace(route as any);

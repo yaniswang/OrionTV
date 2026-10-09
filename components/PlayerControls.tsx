@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, StyleSheet, Pressable, Platform } from "react-native";
+import { View, Text, StyleSheet, Pressable, Platform, type GestureResponderEvent } from "react-native";
 import {
   Pause,
   Play,
@@ -53,6 +53,7 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
     isSeeking,
     seekPosition,
     playbackRate,
+    seekBy,
     togglePlayPause,
     playEpisode,
     enableCast,
@@ -90,6 +91,7 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
     sourceName: currentSourceName,
   });
   const hasNextEpisode = currentEpisodeIndex < (episodes.length || 0) - 1;
+  const progressBarWidthRef = React.useRef(0);
 
   const formatTime = (milliseconds: number) => {
     if (!milliseconds) return "00:00";
@@ -112,6 +114,17 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
   const seekPositionMillis = seekPosition * durationMillis;
   const castIconAvailable = !Platform.isTV && (Platform.OS === 'android' || Platform.OS === 'ios');
   const batteryPercent = batteryLevel >= 0 ? Math.round(batteryLevel * 100) : null;
+
+  const handleProgressPress = (event: GestureResponderEvent) => {
+    const width = progressBarWidthRef.current;
+    if (showLockControls || !status.isLoaded || durationMillis <= 0 || width <= 0) return;
+
+    const ratio = Math.max(0, Math.min(1, event.nativeEvent.locationX / width));
+    const currentPositionMillis = isSeeking ? seekPosition * durationMillis : status.positionMillis;
+    const targetPositionMillis = ratio * durationMillis;
+
+    void seekBy(targetPositionMillis - currentPositionMillis);
+  };
 
   const onIntroPress = () => {
     setIntroEndTime(isCasting ? status.positionMillis : undefined);
@@ -193,7 +206,14 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
                   { width: `${(isSeeking ? seekPosition : progressPosition) * 100}%` },
                 ]}
               />
-              <Pressable style={styles.progressBarTouchable} />
+              <Pressable
+                focusable={false}
+                onLayout={(event) => {
+                  progressBarWidthRef.current = event.nativeEvent.layout.width;
+                }}
+                onPress={handleProgressPress}
+                style={styles.progressBarTouchable}
+              />
             </View>
 
             <View style={styles.bottomControls}>
@@ -269,7 +289,14 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
                 { width: `${(isSeeking ? seekPosition : progressPosition) * 100}%` },
               ]}
             />
-            <Pressable style={styles.progressBarTouchable} />
+            <Pressable
+              focusable={false}
+              onLayout={(event) => {
+                progressBarWidthRef.current = event.nativeEvent.layout.width;
+              }}
+              onPress={handleProgressPress}
+              style={styles.progressBarTouchable}
+            />
           </View>
         </View>
       )}

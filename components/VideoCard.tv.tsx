@@ -6,6 +6,7 @@ import { API } from "@/services/api";
 import { ThemedText } from "@/components/ThemedText";
 import { Colors } from "@/constants/Colors";
 import Logger from '@/utils/Logger';
+import { isTVLongPressRelease } from '@/utils/TVLongPress';
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 
 const logger = Logger.withTag('VideoCardTV');
@@ -117,7 +118,12 @@ const VideoCard = forwardRef<View, VideoCardProps>(
       }).start();
     }, [fadeAnim]);
 
-    const handleLongPress = () => {
+    const handleLongPress = (event: unknown) => {
+      // TV 松手时会再发一次长按事件：本次长按到此结束，清掉标记以免吞掉下一次点击
+      if (isTVLongPressRelease(event)) {
+        longPressTriggered.current = false;
+        return;
+      }
       longPressTriggered.current = true;
       onLongPress?.(title, source, id);
     };

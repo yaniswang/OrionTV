@@ -43,19 +43,19 @@ export const getCommonResponsiveStyles = (config: ResponsiveConfig) => {
     safeContainer: {
       flex: 1,
       paddingHorizontal: spacing,
-      paddingTop: deviceType === 'mobile' ? 20 : deviceType === 'tablet' ? 30 : 40,
+      paddingTop: deviceType === 'mobile' ? 20 : 40,
     },
 
     // 标题样式
     pageTitle: {
-      fontSize: DeviceUtils.getOptimalFontSize(deviceType === 'mobile' ? 24 : deviceType === 'tablet' ? 28 : 32),
+      fontSize: DeviceUtils.getOptimalFontSize(deviceType === 'mobile' ? 24 : 32),
       fontWeight: 'bold',
       marginBottom: spacing,
       color: 'white',
     },
 
     sectionTitle: {
-      fontSize: DeviceUtils.getOptimalFontSize(deviceType === 'mobile' ? 18 : deviceType === 'tablet' ? 20 : 22),
+      fontSize: DeviceUtils.getOptimalFontSize(deviceType === 'mobile' ? 18 : 22),
       fontWeight: '600',
       marginBottom: spacing / 2,
       color: 'white',
@@ -66,7 +66,7 @@ export const getCommonResponsiveStyles = (config: ResponsiveConfig) => {
       minHeight: minTouchTarget,
       paddingHorizontal: spacing * 1.5,
       paddingVertical: spacing,
-      borderRadius: deviceType === 'mobile' ? 8 : deviceType === 'tablet' ? 10 : 12,
+      borderRadius: deviceType === 'mobile' ? 8 : 12,
       justifyContent: 'center',
       alignItems: 'center',
     },
@@ -75,7 +75,7 @@ export const getCommonResponsiveStyles = (config: ResponsiveConfig) => {
       minHeight: minTouchTarget,
       paddingHorizontal: spacing,
       paddingVertical: spacing * 0.75,
-      borderRadius: deviceType === 'mobile' ? 6 : deviceType === 'tablet' ? 8 : 10,
+      borderRadius: deviceType === 'mobile' ? 6 : 10,
       justifyContent: 'center',
       alignItems: 'center',
       borderWidth: 1,
@@ -87,7 +87,7 @@ export const getCommonResponsiveStyles = (config: ResponsiveConfig) => {
       minHeight: minTouchTarget,
       paddingHorizontal: spacing,
       paddingVertical: spacing * 0.75,
-      borderRadius: deviceType === 'mobile' ? 8 : deviceType === 'tablet' ? 10 : 12,
+      borderRadius: deviceType === 'mobile' ? 8 : 12,
       fontSize: DeviceUtils.getOptimalFontSize(16),
       backgroundColor: '#2c2c2e',
       color: 'white',
@@ -98,7 +98,7 @@ export const getCommonResponsiveStyles = (config: ResponsiveConfig) => {
     // 卡片样式
     card: {
       backgroundColor: '#1c1c1e',
-      borderRadius: deviceType === 'mobile' ? 8 : deviceType === 'tablet' ? 10 : 12,
+      borderRadius: deviceType === 'mobile' ? 8 : 12,
       padding: spacing,
       marginBottom: spacing,
     },
@@ -197,7 +197,6 @@ export const getCommonResponsiveStyles = (config: ResponsiveConfig) => {
 export const getResponsiveTextSize = (baseSize: number, deviceType: string) => {
   const scaleFactors = {
     mobile: 1.0,
-    tablet: 1.1,
     tv: 1.25,
   };
   
@@ -212,7 +211,6 @@ export const getResponsiveTextSize = (baseSize: number, deviceType: string) => {
 export const getResponsiveSpacing = (baseSpacing: number, deviceType: string) => {
   const scaleFactors = {
     mobile: 0.8,
-    tablet: 1.0,
     tv: 1.5,
   };
   

@@ -2,7 +2,6 @@ import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useResponsiveLayout } from '@/hooks/useResponsiveLayout';
 import MobileTabContainer from './MobileTabContainer';
-import TabletSidebarNavigator from './TabletSidebarNavigator';
 
 interface ResponsiveNavigationProps {
   children: React.ReactNode;
@@ -15,17 +14,10 @@ const ResponsiveNavigation: React.FC<ResponsiveNavigationProps> = ({ children })
     case 'mobile':
       // 移动端使用Tab容器包装children
       return <MobileTabContainer>{children}</MobileTabContainer>;
-    
-    case 'tablet':
-      return (
-        <TabletSidebarNavigator>
-          {children}
-        </TabletSidebarNavigator>
-      );
-    
+
     case 'tv':
     default:
-      // TV端保持原有的Stack导航，不需要额外的导航容器
+      // 只有竖屏（手机布局）有底部导航；横屏和 TV 使用大屏布局，不加导航容器
       return <>{children}</>;
   }
 };

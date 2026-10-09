@@ -7,6 +7,7 @@ export interface NativeMediaProxy {
   stop(): Promise<void>;
   wrapUrl(target: string): Promise<string>;
   wrapUrls(targets: string[]): Promise<string[]>;
+  wrapLiveUrl?(target: string, userAgent: string): Promise<string>;
   cancelDownloads(): void;
 }
 
