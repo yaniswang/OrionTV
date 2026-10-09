@@ -94,6 +94,14 @@ export interface ServerConfig {
   StorageType: "localstorage" | "redis" | string;
 }
 
+/** 修改密码时服务器返回的错误，message 为可直接展示的提示 */
+export class ChangePasswordError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ChangePasswordError";
+  }
+}
+
 export class API {
   public baseURL: string = "";
 
@@ -139,6 +147,24 @@ export class API {
     }
 
     return response.json();
+  }
+
+  /** 服务器校验旧密码；失败时抛出服务器返回的错误信息（如「站长不能通过此接口修改密码」） */
+  async changePassword(oldPassword: string, newPassword: string): Promise<{ ok: boolean }> {
+    if (!this.baseURL) {
+      throw new Error("API_URL_NOT_SET");
+    }
+    const response = await fetch(`${this.baseURL}/api/change-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ oldPassword, newPassword }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const message = data?.error === "Unauthorized" ? "登录已失效，请重新登录" : data?.error;
+      throw new ChangePasswordError(message || `HTTP error! status: ${response.status}`);
+    }
+    return data;
   }
 
   async logout(): Promise<{ ok: boolean }> {

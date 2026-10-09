@@ -11,6 +11,7 @@ import { StyledButton } from "@/components/StyledButton";
 import { useRemoteControlStore } from "@/stores/remoteControlStore";
 import { RemoteControlModal } from "@/components/RemoteControlModal";
 import { useSettingsStore } from "@/stores/settingsStore";
+import useAccountStore from "@/stores/accountStore";
 import { useRouter } from "expo-router";
 import { Colors } from "@/constants/Colors";
 import CustomScrollView from "@/components/CustomScrollView";
@@ -38,6 +39,7 @@ export default function SearchScreen() {
   const [isInputWrapperFocused, setIsInputWrapperFocused] = useState(false);
   const { showModal: showRemoteModal, lastMessage, targetPage, clearMessage } = useRemoteControlStore();
   const { remoteInputEnabled } = useSettingsStore();
+  const accountVersion = useAccountStore((state) => state.accountVersion);
   const router = useRouter();
 
   // 响应式布局配置
@@ -64,11 +66,12 @@ export default function SearchScreen() {
     };
   }, []);
 
+  // 切换账号后重新加载新账号的搜索历史
   useEffect(() => {
     SearchHistoryManager.get()
       .then(setSearchHistory)
       .catch((err) => logger.info("Failed to load search history:", err));
-  }, []);
+  }, [accountVersion]);
 
   // useEffect(() => {
   //   // Focus the text input when the screen loads

@@ -1,8 +1,9 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useEffect } from "react";
 import { View, StyleSheet, Alert } from "react-native";
 import { ThemedView } from "@/components/ThemedView";
 import { ThemedText } from "@/components/ThemedText";
 import useFavoritesStore from "@/stores/favoritesStore";
+import useAccountStore from "@/stores/accountStore";
 import { Favorite, FavoriteManager } from "@/services/storage";
 import VideoCard from "@/components/VideoCard";
 import { api } from "@/services/api";
@@ -25,6 +26,15 @@ export default function FavoritesScreen() {
     useCallback(() => {
       fetchFavorites();
     }, [fetchFavorites])
+  );
+
+  // 停留在本页切换账号后，重新加载新账号的收藏
+  useEffect(
+    () =>
+      useAccountStore.subscribe((state, prev) => {
+        if (state.accountVersion !== prev.accountVersion) fetchFavorites();
+      }),
+    [fetchFavorites]
   );
 
   const onLongPress = async (title: string, source: string, id: string) => {

@@ -1,8 +1,8 @@
-import React, { useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Alert, Modal, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useShallow } from "zustand/react/shallow";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { LogOut, Plus } from "lucide-react-native";
+import { KeyRound, LogOut, Plus } from "lucide-react-native";
 import useAccountStore, { selectCurrentAccount, selectServerAccounts } from "@/stores/accountStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { Colors } from "@/constants/Colors";
@@ -13,7 +13,7 @@ import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { AccountAvatar } from "./AccountAvatar";
 
 /**
- * 账号面板：快速切换、长按删除其他账号、添加账号与登出。
+ * 账号面板：快速切换、长按删除其他账号、添加账号、修改密码与登出。
  * TV / PAD 由首页顶栏头像打开、显示在右上角；手机由底部「账号」Tab 打开、从底部弹出。
  */
 export const AccountPanel: React.FC = () => {
@@ -22,10 +22,18 @@ export const AccountPanel: React.FC = () => {
   const isVisible = useAccountStore((state) => state.isPanelVisible);
   const current = useAccountStore(selectCurrentAccount);
   const accounts = useAccountStore(useShallow(selectServerAccounts));
-  const { hidePanel, switchTo, openAddForm, logoutAccount, removeAccount } = useAccountStore.getState();
+  const { hidePanel, switchTo, openAddForm, openChangePasswordForm, logoutAccount, removeAccount } =
+    useAccountStore.getState();
   const apiBaseUrl = useSettingsStore((state) => state.apiBaseUrl);
 
   const others = accounts.filter((a) => a.id !== current?.id);
+
+  // 从修改密码表单取消回来时，焦点回到「修改密码」行；面板和表单都关掉后恢复默认焦点
+  const form = useAccountStore((state) => state.form);
+  const [refocusChangePassword, setRefocusChangePassword] = useState(false);
+  useEffect(() => {
+    if (!isVisible && !form) setRefocusChangePassword(false);
+  }, [isVisible, form]);
 
   // 与 VideoCard.tv 的长按删除一致：长按后用标记跳过随后的 onPress
   const longPressTriggered = useRef(false);
@@ -85,7 +93,7 @@ export const AccountPanel: React.FC = () => {
                     onPress={() => handleRowPress(account)}
                     onLongPress={(event) => handleRowLongPress(account, event)}
                     delayLongPress={1000}
-                    hasTVPreferredFocus={index === 0}
+                    hasTVPreferredFocus={!refocusChangePassword && index === 0}
                     style={({ focused }) => [styles.row, focused && styles.rowFocused]}
                   >
                     <AccountAvatar username={account.username} color={account.color} size={40} />
@@ -99,7 +107,7 @@ export const AccountPanel: React.FC = () => {
 
               <Pressable
                 onPress={openAddForm}
-                hasTVPreferredFocus={others.length === 0}
+                hasTVPreferredFocus={!refocusChangePassword && others.length === 0}
                 style={({ focused }) => [styles.row, focused && styles.rowFocused]}
               >
                 <View style={styles.addIcon}>
@@ -109,6 +117,20 @@ export const AccountPanel: React.FC = () => {
               </Pressable>
 
               <View style={[styles.divider, styles.dividerSpaced]} />
+
+              <Pressable
+                onPress={() => {
+                  setRefocusChangePassword(true);
+                  openChangePasswordForm(current.id);
+                }}
+                hasTVPreferredFocus={refocusChangePassword}
+                style={({ focused }) => [styles.row, styles.rowSmall, focused && styles.rowFocused]}
+              >
+                <KeyRound color="#c9c9ce" size={22} />
+                <Text style={styles.actionText} numberOfLines={1}>
+                  修改密码
+                </Text>
+              </Pressable>
 
               <Pressable
                 onPress={() => logoutAccount(current.id)}

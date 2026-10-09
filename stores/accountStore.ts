@@ -16,7 +16,10 @@ import Logger from "@/utils/Logger";
 
 const logger = Logger.withTag("AccountStore");
 
-export type AccountFormState = { mode: "add" } | { mode: "reauth"; accountId: string };
+export type AccountFormState =
+  | { mode: "add" }
+  | { mode: "reauth"; accountId: string }
+  | { mode: "changePassword"; accountId: string };
 
 interface AccountState extends AccountsData {
   /** 是否启用多账号并由新的账号表单接管登录（服务器有用户体系即启用，各设备一致），由 AccountGate 写入 */
@@ -28,6 +31,8 @@ interface AccountState extends AccountsData {
   switchingTo: SavedAccount | null;
   /** 正在处理登录失效，避免重复触发 */
   isRecovering: boolean;
+  /** 每次换了账号（切换、添加、重新登录）后递增，搜索、收藏页据此重新加载本账号的数据 */
+  accountVersion: number;
 
   setEnabled: (enabled: boolean) => void;
   load: () => Promise<void>;
@@ -37,11 +42,14 @@ interface AccountState extends AccountsData {
   hidePanel: () => void;
   openAddForm: () => void;
   openReauthForm: (accountId: string) => void;
+  openChangePasswordForm: (accountId: string) => void;
   closeForm: () => void;
 
   recordLogin: (username: string, password: string, color?: string) => Promise<SavedAccount>;
   addAccount: (username: string, password: string, color: string) => Promise<void>;
   reauth: (accountId: string, password: string) => Promise<void>;
+  /** 用保存的密码作为旧密码修改服务器上的密码，失败时抛出错误交给表单提示 */
+  changePassword: (accountId: string, newPassword: string) => Promise<void>;
   switchTo: (accountId: string) => Promise<void>;
   logoutAccount: (accountId: string) => Promise<void>;
   /** 登出当前账号；未由账号表单接管时退回原来的登出逻辑 */
@@ -84,6 +92,7 @@ const useAccountStore = create<AccountState>((set, get) => {
   const afterAccountChanged = async (account: SavedAccount) => {
     await LoginCredentialsManager.save({ username: account.username, password: account.password ?? "" });
     useAuthStore.setState({ isLoggedIn: true, isLoginModalVisible: false });
+    set((state) => ({ accountVersion: state.accountVersion + 1 }));
     await useHomeStore.getState().refreshPlayRecords();
   };
 
@@ -112,6 +121,7 @@ const useAccountStore = create<AccountState>((set, get) => {
     form: null,
     switchingTo: null,
     isRecovering: false,
+    accountVersion: 0,
 
     setEnabled: (enabled) => set({ enabled }),
 
@@ -127,6 +137,8 @@ const useAccountStore = create<AccountState>((set, get) => {
     openAddForm: () => set({ form: { mode: "add" }, isPanelVisible: false, isPickerVisible: false }),
     openReauthForm: (accountId) =>
       set({ form: { mode: "reauth", accountId }, isPanelVisible: false, isPickerVisible: false }),
+    openChangePasswordForm: (accountId) =>
+      set({ form: { mode: "changePassword", accountId }, isPanelVisible: false, isPickerVisible: false }),
     closeForm: () => {
       set({ form: null });
       if (useAuthStore.getState().isLoggedIn) return;
@@ -178,6 +190,22 @@ const useAccountStore = create<AccountState>((set, get) => {
       set({ form: null });
       await afterAccountChanged(updated);
       Toast.show({ type: "success", text1: successText(updated, wasLoggedIn) });
+    },
+
+    changePassword: async (accountId, newPassword) => {
+      const account = get().accounts.find((a) => a.id === accountId);
+      if (!account?.password) return;
+      await api.changePassword(account.password, newPassword);
+      const updated = await get().recordLogin(account.username, newPassword);
+      await LoginCredentialsManager.save({ username: updated.username, password: newPassword });
+      // 服务器改密码后旧 cookie 仍有效，这里用新密码重新登录换一份 cookie；失败不影响密码已修改的结果
+      try {
+        await api.login(updated.username, newPassword);
+      } catch (error) {
+        logger.error("Re-login after changing password failed:", error);
+      }
+      set({ form: null });
+      Toast.show({ type: "success", text1: "密码已修改", text2: "本机保存的密码已同步更新" });
     },
 
     switchTo: async (accountId) => {

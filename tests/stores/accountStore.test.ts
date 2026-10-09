@@ -13,6 +13,7 @@ jest.mock('@/services/api', () => ({
   api: {
     login: jest.fn(),
     logout: jest.fn(),
+    changePassword: jest.fn(),
   },
 }));
 
@@ -43,7 +44,7 @@ jest.mock('@/utils/Toast', () => ({
   default: { show: jest.fn() },
 }));
 
-const mockApi = api as unknown as { login: jest.Mock; logout: jest.Mock };
+const mockApi = api as unknown as { login: jest.Mock; logout: jest.Mock; changePassword: jest.Mock };
 const mockAccountManager = AccountManager as unknown as { get: jest.Mock; save: jest.Mock };
 const mockCredentials = LoginCredentialsManager as unknown as { get: jest.Mock; save: jest.Mock };
 const mockToast = Toast as unknown as { show: jest.Mock };
@@ -68,6 +69,7 @@ beforeEach(() => {
   mockSettings.apiBaseUrl = 'http://server-a';
   mockApi.login.mockResolvedValue({ ok: true });
   mockApi.logout.mockResolvedValue({ ok: true });
+  mockApi.changePassword.mockResolvedValue({ ok: true });
   mockCredentials.get.mockResolvedValue(null);
   useAccountStore.setState(initialAccountState, true);
   useAccountStore.setState({ enabled: true, loaded: true });
@@ -135,6 +137,23 @@ describe('accountStore.switchTo', () => {
     expect(mockCredentials.save).toHaveBeenCalledWith({ username: 'bob', password: 'bob-pw' });
     expect(mockRefreshPlayRecords).toHaveBeenCalled();
     expect(mockToast.show).toHaveBeenCalledWith(expect.objectContaining({ type: 'success' }));
+  });
+
+  it('切换成功后递增 accountVersion，通知搜索、收藏页刷新', async () => {
+    const before = useAccountStore.getState().accountVersion;
+
+    await useAccountStore.getState().switchTo('http://server-a::bob');
+
+    expect(useAccountStore.getState().accountVersion).toBe(before + 1);
+  });
+
+  it('切换失败时不递增 accountVersion', async () => {
+    mockApi.login.mockRejectedValue(new Error('Network request failed'));
+    const before = useAccountStore.getState().accountVersion;
+
+    await useAccountStore.getState().switchTo('http://server-a::bob');
+
+    expect(useAccountStore.getState().accountVersion).toBe(before);
   });
 
   it('选择当前账号时只关闭选择页，不重新登录', async () => {
@@ -425,5 +444,62 @@ describe('accountStore 未启用多账号（localstorage 服务器）', () => {
     expect(mockApi.logout).toHaveBeenCalled();
     expect(useAccountStore.getState().form).toBeNull();
     expect(useAuthStore.getState().isLoginModalVisible).toBe(true);
+  });
+});
+
+describe('accountStore.changePassword', () => {
+  beforeEach(() => {
+    useAccountStore.setState({
+      accounts: [makeAccount('alice'), makeAccount('bob')],
+      currentId: 'http://server-a::alice',
+      form: { mode: 'changePassword', accountId: 'http://server-a::alice' },
+    });
+    useAuthStore.setState({ isLoggedIn: true });
+  });
+
+  it('用保存的旧密码修改，成功后保存新密码、用新密码重新登录并关闭表单', async () => {
+    await useAccountStore.getState().changePassword('http://server-a::alice', 'new-pw');
+
+    expect(mockApi.changePassword).toHaveBeenCalledWith('alice-pw', 'new-pw');
+    expect(mockApi.login).toHaveBeenCalledWith('alice', 'new-pw');
+    const state = useAccountStore.getState();
+    expect(state.accounts.find((a) => a.username === 'alice')?.password).toBe('new-pw');
+    expect(state.currentId).toBe('http://server-a::alice');
+    expect(state.form).toBeNull();
+    expect(mockAccountManager.save).toHaveBeenCalled();
+    expect(mockCredentials.save).toHaveBeenCalledWith({ username: 'alice', password: 'new-pw' });
+    expect(mockToast.show).toHaveBeenCalledWith(expect.objectContaining({ type: 'success', text1: '密码已修改' }));
+  });
+
+  it('服务器拒绝时不改本机密码，表单保持打开并把错误抛给表单', async () => {
+    mockApi.changePassword.mockRejectedValue(new Error('站长不能通过此接口修改密码'));
+
+    await expect(
+      useAccountStore.getState().changePassword('http://server-a::alice', 'new-pw')
+    ).rejects.toThrow('站长不能通过此接口修改密码');
+
+    const state = useAccountStore.getState();
+    expect(state.accounts.find((a) => a.username === 'alice')?.password).toBe('alice-pw');
+    expect(state.form).not.toBeNull();
+    expect(mockApi.login).not.toHaveBeenCalled();
+  });
+
+  it('密码已改成功但重新登录失败时，仍保存新密码并提示成功', async () => {
+    mockApi.login.mockRejectedValue(new Error('Network request failed'));
+
+    await useAccountStore.getState().changePassword('http://server-a::alice', 'new-pw');
+
+    expect(useAccountStore.getState().accounts.find((a) => a.username === 'alice')?.password).toBe('new-pw');
+    expect(useAccountStore.getState().form).toBeNull();
+    expect(mockToast.show).toHaveBeenCalledWith(expect.objectContaining({ type: 'success' }));
+  });
+
+  it('从面板打开修改密码表单时关闭面板', () => {
+    useAccountStore.setState({ form: null, isPanelVisible: true });
+
+    useAccountStore.getState().openChangePasswordForm('http://server-a::alice');
+
+    expect(useAccountStore.getState().form).toEqual({ mode: 'changePassword', accountId: 'http://server-a::alice' });
+    expect(useAccountStore.getState().isPanelVisible).toBe(false);
   });
 });
