@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { View, StyleSheet, ActivityIndicator, useTVEventHandler, HWEvent, Text, Image, Platform, Pressable, LayoutChangeEvent } from "react-native";
+import { View, StyleSheet, ActivityIndicator, useTVEventHandler, HWEvent, Text, Image, Platform, Pressable, BackHandler } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
-import { Cast, MonitorSmartphone, Power } from "lucide-react-native";
+import { Cast, ChevronLeft, MonitorSmartphone, Power } from "lucide-react-native";
+import { useRouter } from "expo-router";
 import { FlashList } from "@shopify/flash-list";
 import LivePlayer from "@/components/LivePlayer";
 import { fetchAndParseM3u, getPlayableUrl, Channel } from "@/services/m3u";
@@ -14,7 +15,6 @@ import ResponsiveNavigation from "@/components/navigation/ResponsiveNavigation";
 import ResponsiveHeader from "@/components/navigation/ResponsiveHeader";
 import { DeviceUtils } from "@/utils/DeviceUtils";
 import * as ScreenOrientation from 'expo-screen-orientation';
-import Modal from "react-native-modal";
 import { Immersive } from 'react-native-immersive';
 import useDlnaStore from "@/stores/dlnaStore";
 import { DLNAStatusPanel } from "@/components/DLNAStatusPanel";
@@ -28,6 +28,7 @@ const CAST_BUTTON_SIZE = 48;
 
 export default function LiveScreen() {
   const { m3uUrl, m3uUa } = useSettingsStore();
+  const router = useRouter();
   // 投屏时本机播放器已卸载，页面层保持常亮（与剧集页一致）
   useKeepAwake();
   
@@ -75,6 +76,7 @@ export default function LiveScreen() {
   const [channelTitle, setChannelTitle] = useState<string | null>(null);
   const titleTimer = useRef<NodeJS.Timeout | null>(null);
 
+  const currentRowRef = useRef<View>(null);
   const channelListRef = useRef<FlashList<Channel>>(null);
   const groupListRef = useRef<FlashList<string>>(null);
 
@@ -85,25 +87,6 @@ export default function LiveScreen() {
   const dlnaPhase = useDlnaStore((state) => state.phase);
   const [showDlnaDeviceModal, setShowDlnaDeviceModal] = useState(false);
   const autoOpenedDlnaDeviceModalRef = useRef(false);
-  // 频道列表关闭动画结束后再打开设备弹窗，避免两个弹窗同时动画
-  const openDeviceModalAfterListHideRef = useRef(false);
-
-  // 投屏按钮与左侧第一个频道水平居中：列表顶部位置 + 半行高度
-  const channelListTopRef = useRef(0);
-  const channelRowHeightRef = useRef(0);
-  const [firstChannelCenterY, setFirstChannelCenterY] = useState<number | null>(null);
-  const updateFirstChannelCenter = () => {
-    if (channelRowHeightRef.current <= 0) return;
-    setFirstChannelCenterY(channelListTopRef.current + channelRowHeightRef.current / 2);
-  };
-  const onChannelListLayout = (e: LayoutChangeEvent) => {
-    channelListTopRef.current = e.nativeEvent.layout.y;
-    updateFirstChannelCenter();
-  };
-  const onChannelRowLayout = (e: LayoutChangeEvent) => {
-    channelRowHeightRef.current = e.nativeEvent.layout.height;
-    updateFirstChannelCenter();
-  };
 
   // 与剧集页一致：搜索结束且没有自动连上设备时，自动弹出设备列表
   useEffect(() => {
@@ -257,13 +240,7 @@ export default function LiveScreen() {
   };
 
   const openDeviceModal = () => {
-    openDeviceModalAfterListHideRef.current = true;
     setIsChannelListVisible(false);
-  };
-
-  const onChannelListHide = () => {
-    if (!openDeviceModalAfterListHideRef.current) return;
-    openDeviceModalAfterListHideRef.current = false;
     setShowDlnaDeviceModal(true);
   };
 
@@ -287,16 +264,20 @@ export default function LiveScreen() {
     setIsChannelListVisible(false);
   };
   
-  const onModalShow = () => {
-    const current = channels[currentChannelIndex];
-    const indexInGroup = current ? (groupedChannels[selectedGroup] || []).indexOf(current) : -1;
-    const groupIndex = channelGroups.indexOf(selectedGroup);
-    setTimeout(() => {
-      if (groupIndex >= 0) groupListRef.current?.scrollToIndex({ index: groupIndex, animated: false });
-      if (indexInGroup >= 0) channelListRef.current?.scrollToIndex({ index: indexInGroup, animated: false });
-    }, 100)
+  // 列表每次打开都会重新挂载，等列表首次绘制完成（onLoad）后再定位到当前分组和频道
+  const currentChannel = channels[currentChannelIndex];
+  const groupIndex = channelGroups.indexOf(selectedGroup);
+  const indexInGroup = currentChannel ? (groupedChannels[selectedGroup] || []).indexOf(currentChannel) : -1;
 
-  }
+  // 列表打开时，返回键先关闭列表
+  useEffect(() => {
+    if (!isChannelListVisible) return;
+    const backHandler = BackHandler.addEventListener("hardwareBackPress", () => {
+      setIsChannelListVisible(false);
+      return true;
+    });
+    return () => backHandler.remove();
+  }, [isChannelListVisible]);
   const renderLiveContent = () => (
     <>
       {/* 投屏时卸载本机播放器，主画面显示投屏状态 */}
@@ -317,15 +298,28 @@ export default function LiveScreen() {
           onScreenGesture={onScreenGesture}
         />
       )}
-      <Modal
-        isVisible={isChannelListVisible} statusBarTranslucent={true} onBackButtonPress={onClose} onBackdropPress={onClose} onSwipeComplete={onClose} onModalShow={onModalShow} onModalHide={onChannelListHide} swipeDirection="down" style={dynamicStyles.modalContainer}
-      >
+      {/* 频道列表直接画在页面内（与剧集页控制栏一致），独立弹窗窗口会露出系统状态栏 */}
+      {isChannelListVisible && (
+      <View style={dynamicStyles.modalContainer}>
+        <Pressable style={dynamicStyles.backdrop} onPress={onClose} />
         <View style={dynamicStyles.modalContent}>
-          <Text style={dynamicStyles.modalTitle}>选择频道</Text>
-          <View style={dynamicStyles.listContainer} onLayout={onChannelListLayout}>
+          <View style={dynamicStyles.modalTitleRow}>
+            <Text style={dynamicStyles.modalTitle}>选择频道</Text>
+            {/* 与剧集页一致：返回按钮只在手机和平板显示，电视用遥控器返回键；
+                放在标题之后渲染，否则整行宽的标题会盖住按钮、吃掉点击 */}
+            {!Platform.isTV && (
+              <Pressable onPress={() => router.back()} style={dynamicStyles.backButton}>
+                <ChevronLeft color="white" size={26} />
+              </Pressable>
+            )}
+          </View>
+          <View style={dynamicStyles.listContainer}>
             <View style={dynamicStyles.groupColumn}>
               <FlashList
                 ref={groupListRef}
+                onLoad={() => {
+                  if (groupIndex >= 0) groupListRef.current?.scrollToIndex({ index: groupIndex, animated: false });
+                }}
                 data={channelGroups}
                 keyExtractor={(item, index) => `group-${item}-${index}`}
                 extraData={selectedGroup}
@@ -347,40 +341,39 @@ export default function LiveScreen() {
               ) : (
                 <FlashList
                   ref={channelListRef}
+                  initialScrollIndex={indexInGroup >= 0 ? indexInGroup : undefined}
+                  onLoad={() => {
+                    if (indexInGroup < 0) return;
+                    channelListRef.current?.scrollToIndex({ index: indexInGroup, animated: false });
+                    // 电视：定位完成后再把焦点交给当前频道。不用 hasTVPreferredFocus——列表回收重建视图时它会反复抢焦点，
+                    // 抢焦点那一刻视图位置还没更新，列表会被拉到错误位置；手机上抢焦点则会让列表滚回顶部
+                    if (Platform.isTV) setTimeout(() => currentRowRef.current?.requestTVFocus(), 100);
+                  }}
                   data={groupedChannels[selectedGroup] || []}
                   keyExtractor={(item, index) => `${item.id}-${item.group}-${index}`}
                   extraData={currentChannelIndex}
                   drawDistance={2000}
                   estimatedItemSize={61}
-                  renderItem={({ item }) => {
-                    const row = (
-                      <StyledButton
-                        onPress={() => handleSelectChannel(item)}
-                        isSelected={channels[currentChannelIndex] === item}
-                        hasTVPreferredFocus={channels[currentChannelIndex] === item}
-                        style={dynamicStyles.channelItem}
-                      >
-                        {item.logo && (<Image source={{ uri: item.logo }} style={dynamicStyles.channelLogo} />)}
-                        <Text style={dynamicStyles.channelItemText}>
-                          {item.name || "Unknown Channel"}
-                        </Text>
-                      </StyledButton>
-                    );
-                    // 手机和平板量出一行频道的高度（含外边距），用于把投屏按钮对齐到第一个频道
-                    return castAvailable ? <View onLayout={onChannelRowLayout}>{row}</View> : row;
-                  }}
+                  renderItem={({ item }) => (
+                    <StyledButton
+                      onPress={() => handleSelectChannel(item)}
+                      isSelected={channels[currentChannelIndex] === item}
+                      ref={channels[currentChannelIndex] === item ? currentRowRef : undefined}
+                      style={dynamicStyles.channelItem}
+                    >
+                      {item.logo && (<Image source={{ uri: item.logo }} style={dynamicStyles.channelLogo} />)}
+                      <Text style={dynamicStyles.channelItemText}>
+                        {item.name || "Unknown Channel"}
+                      </Text>
+                    </StyledButton>
+                  )}
                 />
               )}
             </View>
           </View>
         </View>
         {castAvailable && (
-          <View
-            style={[
-              dynamicStyles.castActions,
-              firstChannelCenterY !== null && { top: firstChannelCenterY - CAST_BUTTON_SIZE / 2 },
-            ]}
-          >
+          <View style={dynamicStyles.castActions}>
             {isCasting && (
               <Pressable onPress={openDeviceModal} style={dynamicStyles.castButton}>
                 <MonitorSmartphone color="white" size={24} />
@@ -391,7 +384,8 @@ export default function LiveScreen() {
             </Pressable>
           </View>
         )}
-      </Modal>
+      </View>
+      )}
       {castAvailable && (
         <DLNADeviceModal
           visible={isCasting && showDlnaDeviceModal}
@@ -402,7 +396,8 @@ export default function LiveScreen() {
   );
 
   const content = (
-    <ThemedView style={[commonStyles.container, dynamicStyles.container]}>
+    // 与剧集页一致：根视图可聚焦，进入页面就有焦点，遥控器中键才能直接生效
+    <ThemedView focusable style={[commonStyles.container, dynamicStyles.container]}>
       {renderLiveContent()}
     </ThemedView>
   );
@@ -419,18 +414,35 @@ const createResponsiveStyles = (deviceType: string, spacing: number) => {
       flex: 1,
     },
     modalContainer: {
-      margin: 0,
+      ...StyleSheet.absoluteFillObject,
       // 频道列表统一放左边（手机和平板右上角留给投屏按钮）
       alignItems: "flex-start",
+    },
+    backdrop: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: "rgba(0, 0, 0, 0.7)",
     },
     modalContent: {
       width: 450,
       height: "100%",
       backgroundColor: "rgba(0, 0, 0, 0.85)",
     },
+    modalTitleRow: {
+      // 与剧集页顶部栏一致（top: 20）
+      marginTop: 20,
+      height: 48,
+      marginBottom: spacing / 2,
+      justifyContent: "center",
+    },
+    backButton: {
+      position: "absolute",
+      left: 10,
+      height: 48,
+      padding: 5,
+      justifyContent: "center",
+    },
     modalTitle: {
       color: "white",
-      marginBottom: spacing / 2,
       textAlign: "center",
       fontSize: isMobile ? 18 : 16,
       fontWeight: "bold",

@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from "react";
-import { View, StyleSheet, Text, ActivityIndicator, Dimensions, AppState, AppStateStatus, Platform } from "react-native";
+import { View, StyleSheet, Text, ActivityIndicator, Dimensions, AppState, AppStateStatus, Platform, Pressable } from "react-native";
 import Video, { VideoRef, ResizeMode, OnPlaybackStateChangedData, ViewType } from 'react-native-video';
 import { useKeepAwake } from "expo-keep-awake";
 import { GestureDetector, Gesture, GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -102,9 +102,9 @@ export default function LivePlayer({ streamUrl, streamUa, channelTitle, onScreen
 
   if (!videoUrl) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.messageText}>按中键选择频道</Text>
-      </View>
+      <Pressable style={[styles.container, styles.centered]} onPress={onScreenPress}>
+        <Text style={styles.messageText}>{Platform.isTV ? "按中键选择频道" : "点击屏幕选择频道，或投屏到电视"}</Text>
+      </Pressable>
     );
   }
 
@@ -282,6 +282,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "black",
+  },
+  centered: {
+    justifyContent: "center",
+    alignItems: "center",
   },
   video: {
     ...StyleSheet.absoluteFillObject,
