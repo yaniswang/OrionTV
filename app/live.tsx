@@ -420,8 +420,8 @@ const createResponsiveStyles = (deviceType: string, spacing: number) => {
     },
     modalContainer: {
       margin: 0,
-      // 手机和平板的频道列表放左边，右上角留给投屏按钮
-      alignItems: castAvailable ? "flex-start" : "flex-end",
+      // 频道列表统一放左边（手机和平板右上角留给投屏按钮）
+      alignItems: "flex-start",
     },
     modalContent: {
       width: 450,

@@ -13,7 +13,7 @@ const mockController = {
     positionSupported: false,
     trackUri: '',
   })),
-  getTransportInfo: jest.fn(async () => ({ state: 'PLAYING' })),
+  getTransportInfo: jest.fn(async () => ({ state: 'PLAYING', status: 'OK' })),
 };
 
 jest.mock('@/services/dlna/control', () => ({
@@ -162,7 +162,7 @@ describe('电视端加载失败时退回本机播放', () => {
 
   afterEach(async () => {
     await useDlnaStore.getState().disableCast({ restoreLocal: false, stopRemote: true });
-    mockController.getTransportInfo.mockImplementation(async () => ({ state: 'PLAYING' }));
+    mockController.getTransportInfo.mockImplementation(async () => ({ state: 'PLAYING', status: 'OK' }));
     mockController.getPositionInfo.mockImplementation(async () => ({
       positionMillis: 0, trackDurationMillis: 0, positionSupported: false, trackUri: '',
     }));
@@ -178,17 +178,18 @@ describe('电视端加载失败时退回本机播放', () => {
   it('推送后电视停在 STOPPED：保护期结束即退回本机', async () => {
     await useDlnaStore.getState().enableLiveCast(live);
     expect(useDlnaStore.getState().phase).toBe('connected');
-    mockController.getTransportInfo.mockImplementation(async () => ({ state: 'STOPPED' }));
+    mockController.getTransportInfo.mockImplementation(async () => ({ state: 'STOPPED', status: 'OK' }));
 
     await jest.advanceTimersByTimeAsync(4000);
 
     expectFellBack();
   });
 
-  it('20 秒内播放进度一直不动：退回本机', async () => {
+  it('电视一直卡在加载中（TRANSITIONING）超过 20 秒：退回本机', async () => {
     mockController.getPositionInfo.mockImplementation(async () => ({
       positionMillis: 0, trackDurationMillis: 0, positionSupported: true, trackUri: '',
     }));
+    mockController.getTransportInfo.mockImplementation(async () => ({ state: 'TRANSITIONING', status: 'OK' }));
     await useDlnaStore.getState().enableLiveCast(live);
 
     await jest.advanceTimersByTimeAsync(15000);
@@ -196,6 +197,50 @@ describe('电视端加载失败时退回本机播放', () => {
 
     await jest.advanceTimersByTimeAsync(6000);
     expectFellBack();
+  });
+
+  it('进度不动但电视状态是 PLAYING（如红米电视播直播）：保持投屏', async () => {
+    mockController.getPositionInfo.mockImplementation(async () => ({
+      positionMillis: 0, trackDurationMillis: 0, positionSupported: true, trackUri: '',
+    }));
+    await useDlnaStore.getState().enableLiveCast(live);
+
+    await jest.advanceTimersByTimeAsync(25000);
+
+    expect(useDlnaStore.getState().enabled).toBe(true);
+    expect(Toast.show).not.toHaveBeenCalled();
+  });
+
+  it('查询电视状态一直失败：不误判', async () => {
+    mockController.getPositionInfo.mockImplementation(async () => ({
+      positionMillis: 0, trackDurationMillis: 0, positionSupported: true, trackUri: '',
+    }));
+    await useDlnaStore.getState().enableLiveCast(live);
+    mockController.getTransportInfo.mockImplementation(async () => { throw new Error('timeout'); });
+
+    await jest.advanceTimersByTimeAsync(25000);
+
+    expect(useDlnaStore.getState().enabled).toBe(true);
+  });
+
+  it('TransportStatus 报 ERROR_OCCURRED：退回本机', async () => {
+    await useDlnaStore.getState().enableLiveCast(live);
+    mockController.getTransportInfo.mockImplementation(async () => ({ state: 'PLAYING', status: 'ERROR_OCCURRED' }));
+
+    await jest.advanceTimersByTimeAsync(4000);
+
+    expectFellBack();
+  });
+
+  it('保护期后已确认 PLAYING，之后不再做加载判定', async () => {
+    await useDlnaStore.getState().enableLiveCast(live);
+    await jest.advanceTimersByTimeAsync(5000);
+    const calls = mockController.getTransportInfo.mock.calls.length;
+
+    await jest.advanceTimersByTimeAsync(20000);
+
+    expect(mockController.getTransportInfo.mock.calls.length).toBe(calls);
+    expect(useDlnaStore.getState().enabled).toBe(true);
   });
 
   it('进度在推进：保持投屏', async () => {
@@ -230,7 +275,7 @@ describe('电视端加载失败时退回本机播放', () => {
     await jest.advanceTimersByTimeAsync(5000);
 
     // 新频道加载失败：电视停在无媒体状态，进度不再前进
-    mockController.getTransportInfo.mockImplementation(async () => ({ state: 'NO_MEDIA_PRESENT' }));
+    mockController.getTransportInfo.mockImplementation(async () => ({ state: 'NO_MEDIA_PRESENT', status: 'OK' }));
     mockController.getPositionInfo.mockImplementation(async () => ({
       positionMillis: 0, trackDurationMillis: 0, positionSupported: true, trackUri: '',
     }));
@@ -253,7 +298,7 @@ describe('电视端加载失败时退回本机播放', () => {
 
     // 换源：播放器已切到新片源，电视加载新地址失败后停在 STOPPED，进度不动
     mockEpisode = { url: 'http://cdn/source-b.mp4' };
-    mockController.getTransportInfo.mockImplementation(async () => ({ state: 'STOPPED' }));
+    mockController.getTransportInfo.mockImplementation(async () => ({ state: 'STOPPED', status: 'OK' }));
     mockController.getPositionInfo.mockImplementation(async () => ({
       positionMillis: 0, trackDurationMillis: 0, positionSupported: true, trackUri: '',
     }));
@@ -276,7 +321,7 @@ describe('电视端加载失败时退回本机播放', () => {
     await useDlnaStore.getState().enableCast();
     expect(useDlnaStore.getState().phase).toBe('connected');
     (usePlayerStore.setState as jest.Mock).mockClear();
-    mockController.getTransportInfo.mockImplementation(async () => ({ state: 'STOPPED' }));
+    mockController.getTransportInfo.mockImplementation(async () => ({ state: 'STOPPED', status: 'OK' }));
 
     await jest.advanceTimersByTimeAsync(4000);
 

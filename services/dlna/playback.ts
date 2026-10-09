@@ -117,6 +117,27 @@ export function shouldIgnoreUnconfirmedTerminalState(
   return transportState === 'STOPPED' || transportState === 'NO_MEDIA_PRESENT';
 }
 
+export type RemoteLoadVerdict = 'loaded' | 'failed' | 'pending';
+
+/**
+ * 推送新媒体后，按标准传输状态判断电视端是否加载成功；不看播放位置——
+ * 直播时部分电视（如红米 hyperDLNA）位置与时长恒为 0，但状态是 PLAYING。
+ * Play 之后正常应处于 TRANSITIONING / PLAYING；实测 Macast、红米电视加载失败时都会回到 STOPPED，
+ * TransportStatus=ERROR_OCCURRED 是规范里的出错标志，支持但不依赖。
+ * 保护期内一律等待：换片时旧媒体会先报一次 STOPPED。
+ */
+export function judgeRemoteLoad(
+  transportState: DLNATransportState,
+  transportStatus: string,
+  inGracePeriod: boolean,
+): RemoteLoadVerdict {
+  if (inGracePeriod) return 'pending';
+  if (transportStatus.toUpperCase() === 'ERROR_OCCURRED') return 'failed';
+  if (transportState === 'PLAYING' || transportState === 'PAUSED_PLAYBACK') return 'loaded';
+  if (transportState === 'STOPPED' || transportState === 'NO_MEDIA_PRESENT') return 'failed';
+  return 'pending';
+}
+
 /** 标准 TransportState=PLAYING 可作为播放已开始的确认；位置推进作为另一条确认路径。 */
 export function shouldConfirmPlaybackFromTransportState(
   transportState: DLNATransportState,

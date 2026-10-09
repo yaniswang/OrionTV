@@ -22,6 +22,7 @@ import {
   isRemoteDurationReady,
   isRemotePositionAtEnd,
   isSameRemoteTrackUri,
+  judgeRemoteLoad,
   resolveRemoteDuration,
   shouldApplyRemotePosition,
   shouldConfirmPlaybackFromTransportState,
@@ -339,5 +340,33 @@ describe('DLNA 倍速', () => {
         }),
       }),
     );
+  });
+});
+
+describe('推送新媒体后的加载判定（只看标准传输状态）', () => {
+  it('保护期内一律等待：换片时旧媒体会先报 STOPPED', () => {
+    expect(judgeRemoteLoad('STOPPED', 'OK', true)).toBe('pending');
+    expect(judgeRemoteLoad('NO_MEDIA_PRESENT', 'OK', true)).toBe('pending');
+    expect(judgeRemoteLoad('PLAYING', 'ERROR_OCCURRED', true)).toBe('pending');
+  });
+
+  it('保护期后 PLAYING / 暂停即视为加载成功（不看播放位置）', () => {
+    expect(judgeRemoteLoad('PLAYING', 'OK', false)).toBe('loaded');
+    expect(judgeRemoteLoad('PAUSED_PLAYBACK', 'OK', false)).toBe('loaded');
+  });
+
+  it('保护期后 STOPPED / NO_MEDIA_PRESENT 视为加载失败（Macast、红米电视实测）', () => {
+    expect(judgeRemoteLoad('STOPPED', 'OK', false)).toBe('failed');
+    expect(judgeRemoteLoad('NO_MEDIA_PRESENT', 'OK', false)).toBe('failed');
+  });
+
+  it('TransportStatus=ERROR_OCCURRED 视为加载失败（不区分大小写）', () => {
+    expect(judgeRemoteLoad('PLAYING', 'ERROR_OCCURRED', false)).toBe('failed');
+    expect(judgeRemoteLoad('TRANSITIONING', 'error_occurred', false)).toBe('failed');
+  });
+
+  it('加载中或状态未知时继续等待', () => {
+    expect(judgeRemoteLoad('TRANSITIONING', 'OK', false)).toBe('pending');
+    expect(judgeRemoteLoad('UNKNOWN', '', false)).toBe('pending');
   });
 });

@@ -19,6 +19,7 @@ import {
   hasRemotePlaybackStarted,
   isRemotePositionAtEnd,
   isSameRemoteTrackUri,
+  judgeRemoteLoad,
   resolveRemoteDuration,
   shouldApplyRemotePosition,
   shouldConfirmPlaybackFromTransportState,
@@ -42,7 +43,7 @@ const MEDIA_LOADING_TIMEOUT_MS = 60000;
 const REMOTE_POSITION_RANGE_TOLERANCE_MS = 2000;
 /** 新媒体的停止事件与旧媒体切换事件之间允许出现的短暂窗口。 */
 const MEDIA_TRANSITION_TERMINAL_GRACE_MS = 3000;
-/** 推送新媒体后，播放进度持续不前进超过该时长视为电视端加载失败。 */
+/** 推送新媒体后最长观察时长：超过仍卡在加载中视为电视端加载失败。 */
 const REMOTE_LOAD_FAILURE_TIMEOUT_MS = 20000;
 const REMOTE_LOAD_CHECK_INTERVAL_MS = 1000;
 
@@ -612,45 +613,37 @@ const useDlnaStore = create<DLNAState>((set, get) => {
   };
 
   /**
-   * 推送新媒体后检测电视端是否真正加载成功：
-   * - 切换保护期过后电视仍处于 STOPPED / NO_MEDIA_PRESENT；
-   * - 或支持位置查询、但 20 秒内进度始终不前进。
-   * 任一成立即判定加载失败，停止投屏并退回本机播放。
+   * 推送新媒体后按标准传输状态检测电视端是否加载成功（见 judgeRemoteLoad）：
+   * 保护期后查到 PLAYING / 暂停即结束检测；查到 STOPPED、无媒体或 ERROR_OCCURRED 立即退回本机播放；
+   * 20 秒后仍卡在加载中（TRANSITIONING）也算失败。状态查询失败时不判定。
    */
   const watchRemoteLoad = async (activeController: DlnaController, session: number) => {
     const generation = ++remoteLoadWatchGeneration;
     const isCurrent = () =>
       generation === remoteLoadWatchGeneration && session === sessionId && controller === activeController;
     const startedAt = Date.now();
-    let anchorMillis: number | null = null;
-    let positionSupported = false;
+    let lastState: DLNATransportState = 'UNKNOWN';
 
     while (Date.now() - startedAt < REMOTE_LOAD_FAILURE_TIMEOUT_MS) {
       await delay(REMOTE_LOAD_CHECK_INTERVAL_MS);
       // 用户暂停后不再判定
       if (!isCurrent() || !get().isPlaying) return;
-      try {
-        const position = await activeController.getPositionInfo();
-        if (!isCurrent()) return;
-        if (position.positionSupported) {
-          positionSupported = true;
-          if (hasRemotePlaybackStarted(anchorMillis, position.positionMillis)) return;
-          anchorMillis = anchorMillis ?? position.positionMillis;
-        }
-      } catch {}
-      if (Date.now() - startedAt >= MEDIA_TRANSITION_TERMINAL_GRACE_MS) {
-        const state = await activeController
-          .getTransportInfo()
-          .then((info) => info.state)
-          .catch(() => 'UNKNOWN' as DLNATransportState);
-        if (!isCurrent()) return;
-        if (state === 'STOPPED' || state === 'NO_MEDIA_PRESENT') {
-          await fallBackToLocal(session);
-          return;
-        }
+      const info = await activeController.getTransportInfo().catch(() => null);
+      if (!isCurrent()) return;
+      if (!info) continue;
+      lastState = info.state;
+      const verdict = judgeRemoteLoad(
+        info.state,
+        info.status,
+        Date.now() - startedAt < MEDIA_TRANSITION_TERMINAL_GRACE_MS,
+      );
+      if (verdict === 'loaded') return;
+      if (verdict === 'failed') {
+        await fallBackToLocal(session);
+        return;
       }
     }
-    if (isCurrent() && positionSupported) await fallBackToLocal(session);
+    if (isCurrent() && lastState === 'TRANSITIONING') await fallBackToLocal(session);
   };
 
   const fallBackToLocal = async (session: number) => {

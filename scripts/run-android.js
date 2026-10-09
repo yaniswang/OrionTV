@@ -2,12 +2,15 @@
 /* eslint-env node */
 
 const { spawn, spawnSync } = require("child_process");
+const fs = require("fs");
 const http = require("http");
 const path = require("path");
 const { resolveEntryPoint } = require("@expo/config/paths");
 
 const projectRoot = path.resolve(__dirname, "..");
 const expoCli = path.join(projectRoot, "node_modules", "expo", "bin", "cli");
+// 记录正在运行的 yarn android 的 PID，保证同时只有一个
+const LOCK_PATH = path.join(projectRoot, ".expo", "run-android.lock");
 const originalRunArgs = process.argv.slice(2);
 const { port, args: runArgs } = extractPort(originalRunArgs);
 const baseEnv = {
@@ -47,6 +50,45 @@ function extractPort(args) {
   }
 
   return { port, args: remaining };
+}
+
+function isProcessAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // EPERM：进程存在但无权发信号
+    return error.code === "EPERM";
+  }
+}
+
+/** 获取单实例锁；已有存活的 yarn android 时返回它的 PID，锁里的进程已退出（如被强杀）则接管 */
+function acquireLock(lockPath = LOCK_PATH) {
+  fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+  try {
+    fs.writeFileSync(lockPath, String(process.pid), { flag: "wx" });
+    return { ok: true };
+  } catch (error) {
+    if (error.code !== "EEXIST") throw error;
+  }
+
+  const pid = Number(fs.readFileSync(lockPath, "utf8").trim());
+  if (Number.isInteger(pid) && pid > 0 && pid !== process.pid && isProcessAlive(pid)) {
+    return { ok: false, pid };
+  }
+
+  fs.writeFileSync(lockPath, String(process.pid));
+  return { ok: true };
+}
+
+function releaseLock(lockPath = LOCK_PATH) {
+  try {
+    if (fs.readFileSync(lockPath, "utf8").trim() === String(process.pid)) {
+      fs.unlinkSync(lockPath);
+    }
+  } catch {
+    // 锁文件不存在或已被删除
+  }
 }
 
 function delay(milliseconds) {
@@ -203,19 +245,24 @@ function stopMetro() {
 }
 
 async function main() {
+  const lock = acquireLock();
+  if (!lock.ok) {
+    throw new Error(`Another "yarn android" is already running (PID ${lock.pid}). Stop it first.`);
+  }
+  process.on("exit", () => releaseLock());
+
   if (port !== 8081) {
     await runExpo(["run:android", ...originalRunArgs]);
     return;
   }
 
-  let metroHost = await probeMetro();
-
-  if (!metroHost) {
-    startMetro();
-    metroHost = await waitForMetro();
-  } else {
-    console.log(`[android] Reusing Metro on port ${port}.`);
+  // 不复用已有的 Metro：复用时 Expo 退出会删掉 adb reverse，App 连不上 Metro
+  if (await probeMetro()) {
+    throw new Error(`Port ${port} is already used by another Metro. Stop it first.`);
   }
+
+  startMetro();
+  const metroHost = await waitForMetro();
 
   let prewarmError = null;
   const prewarm = prewarmBundle(metroHost).catch((error) => {
@@ -236,10 +283,6 @@ async function main() {
     throw prewarmError;
   }
 
-  if (!metroProcess) {
-    return;
-  }
-
   console.log("[android] Metro remains running for Fast Refresh. Press Ctrl+C to stop.");
   await waitForProcess(metroProcess);
 }
@@ -254,7 +297,7 @@ process.on("SIGTERM", () => {
   process.exit(143);
 });
 
-module.exports = { buildBundleUrl, extractPort, prewarmBundle, probeMetro, startMetro, stopMetro, waitForMetro };
+module.exports = { acquireLock, releaseLock, buildBundleUrl, extractPort, prewarmBundle, probeMetro, startMetro, stopMetro, waitForMetro };
 
 if (require.main === module) {
   main().catch((error) => {
