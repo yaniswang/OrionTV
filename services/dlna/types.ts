@@ -43,6 +43,13 @@ export interface DLNATransportInfo {
   status: string;
 }
 
+export interface DLNAMediaInfo {
+  /** 当前媒体地址（AVTransportURI）；为空表示电视已没有可播放的媒体 */
+  currentUri: string;
+  /** 曲目数（NrTracks）；无法解析时为 null */
+  numberOfTracks: number | null;
+}
+
 export interface DLNAPositionInfo {
   trackDurationMillis: number;
   positionMillis: number;

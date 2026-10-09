@@ -9,6 +9,7 @@ import {
 import type {
   DLNAControlCapabilities,
   DLNADevice,
+  DLNAMediaInfo,
   DLNAPositionInfo,
   DLNATransportInfo,
   DLNATransportState,
@@ -191,6 +192,15 @@ export class DlnaController {
       positionMillis: parseDurationToMillis(rawRelTime),
       positionSupported: isDurationImplemented(rawRelTime),
       trackUri: String(valueOf(response, 'TrackURI') ?? ''),
+    };
+  }
+
+  async getMediaInfo(): Promise<DLNAMediaInfo> {
+    const response = await this.request('GetMediaInfo', { InstanceID: 0 });
+    const tracks = Number.parseInt(String(valueOf(response, 'NrTracks') ?? ''), 10);
+    return {
+      currentUri: String(valueOf(response, 'CurrentURI') ?? ''),
+      numberOfTracks: Number.isFinite(tracks) ? tracks : null,
     };
   }
 

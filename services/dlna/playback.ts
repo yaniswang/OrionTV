@@ -1,8 +1,9 @@
-import type { DLNATransportState } from './types';
+import type { DLNAMediaInfo, DLNATransportState } from './types';
 
 export const REMOTE_SEEK_DURATION_MARGIN_MS = 1000;
 export const REMOTE_DURATION_TRANSITION_GRACE_MS = 15000;
-export const REMOTE_END_THRESHOLD_MS = 3000;
+/** 电视常在标称时长前几秒就结束（最后一个分片偏短，实测 Macast 差 8 秒），结尾这段时间内停止都算播完。 */
+export const REMOTE_END_THRESHOLD_MS = 15000;
 
 
 /**
@@ -119,22 +120,34 @@ export function shouldIgnoreUnconfirmedTerminalState(
 
 export type RemoteLoadVerdict = 'loaded' | 'failed' | 'pending';
 
+/** 电视已没有可播放的媒体：当前地址为空或曲目数为 0（红米、Kodi 加载失败时实测如此）。 */
+export function isRemoteMediaDropped(media: DLNAMediaInfo): boolean {
+  return media.currentUri.trim() === '' || media.numberOfTracks === 0;
+}
+
 /**
- * 推送新媒体后，按标准传输状态判断电视端是否加载成功；不看播放位置——
- * 直播时部分电视（如红米 hyperDLNA）位置与时长恒为 0，但状态是 PLAYING。
- * Play 之后正常应处于 TRANSITIONING / PLAYING；实测 Macast、红米电视加载失败时都会回到 STOPPED，
- * TransportStatus=ERROR_OCCURRED 是规范里的出错标志，支持但不依赖。
+ * 推送新媒体后的加载判定，保守策略（与 Kodi 自带投屏控制端一致）：只认明确失败，无法判断的当作还在播放。
+ * - 成功：PLAYING / PAUSED_PLAYBACK，且有播放证据（电视已报出时长或进度）。
+ *   Kodi、Macast 加载中就报 PLAYING，此时时长和进度都是 0，不能算成功；
+ *   红米播直播时时长和进度恒为 0，会一直观察到观察期结束，不影响播放。
+ * - 明确失败：TransportStatus=ERROR_OCCURRED；NO_MEDIA_PRESENT；STOPPED 且电视已丢掉媒体。
+ * - 无法判断：STOPPED 但仍持有媒体（Macast 播放中切换片源时，加载期间就报 STOPPED）、TRANSITIONING、未知。
  * 保护期内一律等待：换片时旧媒体会先报一次 STOPPED。
  */
 export function judgeRemoteLoad(
   transportState: DLNATransportState,
   transportStatus: string,
   inGracePeriod: boolean,
+  mediaDropped: boolean,
+  hasPlaybackEvidence: boolean,
 ): RemoteLoadVerdict {
   if (inGracePeriod) return 'pending';
   if (transportStatus.toUpperCase() === 'ERROR_OCCURRED') return 'failed';
-  if (transportState === 'PLAYING' || transportState === 'PAUSED_PLAYBACK') return 'loaded';
-  if (transportState === 'STOPPED' || transportState === 'NO_MEDIA_PRESENT') return 'failed';
+  if (transportState === 'PLAYING' || transportState === 'PAUSED_PLAYBACK') {
+    return hasPlaybackEvidence ? 'loaded' : 'pending';
+  }
+  if (transportState === 'NO_MEDIA_PRESENT') return 'failed';
+  if (transportState === 'STOPPED' && mediaDropped) return 'failed';
   return 'pending';
 }
 

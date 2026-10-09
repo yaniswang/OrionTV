@@ -22,6 +22,7 @@ import {
   isRemoteDurationReady,
   isRemotePositionAtEnd,
   isSameRemoteTrackUri,
+  isRemoteMediaDropped,
   judgeRemoteLoad,
   resolveRemoteDuration,
   shouldApplyRemotePosition,
@@ -166,7 +167,9 @@ describe('DLNA 时间与 SOAP', () => {
 
   it('识别远端终止事件是否属于正常播放结束', () => {
     expect(isRemotePositionAtEnd(49_000, 50_000)).toBe(true);
-    expect(isRemotePositionAtEnd(40_000, 50_000)).toBe(false);
+    // 电视常在标称时长前几秒就结束（实测 Macast 差 8 秒），结尾 15 秒内停止都算播完
+    expect(isRemotePositionAtEnd(36_000, 50_000)).toBe(true);
+    expect(isRemotePositionAtEnd(34_000, 50_000)).toBe(false);
     expect(isRemotePositionAtEnd(0, 0)).toBe(false);
   });
   it('远端位置推进后才算真正开始播放', () => {
@@ -343,30 +346,48 @@ describe('DLNA 倍速', () => {
   });
 });
 
-describe('推送新媒体后的加载判定（只看标准传输状态）', () => {
+describe('推送新媒体后的加载判定（保守：只认明确失败）', () => {
   it('保护期内一律等待：换片时旧媒体会先报 STOPPED', () => {
-    expect(judgeRemoteLoad('STOPPED', 'OK', true)).toBe('pending');
-    expect(judgeRemoteLoad('NO_MEDIA_PRESENT', 'OK', true)).toBe('pending');
-    expect(judgeRemoteLoad('PLAYING', 'ERROR_OCCURRED', true)).toBe('pending');
+    expect(judgeRemoteLoad('STOPPED', 'OK', true, true, false)).toBe('pending');
+    expect(judgeRemoteLoad('NO_MEDIA_PRESENT', 'OK', true, true, false)).toBe('pending');
+    expect(judgeRemoteLoad('PLAYING', 'ERROR_OCCURRED', true, false, true)).toBe('pending');
   });
 
-  it('保护期后 PLAYING / 暂停即视为加载成功（不看播放位置）', () => {
-    expect(judgeRemoteLoad('PLAYING', 'OK', false)).toBe('loaded');
-    expect(judgeRemoteLoad('PAUSED_PLAYBACK', 'OK', false)).toBe('loaded');
+  it('PLAYING / 暂停且有播放证据（已有时长或进度）才视为加载成功', () => {
+    expect(judgeRemoteLoad('PLAYING', 'OK', false, false, true)).toBe('loaded');
+    expect(judgeRemoteLoad('PAUSED_PLAYBACK', 'OK', false, false, true)).toBe('loaded');
   });
 
-  it('保护期后 STOPPED / NO_MEDIA_PRESENT 视为加载失败（Macast、红米电视实测）', () => {
-    expect(judgeRemoteLoad('STOPPED', 'OK', false)).toBe('failed');
-    expect(judgeRemoteLoad('NO_MEDIA_PRESENT', 'OK', false)).toBe('failed');
+  it('PLAYING 但还没有时长和进度（Kodi、Macast 加载中就报 PLAYING）：继续观察', () => {
+    expect(judgeRemoteLoad('PLAYING', 'OK', false, false, false)).toBe('pending');
   });
 
-  it('TransportStatus=ERROR_OCCURRED 视为加载失败（不区分大小写）', () => {
-    expect(judgeRemoteLoad('PLAYING', 'ERROR_OCCURRED', false)).toBe('failed');
-    expect(judgeRemoteLoad('TRANSITIONING', 'error_occurred', false)).toBe('failed');
+  it('明确失败：ERROR_OCCURRED（不区分大小写）', () => {
+    expect(judgeRemoteLoad('PLAYING', 'ERROR_OCCURRED', false, false, true)).toBe('failed');
+    expect(judgeRemoteLoad('TRANSITIONING', 'error_occurred', false, false, false)).toBe('failed');
   });
 
-  it('加载中或状态未知时继续等待', () => {
-    expect(judgeRemoteLoad('TRANSITIONING', 'OK', false)).toBe('pending');
-    expect(judgeRemoteLoad('UNKNOWN', '', false)).toBe('pending');
+  it('明确失败：无媒体，或 STOPPED 且电视已丢掉媒体（红米、Kodi 实测）', () => {
+    expect(judgeRemoteLoad('NO_MEDIA_PRESENT', 'OK', false, false, false)).toBe('failed');
+    expect(judgeRemoteLoad('STOPPED', 'OK', false, true, false)).toBe('failed');
+  });
+
+  it('无法判断时当作还在播放：STOPPED 但仍持有媒体（Macast 加载中）、加载中、状态未知', () => {
+    expect(judgeRemoteLoad('STOPPED', 'OK', false, false, false)).toBe('pending');
+    expect(judgeRemoteLoad('TRANSITIONING', 'OK', false, false, false)).toBe('pending');
+    expect(judgeRemoteLoad('UNKNOWN', '', false, false, false)).toBe('pending');
+  });
+});
+
+describe('电视是否已丢掉媒体', () => {
+  it('当前地址为空或曲目数为 0 视为已丢掉', () => {
+    expect(isRemoteMediaDropped({ currentUri: '', numberOfTracks: 1 })).toBe(true);
+    expect(isRemoteMediaDropped({ currentUri: '  ', numberOfTracks: null })).toBe(true);
+    expect(isRemoteMediaDropped({ currentUri: 'http://a/b.m3u8', numberOfTracks: 0 })).toBe(true);
+  });
+
+  it('仍持有媒体或无法解析曲目数时不算丢掉', () => {
+    expect(isRemoteMediaDropped({ currentUri: 'http://a/b.m3u8', numberOfTracks: 2 })).toBe(false);
+    expect(isRemoteMediaDropped({ currentUri: 'http://a/b.m3u8', numberOfTracks: null })).toBe(false);
   });
 });

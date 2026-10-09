@@ -19,6 +19,7 @@ import {
   hasRemotePlaybackStarted,
   isRemotePositionAtEnd,
   isSameRemoteTrackUri,
+  isRemoteMediaDropped,
   judgeRemoteLoad,
   resolveRemoteDuration,
   shouldApplyRemotePosition,
@@ -43,8 +44,8 @@ const MEDIA_LOADING_TIMEOUT_MS = 60000;
 const REMOTE_POSITION_RANGE_TOLERANCE_MS = 2000;
 /** 新媒体的停止事件与旧媒体切换事件之间允许出现的短暂窗口。 */
 const MEDIA_TRANSITION_TERMINAL_GRACE_MS = 3000;
-/** 推送新媒体后最长观察时长：超过仍卡在加载中视为电视端加载失败。 */
-const REMOTE_LOAD_FAILURE_TIMEOUT_MS = 20000;
+/** 推送新媒体后检测加载结果的观察时长；到时仍无法判断就当作在播放，不再判定。 */
+const REMOTE_LOAD_WATCH_MS = 20000;
 const REMOTE_LOAD_CHECK_INTERVAL_MS = 1000;
 
 interface LocalPlaybackSnapshot {
@@ -124,6 +125,10 @@ let mediaLoadingGeneration = 0;
 let positionProgressAnchorMillis: number | null = null;
 /** 加载失败检测的代际号：每次推送新媒体递增，旧的检测随之结束。 */
 let remoteLoadWatchGeneration = 0;
+/** 加载检测尚未得出结论：期间由加载检测独家处理电视的停止状态，不走「远端已关闭」 */
+let remoteLoadWatchActive = false;
+/** 当前媒体最后一次观察到的有效进度；电视结束前把进度归零时，用它判断是否已播到结尾 */
+let lastProgressMillis = 0;
 let skipOutroBusy = false;
 /** 非空表示当前是直播投屏 */
 let liveMedia: LiveCastMedia | null = null;
@@ -457,6 +462,7 @@ const useDlnaStore = create<DLNAState>((set, get) => {
         positionMillis: position.positionMillis,
         durationMillis: nextDurationMillis,
       });
+      if (position.positionMillis > 0) lastProgressMillis = position.positionMillis;
       if (maybeSkipOutro(position.positionMillis, nextDurationMillis)) return;
     } catch {
       // 单次位置查询失败不终止后续标准轮询。
@@ -496,6 +502,7 @@ const useDlnaStore = create<DLNAState>((set, get) => {
       await activeController.seekTo(target);
       if (controller !== activeController) return;
       set({ isSeeking: false, positionMillis: target });
+      lastProgressMillis = target;
     } catch (error) {
       if (controller !== activeController) return;
       set({ isSeeking: false, isSeekSupported: false });
@@ -539,6 +546,8 @@ const useDlnaStore = create<DLNAState>((set, get) => {
     stopPositionPolling();
     endMediaLoading();
     positionProgressAnchorMillis = null;
+    remoteLoadWatchActive = false;
+    lastProgressMillis = 0;
     skipOutroBusy = false;
     suppressAutoAdvance = true;
     stopDiscovery();
@@ -594,6 +603,8 @@ const useDlnaStore = create<DLNAState>((set, get) => {
       }
       if (session !== sessionId || controller !== activeController) return;
 
+      // 部分电视（Kodi）结束前会先把进度归零，用最后一次有效进度判断是否播到结尾
+      positionMillis = Math.max(positionMillis, lastProgressMillis);
       stopPositionPolling();
       set({ positionMillis, durationMillis });
       if (suppressAutoAdvance) return;
@@ -605,6 +616,16 @@ const useDlnaStore = create<DLNAState>((set, get) => {
         return;
       }
 
+      // 没播到结尾就停止，且电视已丢掉媒体：是加载失败（Kodi 换到坏源时先沿用旧时长报 PLAYING，失败后才 STOPPED），不是用户主动关闭
+      if (!liveMedia) {
+        const media = await activeController.getMediaInfo().catch(() => null);
+        if (session !== sessionId || controller !== activeController) return;
+        if (media && isRemoteMediaDropped(media)) {
+          await fallBackToLocal(session);
+          return;
+        }
+      }
+
       Toast.show({ type: 'info', text1: '远端已关闭', text2: '已退出投屏' });
       await disconnect(true, false, { autoPlay: wasPlaying });
     } finally {
@@ -613,37 +634,51 @@ const useDlnaStore = create<DLNAState>((set, get) => {
   };
 
   /**
-   * 推送新媒体后按标准传输状态检测电视端是否加载成功（见 judgeRemoteLoad）：
-   * 保护期后查到 PLAYING / 暂停即结束检测；查到 STOPPED、无媒体或 ERROR_OCCURRED 立即退回本机播放；
-   * 20 秒后仍卡在加载中（TRANSITIONING）也算失败。状态查询失败时不判定。
+   * 推送新媒体后检测电视端是否加载成功（规则见 judgeRemoteLoad）：保守策略，只有明确失败才退回本机播放；
+   * 观察期内查到 PLAYING / 暂停即结束检测，无法判断的状态一直当作还在播放，观察期结束后不再判定。
    */
   const watchRemoteLoad = async (activeController: DlnaController, session: number) => {
     const generation = ++remoteLoadWatchGeneration;
     const isCurrent = () =>
       generation === remoteLoadWatchGeneration && session === sessionId && controller === activeController;
     const startedAt = Date.now();
-    let lastState: DLNATransportState = 'UNKNOWN';
+    remoteLoadWatchActive = true;
 
-    while (Date.now() - startedAt < REMOTE_LOAD_FAILURE_TIMEOUT_MS) {
-      await delay(REMOTE_LOAD_CHECK_INTERVAL_MS);
-      // 用户暂停后不再判定
-      if (!isCurrent() || !get().isPlaying) return;
-      const info = await activeController.getTransportInfo().catch(() => null);
-      if (!isCurrent()) return;
-      if (!info) continue;
-      lastState = info.state;
-      const verdict = judgeRemoteLoad(
-        info.state,
-        info.status,
-        Date.now() - startedAt < MEDIA_TRANSITION_TERMINAL_GRACE_MS,
-      );
-      if (verdict === 'loaded') return;
-      if (verdict === 'failed') {
-        await fallBackToLocal(session);
-        return;
+    try {
+      while (Date.now() - startedAt < REMOTE_LOAD_WATCH_MS) {
+        await delay(REMOTE_LOAD_CHECK_INTERVAL_MS);
+        // 不能用 isPlaying 判断用户暂停：电视推送的 STOPPED 事件也会把它置为 false；
+        // 用户暂停时电视报 PAUSED_PLAYBACK，判定规则本身不会因此判失败。
+        if (!isCurrent()) return;
+        const info = await activeController.getTransportInfo().catch(() => null);
+        if (!isCurrent()) return;
+        if (!info) continue;
+        const inGracePeriod = Date.now() - startedAt < MEDIA_TRANSITION_TERMINAL_GRACE_MS;
+        // 只有 STOPPED 才需要确认电视是否已丢掉媒体；查询失败视为无法判断
+        let mediaDropped = false;
+        if (!inGracePeriod && info.state === 'STOPPED') {
+          const media = await activeController.getMediaInfo().catch(() => null);
+          if (!isCurrent()) return;
+          mediaDropped = !!media && isRemoteMediaDropped(media);
+        }
+        // PLAYING 需要播放证据：已报出时长或进度
+        let hasPlaybackEvidence = false;
+        if (!inGracePeriod && (info.state === 'PLAYING' || info.state === 'PAUSED_PLAYBACK')) {
+          const position = await activeController.getPositionInfo().catch(() => null);
+          if (!isCurrent()) return;
+          hasPlaybackEvidence = !!position &&
+            (position.trackDurationMillis > 0 || (position.positionSupported && position.positionMillis > 0));
+        }
+        const verdict = judgeRemoteLoad(info.state, info.status, inGracePeriod, mediaDropped, hasPlaybackEvidence);
+        if (verdict === 'loaded') return;
+        if (verdict === 'failed') {
+          await fallBackToLocal(session);
+          return;
+        }
       }
+    } finally {
+      if (generation === remoteLoadWatchGeneration) remoteLoadWatchActive = false;
     }
-    if (isCurrent() && lastState === 'TRANSITIONING') await fallBackToLocal(session);
   };
 
   const fallBackToLocal = async (session: number) => {
@@ -718,7 +753,7 @@ const useDlnaStore = create<DLNAState>((set, get) => {
           shouldHandleRemoteTerminalState(
             nextTransportState,
             previous.playbackConfirmed,
-            suppressAutoAdvance || inMediaTransition,
+            suppressAutoAdvance || inMediaTransition || remoteLoadWatchActive,
           )
         ) {
           void syncTerminalRemoteState(
@@ -825,6 +860,7 @@ const useDlnaStore = create<DLNAState>((set, get) => {
       error: null,
     });
     positionProgressAnchorMillis = null;
+    lastProgressMillis = 0;
     const resolvedDevice = await refreshDeviceDescription(device);
     if (session !== sessionId) return;
     try {
@@ -1143,6 +1179,7 @@ const useDlnaStore = create<DLNAState>((set, get) => {
         loadingGeneration = beginMediaLoading();
         set({ playbackConfirmed: false });
         positionProgressAnchorMillis = null;
+        lastProgressMillis = 0;
         lastSyncedUri = uri;
         suppressAutoAdvance = true;
         expectedRemoteDurationMillis = 0;
