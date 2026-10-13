@@ -143,8 +143,9 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       isDetialLoading: true,
     });
     
-    // 切源优先使用 searchResults 中已有的数据，不能因后台测速未完成而重新 init 并重排源列表。
-    const needsDetailInit = !detail || !episodes || episodes.length === 0 || detail.title !== title || detail.source !== source;
+    // 列表还没加载完（allSourcesLoaded=false）就不复用：离开播放页会 abort 后台初始化，
+    // 被中止的 init 不会把 allSourcesLoaded 置回 true，复用会让换源列表一直停在加载中。
+    const needsDetailInit = !detail || !episodes || episodes.length === 0 || detail.title !== title || detail.source !== source || !useDetailStore.getState().allSourcesLoaded;
     logger.info(`[PERF] Detail check - needsInit: ${needsDetailInit}, hasDetail: ${!!detail}, episodesCount: ${episodes?.length || 0}`);
     
     if (needsDetailInit) {

@@ -100,7 +100,7 @@ export const DLNAStatusPanel: React.FC<DLNAStatusPanelProps> = ({ liveTitle }) =
         {busy && <ActivityIndicator color="#00bb5e" size="large" />}
         {!!error && <Text style={styles.errorText}>{error}</Text>}
         <Text style={styles.hint}>
-          {liveTitle === undefined ? '点击右下角的切换设备按钮可更换投屏设备' : '点击屏幕可切换频道或投屏设备'}
+          {liveTitle === undefined ? '点击右上角的切换设备按钮可更换投屏设备' : '点击屏幕可切换频道或投屏设备'}
         </Text>
       </View>
     </View>

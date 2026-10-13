@@ -57,10 +57,12 @@ function withCertFiles(config) {
       fs.copyFileSync(path.join(projectRoot, 'plugins/isrg_root_x2.cer'), path.join(rawDir, 'isrg_root_x2.cer'));
       fs.copyFileSync(path.join(projectRoot, 'plugins/LegacyTls.kt'), path.join(javaDir, 'LegacyTls.kt'));
       fs.copyFileSync(path.join(projectRoot, 'plugins/MediaProxyModule.kt'), path.join(javaDir, 'MediaProxyModule.kt'));
+      fs.copyFileSync(path.join(projectRoot, 'plugins/MediaProxyLive.kt'), path.join(javaDir, 'MediaProxyLive.kt'));
       fs.copyFileSync(path.join(projectRoot, 'plugins/MediaProxyPlaylist.kt'), path.join(javaDir, 'MediaProxyPlaylist.kt'));
       const testDir = path.join(projectRoot, 'android/app/src/test/java/com/oriontv');
       fs.mkdirSync(testDir, { recursive: true });
       fs.copyFileSync(path.join(projectRoot, 'plugins/MediaProxyPlaylistTest.kt'), path.join(testDir, 'MediaProxyPlaylistTest.kt'));
+      fs.copyFileSync(path.join(projectRoot, 'plugins/MediaProxyLiveTest.kt'), path.join(testDir, 'MediaProxyLiveTest.kt'));
       console.log('✅ ISRG 根证书和旧 Android TLS 支持代码已复制到原生 Android 目录');
 
       return config;

@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import NetInfo from "@react-native-community/netinfo";
 import { SearchResult, api } from "@/services/api";
 import { getCachedSpeedTest, measureM3U8Speed, pingM3U8, resolveM3U8Segments, urlTag, M3U8ProbeInfo, M3U8Segment } from "@/services/m3u8";
 import { FavoriteManager } from "@/services/storage";
@@ -90,6 +91,20 @@ const useDetailStore = create<DetailState>((set, get) => ({
     const signal = newController.signal;
 
     title = title.replace(' ', '');
+
+    /**
+     * 蜂窝网络（手机流量）下跳过"完整测速"：它要下载分片，很费流量。
+     * 轻量 PING（清单 + HEAD）保留；测速被跳过时不再比较代理/直连，
+     * 直接按默认路线播放——配了代理就走代理，没配就走直连。
+     */
+    let skipFullSpeedTest = false;
+    try {
+      const netState = await NetInfo.fetch();
+      skipFullSpeedTest = netState.type === 'cellular';
+    } catch (e) {
+      // 取不到网络类型时按非蜂窝处理，保持原有测速行为
+      logger.warn(`[NET] 读取网络类型失败，按非蜂窝网络处理：${String(e)}`);
+    }
 
     set({
       q,
@@ -406,6 +421,8 @@ const useDetailStore = create<DetailState>((set, get) => ({
     };
 
     const enqueueForTest = (item: PingedSource | null) => {
+      // 蜂窝网络：整条完整测速链路直接跳过，列表停在 PING 结果上
+      if (skipFullSpeedTest) return;
       if (!item || (item.segments !== null && item.segments.length === 0)) return;
       testQueue.push(item);
       testChain = testChain.then(async () => {
@@ -462,7 +479,8 @@ const useDetailStore = create<DetailState>((set, get) => ({
       if (!item || pinged.has(item.source)) return null;
       item.insertSeq = insertSeq++;
       // 没有源在测、队列也是空的：图标立刻落到这条新源上（和它出现在列表里同一次 set）
-      const iconIdle = !waitingForPlayback && measuringSource === null && testQueue.length === 0;
+      // 跳过完整测速时不挂"测速中"图标：不会有任何源被真正测速
+      const iconIdle = !skipFullSpeedTest && !waitingForPlayback && measuringSource === null && testQueue.length === 0;
       mergePinged([item], iconIdle ? { testingSource: item.source } : undefined);
       // 推荐源已经在插入前完成过完整测速，插入时不需要再入测速队列
       if (enqueue) enqueueForTest(item);
@@ -518,7 +536,10 @@ const useDetailStore = create<DetailState>((set, get) => ({
           // 推荐源跳过 PING，直接完整测速；成功才插入播放，失败继续用 WS 结果自动切源
           const preferred = preferredResult.find(item => String(item.id) === String(id)) ?? preferredResult[0];
           const preferredItem = makeUnmeasuredSource(preferred);
-          const measured = preferredItem ? await measureOneInner(preferredItem) : false;
+          // 蜂窝网络下跳过完整测速：不比较代理/直连，直接按默认路线（有代理走代理，否则直连）播放
+          const measured = preferredItem
+            ? (skipFullSpeedTest ? true : await measureOneInner(preferredItem))
+            : false;
           if (signal.aborted) return;
           if (preferredItem && measured) {
             // 先标记有推荐源并打开起播闸门，后续 WS 源才会等起播后再测
@@ -526,7 +547,11 @@ const useDetailStore = create<DetailState>((set, get) => ({
             waitingForPlayback = true;
             releaseSpeedTestGate = releaseSpeedTest;
             insertAndEnqueue(preferredItem, false);
-            logger.info(`[测速] 推荐源 ${preferred.source_name} 完整测速通过，开始播放并排到列表第一位`);
+            logger.info(
+              skipFullSpeedTest
+                ? `[测速] 推荐源 ${preferred.source_name} 蜂窝网络跳过完整测速，按默认路线（${preferredItem.useProxy ? '代理' : '直连'}）播放并排到列表第一位`
+                : `[测速] 推荐源 ${preferred.source_name} 完整测速通过，开始播放并排到列表第一位`,
+            );
           } else {
             logger.warn(`[FALLBACK] 推荐源 "${preferredSource}" 完整测速失败，自动切换其它源`);
           }

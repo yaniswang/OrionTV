@@ -2,6 +2,7 @@ import useDetailStore from '@/stores/detailStore';
 import { api } from '@/services/api';
 import { SearchResult } from '@/services/api';
 import { clearSpeedTestCache } from '@/services/m3u8';
+import NetInfo from '@react-native-community/netinfo';
 
 jest.mock('@/services/api', () => ({
   api: {
@@ -16,6 +17,13 @@ jest.mock('@/services/storage', () => ({
     toggle: jest.fn(async () => true),
   },
 }));
+
+jest.mock('@react-native-community/netinfo', () => ({
+  __esModule: true,
+  default: { fetch: jest.fn() },
+}));
+
+const mockNetInfoFetch = NetInfo.fetch as unknown as jest.Mock;
 
 const mockApi = api as unknown as {
   searchVideosWs: jest.Mock;
@@ -68,6 +76,8 @@ beforeEach(() => {
   jest.clearAllMocks();
   probeCalls = 0;
   clearSpeedTestCache();
+  // 默认走 WiFi：现有用例都是"允许完整测速"的行为
+  mockNetInfoFetch.mockResolvedValue({ type: 'wifi' });
   useDetailStore.setState({
     q: null,
     title: null,
@@ -638,5 +648,92 @@ describe('插入即入队：列表顺序 = 测速顺序', () => {
     const finalList = useDetailStore.getState().searchResults;
     expect(finalList.map((result) => result.source).sort()).toEqual(['first', 'second']);
     expect(finalList.every((result) => result.segmentLoadMs != null)).toBe(true);
+  });
+});
+
+describe('蜂窝网络下跳过完整测速', () => {
+  /** 蜂窝模式下的 fetch：计数"下分片"的请求，用来断言测速确实没发生 */
+  const mockCellularFetch = (counter: { segmentGets: number }) => {
+    global.fetch = jest.fn(async (input: any, init: any = {}) => {
+      const url = String(input);
+      if (init.method === 'HEAD') {
+        probeCalls++;
+        return makeResponse(200, '', 0);
+      }
+      if (url.includes('.m3u8')) return makeResponse(200, PLAYLIST, 0);
+      counter.segmentGets++;
+      return makeResponse(200, '', 512 * 1024);
+    }) as any;
+  };
+
+  it('无推荐源：保留 PING、不下分片，第一个 PING 通的源直接开播', async () => {
+    const only = makeSource(1, 'a', 'https://a.example.com/index.m3u8');
+    mockApi.searchVideosWs.mockResolvedValue([
+      { type: 'source_result', results: [only] },
+      { type: 'complete' },
+    ]);
+    mockNetInfoFetch.mockResolvedValue({ type: 'cellular' });
+
+    const counter = { segmentGets: 0 };
+    mockCellularFetch(counter);
+
+    await useDetailStore
+      .getState()
+      .init('白日提灯', '白日提灯', '2025', undefined as unknown as string, undefined, undefined, '');
+
+    const state = useDetailStore.getState();
+    expect(probeCalls).toBeGreaterThan(0); // PING 流程保留
+    expect(counter.segmentGets).toBe(0); // 完整测速跳过：一个分片都没下
+    expect(state.testingSource).toBeNull(); // 不会挂"测速中"图标
+    expect(state.searchResults.map((result) => result.source)).toEqual(['a']);
+    expect(state.detail?.source).toBe('a'); // 第一个 PING 通的源直接开播
+    expect(state.searchResults[0].segmentLoadMs).toBeNull();
+    expect(state.allSourcesLoaded).toBe(true);
+  });
+
+  it('有推荐源：不 PING、不下分片，没配代理就按直连播放', async () => {
+    const preferred = makeSource(1, 'pref', 'https://pref.example.com/index.m3u8');
+    mockApi.searchVideo.mockResolvedValue({ results: [preferred] });
+    mockApi.searchVideosWs.mockResolvedValue([{ type: 'complete' }]);
+    mockNetInfoFetch.mockResolvedValue({ type: 'cellular' });
+
+    const counter = { segmentGets: 0 };
+    mockCellularFetch(counter);
+
+    await useDetailStore
+      .getState()
+      .init('白日提灯', '白日提灯', '2025', undefined as unknown as string, 'pref', '1', '');
+
+    const state = useDetailStore.getState();
+    expect(probeCalls).toBe(0); // 推荐源本来就不 PING
+    expect(counter.segmentGets).toBe(0); // 完整测速跳过
+    expect(state.testingSource).toBeNull();
+    expect(state.searchResults.map((result) => result.source)).toEqual(['pref']);
+    expect(state.detail?.source).toBe('pref');
+    const [first] = state.searchResults;
+    expect(first.segmentLoadMs).toBeNull();
+    expect(first.useProxy).toBe(false); // 默认路线：没代理 -> 直连
+    expect(first.episodes[0]).toBe('https://pref.example.com/index.m3u8');
+  });
+
+  it('有推荐源且配了代理：跳过测速后直接按代理路线播放', async () => {
+    const proxyPrefix = 'https://proxy.example.com/';
+    const preferred = makeSource(1, 'pref', 'https://pref.example.com/index.m3u8');
+    mockApi.searchVideo.mockResolvedValue({ results: [preferred] });
+    mockApi.searchVideosWs.mockResolvedValue([{ type: 'complete' }]);
+    mockNetInfoFetch.mockResolvedValue({ type: 'cellular' });
+
+    const counter = { segmentGets: 0 };
+    mockCellularFetch(counter);
+
+    await useDetailStore
+      .getState()
+      .init('白日提灯', '白日提灯', '2025', undefined as unknown as string, 'pref', '1', proxyPrefix);
+
+    const state = useDetailStore.getState();
+    expect(counter.segmentGets).toBe(0);
+    const [first] = state.searchResults;
+    expect(first.useProxy).toBe(true); // 默认路线：配了代理 -> 代理
+    expect(first.episodes[0]).toBe(proxyPrefix + 'https://pref.example.com/index.m3u8');
   });
 });

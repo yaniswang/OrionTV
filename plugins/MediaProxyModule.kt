@@ -150,6 +150,8 @@ class MediaProxyModule(
   /** 本机播放器成功回源时用过的关键请求头，投屏后交给电视复用 */
   private val preferredHeadersByTarget = ConcurrentHashMap<String, Map<String, String>>()
   private val preferredHeadersByOrigin = ConcurrentHashMap<String, Map<String, String>>()
+  /** 直播透传：uaKey -> User-Agent */
+  private val liveUserAgents = ConcurrentHashMap<String, String>()
 
   private val okHttpClient: OkHttpClient by lazy { buildClient() }
 
@@ -265,6 +267,21 @@ class MediaProxyModule(
       }
       val plain = raw.map { MediaProxyPlaylist.unwrapProxyUrl(it, base) }
       promise.resolve(Arguments.fromList(plain.map { if (isHlsUrl(it)) MediaProxyPlaylist.buildProxyUrl(base, it) else it }))
+    }
+  }
+
+  /** 直播投屏：包成透传地址，回源时带上指定 UA；代理不可用时原样返回 */
+  @ReactMethod
+  fun wrapLiveUrl(target: String, userAgent: String, promise: Promise) {
+    thread(name = "media-proxy-wrap") {
+      val base = ensureStartedOrNull()
+      if (base == null) {
+        promise.resolve(target)
+        return@thread
+      }
+      val key = MediaProxyLive.userAgentKey(userAgent)
+      liveUserAgents[key] = userAgent
+      promise.resolve(MediaProxyLive.buildUrl(base, key, target))
     }
   }
 
@@ -491,6 +508,11 @@ class MediaProxyModule(
     output: BufferedOutputStream,
     keepAlive: Boolean,
   ) {
+    MediaProxyLive.parsePath(request.rawTarget)?.let { (key, target) ->
+      serveLive(key, target, request, socket, output, keepAlive)
+      return
+    }
+
     val requestToken = request.rawTarget.removePrefix("/")
     val resourceTarget = MediaProxyPlaylist.decodeProxyTarget(requestToken)
     if (MediaProxyPlaylist.isHttpTarget(resourceTarget)) {
@@ -552,7 +574,11 @@ class MediaProxyModule(
     var download: SharedDownload
     var consumer: Consumer
     while (true) {
-      val candidate = downloads.computeIfAbsent(key) { SharedDownload(key, target, pid, sid, false, headers) }
+      // 用 putIfAbsent 而不是 computeIfAbsent：后者依赖 java.util.function.Function，
+      // 整个 java.util.function 包都是 API 24（Android 7.0）才引入的，
+      // 在 minSdk 23 的设备上会让 D8 生成的 lambda 适配类加载失败（NoClassDefFoundError）。
+      val created = SharedDownload(key, target, pid, sid, false, headers)
+      val candidate = downloads.putIfAbsent(key, created) ?: created
       val candidateConsumer = Consumer(candidate, socket, output, keepAlive)
       val accepted = synchronized(candidate.lock) {
         if (downloads[key] !== candidate) {
@@ -647,6 +673,84 @@ class MediaProxyModule(
     }
   }
 
+  // ------------------------------------------------------------------ 直播透传
+
+  /** 直播：回源带 UA，清单只改写地址，其余响应边读边转发，不缓存。 */
+  private fun serveLive(
+    key: String,
+    target: String,
+    request: ParsedRequest,
+    socket: Socket,
+    output: BufferedOutputStream,
+    keepAlive: Boolean,
+  ) {
+    val headOnly = request.method == "HEAD"
+    val userAgent = liveUserAgents[key]
+    if (userAgent == null) {
+      writeSimple(output, 404, "text/plain", "live not found".toByteArray(), keepAlive, headOnly)
+      return
+    }
+    val builder = Request.Builder().url(target).get()
+    builder.header("Accept-Encoding", "identity")
+    builder.header("User-Agent", userAgent)
+    request.headers["range"]?.let { builder.header("Range", it) }
+    val response = try {
+      okHttpClient.newCall(builder.build()).execute()
+    } catch (error: Throwable) {
+      val timeout = error is SocketTimeoutException
+      debugLog("直播回源失败 url=${shortUrl(target)} error=${error.message}")
+      writeSimple(output, if (timeout) 504 else 502, "text/plain", "upstream error".toByteArray(), false)
+      return
+    }
+
+    response.use { current ->
+      val contentType = current.header("Content-Type") ?: "application/octet-stream"
+      val finalUrl = current.request.url.toString()
+      val maybePlaylist = contentType.lowercase(Locale.US).contains("mpegurl") ||
+        finalUrl.lowercase(Locale.US).contains(".m3u8")
+      if (current.isSuccessful && maybePlaylist) {
+        val bytes = current.body?.bytes() ?: ByteArray(0)
+        val text = String(bytes, Charsets.UTF_8)
+        if (MediaProxyPlaylist.isHlsPlaylist(text)) {
+          val base = origin ?: ""
+          val rewritten = MediaProxyLive.rewritePlaylist(text, base, key, finalUrl)
+          writeSimple(output, current.code, PLAYLIST_CONTENT_TYPE, rewritten.toByteArray(Charsets.UTF_8), keepAlive, headOnly)
+        } else {
+          writeSimple(output, current.code, contentType, bytes, keepAlive, headOnly)
+        }
+        return
+      }
+
+      // 分片或连续流：长度未知时只能靠断开连接表示结束。
+      val length = current.body?.contentLength() ?: -1L
+      val persistent = keepAlive && length >= 0
+      val head = buildString {
+        append("HTTP/1.1 ").append(current.code).append(' ').append(statusText(current.code)).append(CRLF)
+        append("Content-Type: ").append(contentType).append(CRLF)
+        if (length >= 0) append("Content-Length: ").append(length).append(CRLF)
+        current.header("Content-Range")?.let { append("Content-Range: ").append(it).append(CRLF) }
+        current.header("Accept-Ranges")?.let { append("Accept-Ranges: ").append(it).append(CRLF) }
+        append("Connection: ").append(if (persistent) "keep-alive" else "close").append(CRLF)
+        append("Access-Control-Allow-Origin: *").append(CRLF)
+        append(CRLF)
+      }
+      output.write(head.toByteArray(Charsets.ISO_8859_1))
+      output.flush()
+      if (!headOnly) {
+        current.body?.byteStream()?.let { input ->
+          val buffer = ByteArray(BUFFER_BYTES)
+          while (true) {
+            val read = input.read(buffer)
+            if (read < 0) break
+            output.write(buffer, 0, read)
+            output.flush()
+          }
+        }
+      }
+      if (!persistent) socket.shutdownOutput()
+    }
+  }
+
   // ------------------------------------------------------------------ 清单映射与恢复
 
   private fun normalizeManifestHeaders(headers: Map<String, String>): Map<String, String> {
@@ -707,7 +811,9 @@ class MediaProxyModule(
       return it
     }
 
-    val task = manifestLoadTasks.computeIfAbsent(pid) { ManifestLoadTask() }
+    // 同上：避免 computeIfAbsent 带来的 java.util.function 依赖（API 24）
+    val createdTask = ManifestLoadTask()
+    val task = manifestLoadTasks.putIfAbsent(pid, createdTask) ?: createdTask
     synchronized(task.lock) {
       var result = task.playlist
       if (!task.completed) {
@@ -1248,9 +1354,9 @@ class MediaProxyModule(
         sid += 1
         continue
       }
-      val download = downloads.computeIfAbsent(key) {
-        SharedDownload(key, playlist.segments[sid], pid, sid, true, headers)
-      }
+      // 同上：避免 computeIfAbsent 带来的 java.util.function 依赖（API 24）
+      val createdDownload = SharedDownload(key, playlist.segments[sid], pid, sid, true, headers)
+      val download = downloads.putIfAbsent(key, createdDownload) ?: createdDownload
       if (downloads[key] === download && startDownloadIfNeeded(download, headers)) {
         started += 1
       }

@@ -168,6 +168,11 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
             />
           </>
         )}
+        {isCasting && castIconAvailable && !showLockControls && (
+          <Pressable onPress={onOpenDlnaDeviceModal} style={styles.castButton}>
+            <MonitorSmartphone color="white" size={24} />
+          </Pressable>
+        )}
         {castIconAvailable && !showLockControls && (
           <Pressable
             onPress={() => void (isCasting ? disableCast({ restoreLocal: true, stopRemote: true }) : enableCast())}
@@ -267,12 +272,6 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
                   fill={isFavorited ? "#feff5f" : "transparent"}
                 />
               </MediaButton>
-
-              {isCasting && castIconAvailable && (
-                <MediaButton onPress={onOpenDlnaDeviceModal}>
-                  <MonitorSmartphone color="white" size={24} />
-                </MediaButton>
-              )}
             </View>
           </View>
         </View>
