@@ -12,6 +12,7 @@ const logger = Logger.withTag('SettingsStore');
 interface SettingsState {
   apiBaseUrl: string;
   m3u8Proxy: string;
+  adFilterEnabled: boolean;
   m3uUrl: string;
   m3uUa: string;
   remoteInputEnabled: boolean;
@@ -29,6 +30,7 @@ interface SettingsState {
   fetchLiveSource: () => Promise<void>;
   setApiBaseUrl: (url: string) => void;
   setM3u8Proxy: (url: string) => void;
+  setAdFilterEnabled: (enabled: boolean) => void;
   setRemoteInputEnabled: (enabled: boolean) => void;
   saveSettings: () => Promise<void>;
   setVideoSource: (config: { enabledAll: boolean; sources: { [key: string]: boolean } }) => void;
@@ -39,6 +41,7 @@ interface SettingsState {
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   apiBaseUrl: "",
   m3u8Proxy: '',
+  adFilterEnabled: false,
   m3uUrl: "",
   m3uUa: '',
   remoteInputEnabled: false,
@@ -54,6 +57,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     set({
       apiBaseUrl: settings.apiBaseUrl,
       m3u8Proxy: settings.m3u8Proxy,
+      adFilterEnabled: settings.adFilterEnabled || false,
       remoteInputEnabled: settings.remoteInputEnabled || false,
       videoSource: settings.videoSource || {
         enabledAll: true,
@@ -99,10 +103,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
   setApiBaseUrl: (url) => set({ apiBaseUrl: url }),
   setM3u8Proxy: (url) => set({ m3u8Proxy: url }),
+  setAdFilterEnabled: (enabled) => set({ adFilterEnabled: enabled }),
   setRemoteInputEnabled: (enabled) => set({ remoteInputEnabled: enabled }),
   setVideoSource: (config) => set({ videoSource: config }),
   saveSettings: async () => {
-    const { apiBaseUrl, m3u8Proxy, remoteInputEnabled, videoSource } = get();
+    const { apiBaseUrl, m3u8Proxy, adFilterEnabled, remoteInputEnabled, videoSource } = get();
 
     const currentSettings = await SettingsManager.get()
     const currentApiBaseUrl = currentSettings.apiBaseUrl;
@@ -131,6 +136,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     await SettingsManager.save({
       apiBaseUrl: processedApiBaseUrl,
       m3u8Proxy: processedM3u8Proxy,
+      adFilterEnabled,
       remoteInputEnabled,
       videoSource,
     });

@@ -33,6 +33,8 @@ export interface PlayerSettings {
 export interface AppSettings {
   apiBaseUrl: string;
   m3u8Proxy: string;
+  /** M3U8 广告过滤开关，默认关闭 */
+  adFilterEnabled: boolean;
   remoteInputEnabled: boolean;
   videoSource: {
     enabledAll: boolean;
@@ -350,6 +352,7 @@ export class SettingsManager {
     const defaultSettings: AppSettings = {
       apiBaseUrl: "",
       m3u8Proxy: '',
+      adFilterEnabled: false,
       remoteInputEnabled: true,
       videoSource: {
         enabledAll: true,

@@ -11,6 +11,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { useRemoteControlStore } from "@/stores/remoteControlStore";
 import { APIConfigSection } from "@/components/settings/APIConfigSection";
 import { M3u8ProxySection } from "@/components/settings/M3u8ProxySection";
+import { AdFilterSection } from "@/components/settings/AdFilterSection";
 import { RemoteInputSection } from "@/components/settings/RemoteInputSection";
 import { UpdateSection } from "@/components/settings/UpdateSection";
 import Toast from "@/utils/Toast";
@@ -139,6 +140,18 @@ export default function SettingsScreen() {
         />
       ),
       key: "m3u8_proxy",
+    },
+    {
+      component: (
+        <AdFilterSection
+          onChanged={markAsChanged}
+          onFocus={() => {
+            setCurrentFocusIndex(2);
+            setCurrentSection("ad_filter");
+          }}
+        />
+      ),
+      key: "ad_filter",
     },
     Platform.OS === "android" && {
       component: <UpdateSection />,

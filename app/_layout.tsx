@@ -3,7 +3,7 @@ import { useFonts } from "expo-font";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
-import { Platform, View, StyleSheet } from "react-native";
+import { DeviceEventEmitter, Platform, View, StyleSheet } from "react-native";
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import SystemSetting from "react-native-system-setting";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -18,7 +18,8 @@ import { UpdateModal } from "@/components/UpdateModal";
 import { UPDATE_CONFIG } from "@/constants/UpdateConfig";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import Logger from '@/utils/Logger';
-import { ToastHost } from '@/utils/Toast';
+import Toast, { ToastHost } from '@/utils/Toast';
+import { AD_FILTERED_EVENT } from '@/services/localProxy/native';
 
 const logger = Logger.withTag('RootLayout');
 
@@ -92,6 +93,17 @@ export default function RootLayout() {
       stopServer();
     }
   }, [remoteInputEnabled, startServer, stopServer, responsiveConfig.deviceType]);
+
+  useEffect(() => {
+    // 本地代理过滤掉广告后提示用户：N 按实际分块数，不合并
+    const subscription = DeviceEventEmitter.addListener(AD_FILTERED_EVENT, (payload?: { count?: number }) => {
+      const count = typeof payload?.count === 'number' ? payload.count : 0;
+      if (count > 0) {
+        Toast.show({ type: 'info', text1: `共${count}段广告已过滤` });
+      }
+    });
+    return () => subscription.remove();
+  }, []);
 
   if (!loaded && !error) {
     return null;

@@ -10,6 +10,7 @@ import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.module.annotations.ReactModule
+import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.facebook.react.modules.network.OkHttpClientProvider
 import com.facebook.react.ReactPackage
 import com.facebook.react.uimanager.ViewManager
@@ -95,6 +96,8 @@ class MediaProxyModule(
     private const val CACHE_CLEAN_INTERVAL_MS = 60L * 1000L
     /** 预取缓存总大小上限 */
     private const val MAX_CACHE_BYTES = 128L * 1024L * 1024L
+    /** 过滤掉广告后通知 APP 的事件名 */
+    private const val EVENT_AD_FILTERED = "MediaProxyAdFiltered"
 
     private val FORWARD_HEADER_KEYS = listOf(
       "user-agent", "referer", "origin", "cookie", "authorization", "accept-language",
@@ -242,15 +245,15 @@ class MediaProxyModule(
 
   /** 把播放地址包成本地代理地址；非 HLS 或代理不可用时原样返回 */
   @ReactMethod
-  fun wrapUrl(target: String, promise: Promise) {
+  fun wrapUrl(target: String, adFilter: Boolean, promise: Promise) {
     thread(name = "media-proxy-wrap") {
-      promise.resolve(wrap(target))
+      promise.resolve(wrap(target, adFilter))
     }
   }
 
   /** 批量包装剧集地址；整份列表里没有 HLS 时不会启动代理 */
   @ReactMethod
-  fun wrapUrls(targets: ReadableArray, promise: Promise) {
+  fun wrapUrls(targets: ReadableArray, adFilter: Boolean, promise: Promise) {
     thread(name = "media-proxy-wrap") {
       val raw = ArrayList<String>(targets.size())
       for (index in 0 until targets.size()) {
@@ -265,8 +268,9 @@ class MediaProxyModule(
         promise.resolve(Arguments.fromList(raw))
         return@thread
       }
-      val plain = raw.map { MediaProxyPlaylist.unwrapProxyUrl(it, base) }
-      promise.resolve(Arguments.fromList(plain.map { if (isHlsUrl(it)) MediaProxyPlaylist.buildProxyUrl(base, it) else it }))
+      val wrapper = proxyBase(base, adFilter)
+      val plain = raw.map { unwrapTarget(base, it) }
+      promise.resolve(Arguments.fromList(plain.map { if (isHlsUrl(it)) MediaProxyPlaylist.buildProxyUrl(wrapper, it) else it }))
     }
   }
 
@@ -294,12 +298,21 @@ class MediaProxyModule(
   private fun preferredPort(options: ReadableMap): Int =
     if (options.hasKey("preferredPort")) options.getInt("preferredPort") else 18923
 
-  private fun wrap(target: String): String {
+  private fun wrap(target: String, adFilter: Boolean): String {
     if (!isHlsUrl(target)) return target
-    val base = ensureStartedOrNull() ?: return target
-    val unwrapped = MediaProxyPlaylist.unwrapProxyUrl(target, base)
-    return MediaProxyPlaylist.buildProxyUrl(base, unwrapped)
+    val origin = ensureStartedOrNull() ?: return target
+    return MediaProxyPlaylist.buildProxyUrl(proxyBase(origin, adFilter), unwrapTarget(origin, target))
   }
+
+  /** 过滤模式下清单走 /_noad 前缀；分片地址由清单改写自带同样的前缀。 */
+  private fun proxyBase(origin: String, adFilter: Boolean): String =
+    if (adFilter) origin + MediaProxyAdFilter.NOAD_PREFIX else origin
+
+  /** 已经包装过的地址（旧路径或 /_noad 路径）先还原成上游地址，避免重复包装。 */
+  private fun unwrapTarget(origin: String, target: String): String = MediaProxyPlaylist.unwrapProxyUrl(
+    MediaProxyPlaylist.unwrapProxyUrl(target, origin),
+    origin + MediaProxyAdFilter.NOAD_PREFIX,
+  )
 
   private fun ensureStartedOrNull(): String? = try {
     ensureStarted(18923)
@@ -513,23 +526,28 @@ class MediaProxyModule(
       return
     }
 
-    val requestToken = request.rawTarget.removePrefix("/")
+    // /_noad/ 前缀：清单要过滤广告；旧路径（无前缀）行为完全不变。
+    val adFilter = request.rawTarget.startsWith(MediaProxyAdFilter.NOAD_PREFIX + "/")
+    val resourcePath = if (adFilter) request.rawTarget.removePrefix(MediaProxyAdFilter.NOAD_PREFIX) else request.rawTarget
+    val segmentPath = if (adFilter) request.path.removePrefix(MediaProxyAdFilter.NOAD_PREFIX) else request.path
+
+    val requestToken = resourcePath.removePrefix("/")
     val resourceTarget = MediaProxyPlaylist.decodeProxyTarget(requestToken)
     if (MediaProxyPlaylist.isHttpTarget(resourceTarget)) {
       // 清单、密钥、初始化段等资源：path 令牌解码一次，完整保留上游 URL 和 query。
       val forwardHeaders = resolveForwardHeaders(resourceTarget, forwardable(request.headers))
-      serveResource(resourceTarget, request, forwardHeaders, output, keepAlive)
+      serveResource(resourceTarget, request, forwardHeaders, output, keepAlive, adFilter)
       return
     }
 
     // 分片只带标识：/<pid>/<sid>/seg.<原扩展名>，回源地址从登记表读取。
-    val located = parseSegmentPath(request.path)
+    val located = parseSegmentPath(segmentPath)
     if (located == null) {
       writeSimple(output, 404, "text/plain", "not found".toByteArray(), keepAlive)
       return
     }
     val (pid, sid) = located
-    val playlist = playlists[pid] ?: ensurePlaylistLoaded(pid)
+    val playlist = playlists[pid] ?: ensurePlaylistLoaded(pid, adFilter)
     playlist?.lastActiveAt = System.currentTimeMillis()
     val target = playlist?.segments?.getOrNull(sid)
     if (target == null) {
@@ -611,6 +629,7 @@ class MediaProxyModule(
     headers: Map<String, String>,
     output: BufferedOutputStream,
     keepAlive: Boolean,
+    adFilter: Boolean,
   ) {
     val builder = Request.Builder().url(target).get()
     builder.header("Accept-Encoding", "identity")
@@ -650,9 +669,11 @@ class MediaProxyModule(
         if (!MediaProxyPlaylist.isHlsPlaylist(text)) {
           writeSimple(output, current.code, contentType, bytes, keepAlive, request.method == "HEAD")
         } else {
-          val base = origin ?: ""
+          // /_noad 前缀要继续带到子清单、分片、密钥上，否则下一层清单又变回不过滤
+          val base = proxyBase(origin ?: "", adFilter)
           val rewritten = if (MediaProxyPlaylist.isLeafPlaylist(text)) {
-            val leaf = MediaProxyPlaylist.rewriteLeafPlaylist(text, base, target)
+            val leafText = if (adFilter) filterAds(text, target, headers) else text
+            val leaf = MediaProxyPlaylist.rewriteLeafPlaylist(leafText, base, target)
             rememberManifestRef(leaf.pid, target, headers)
             rememberPlaylist(leaf.pid, leaf.segments)
             debugLog("清单登记 pid=${leaf.pid} 分片数=${leaf.segments.size} url=${shortUrl(target)}")
@@ -805,7 +826,7 @@ class MediaProxyModule(
    * 分片请求没有清单数据时，用持久化的原始清单地址恢复。
    * 同一 pid 的并发请求共用一个加载任务，不会同时回源多份清单。
    */
-  private fun ensurePlaylistLoaded(pid: String): PlaylistState? {
+  private fun ensurePlaylistLoaded(pid: String, adFilter: Boolean): PlaylistState? {
     playlists[pid]?.let {
       touchManifestRef(pid)
       return it
@@ -817,7 +838,7 @@ class MediaProxyModule(
     synchronized(task.lock) {
       var result = task.playlist
       if (!task.completed) {
-        result = loadManifestPlaylist(pid)
+        result = loadManifestPlaylist(pid, adFilter)
         task.playlist = result
         task.completed = true
         manifestLoadTasks.remove(pid, task)
@@ -829,7 +850,7 @@ class MediaProxyModule(
     }
   }
 
-  private fun loadManifestPlaylist(pid: String): PlaylistState? {
+  private fun loadManifestPlaylist(pid: String, adFilter: Boolean): PlaylistState? {
     val ref = manifestRefs[pid]
     if (ref == null) {
       debugLog("清单映射缺失 pid=$pid")
@@ -873,12 +894,15 @@ class MediaProxyModule(
         return null
       }
 
-      val base = origin
-      if (base.isNullOrEmpty()) {
+      val originBase = origin
+      if (originBase.isNullOrEmpty()) {
         debugLog("清单初始化失败 pid=$pid 代理 origin 为空")
         return null
       }
-      val leaf = MediaProxyPlaylist.rewriteLeafPlaylist(text, base, ref.manifestUrl)
+      val base = proxyBase(originBase, adFilter)
+      // /_noad 的清单要按同样的过滤规则重建，否则 pid 对不上（过滤会删行，pid 随之变化）
+      val leafText = if (adFilter) filterAds(text, ref.manifestUrl, ref.headers) else text
+      val leaf = MediaProxyPlaylist.rewriteLeafPlaylist(leafText, base, ref.manifestUrl)
       if (leaf.pid != pid) {
         debugLog("清单初始化标识不匹配 expected=$pid actual=${leaf.pid} url=${shortUrl(ref.manifestUrl)}")
         return null
@@ -1466,6 +1490,73 @@ class MediaProxyModule(
     if (download.released) return true
     if (!download.prefetch) return true
     return download.completed && download.consumed
+  }
+
+  // ------------------------------------------------------------------ 广告过滤
+
+  /**
+   * 探针：单独超时 + 单独调度队列。
+   * okhttp 默认"单主机并发 5"，24 路探针打同一个 CDN 会被排成队；共用调度队列
+   * 还会和回源分片抢名额。
+   */
+  private val probeClient: OkHttpClient by lazy {
+    okHttpClient.newBuilder()
+      .dispatcher(
+        Dispatcher().apply {
+          maxRequests = 64
+          maxRequestsPerHost = MediaProxyAdFilter.PROBE_CONCURRENCY
+        },
+      )
+      .callTimeout(MediaProxyAdFilter.PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+      .build()
+  }
+
+  /** 删除块下标的永久缓存：同一个清单只处理一次。 */
+  private val adRemovalCache: MediaProxyAdFilter.RemovalCache by lazy {
+    MediaProxyAdFilter.RemovalCache(File(reactContext.filesDir, "media-proxy-ad-filter.txt"))
+  }
+
+  /** 分片探针与密钥读取：沿用清单请求的头，走 Range 只取开头 8KB。 */
+  private val adProbeIo = object : MediaProxyAdFilter.Io {
+    override fun read(url: String, headers: Map<String, String>, rangeBytes: Int): ByteArray? {
+      return try {
+        val builder = Request.Builder().url(url).get().header("Accept-Encoding", "identity")
+        if (rangeBytes > 0) builder.header("Range", "bytes=0-${rangeBytes - 1}")
+        headers.forEach { (key, value) -> builder.header(key, value) }
+        probeClient.newCall(builder.build()).execute().use { response ->
+          if (response.code in 200..299) response.body?.bytes() else null
+        }
+      } catch (_: Throwable) {
+        null
+      }
+    }
+  }
+
+  /** 清单广告过滤；任何异常都退回原样清单，不影响播放。 */
+  private fun filterAds(text: String, target: String, headers: Map<String, String>): String {
+    return try {
+      val result = MediaProxyAdFilter.filter(text, target, headers, adProbeIo, adRemovalCache)
+      debugLog("广告过滤 url=${shortUrl(target)} 删除块=${result.removedBlocks} 本次探测=${result.analyzed}")
+      // 命中缓存的清单也要提示：用户每次播放都该看到"过滤了几段"
+      if (result.removedBlocks > 0) {
+        emitAdFiltered(result.removedBlocks)
+      }
+      result.text
+    } catch (error: Throwable) {
+      debugLog("广告过滤失败 url=${shortUrl(target)} error=${error.message}")
+      text
+    }
+  }
+
+  /** 通知 APP 本次清单过滤掉了几段广告（按实际分块数，不合并）。 */
+  private fun emitAdFiltered(count: Int) {
+    try {
+      val payload = Arguments.createMap().apply { putInt("count", count) }
+      reactContext.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+        .emit(EVENT_AD_FILTERED, payload)
+    } catch (error: Throwable) {
+      debugLog("广告过滤通知失败 error=${error.message}")
+    }
   }
 
   // ------------------------------------------------------------------ 请求头

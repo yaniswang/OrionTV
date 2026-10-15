@@ -555,7 +555,8 @@ const useDlnaStore = create<DLNAState>((set, get) => {
     const state = get();
     const positionMillis = state.positionMillis;
     const durationMillis = state.durationMillis;
-    if (restoreLocal && state.currentDevice && options.saveRecord !== false) {
+    // 不管是切回本机继续播还是直接退出投屏，都要留下播放记录：和本机播放共用同一套记录逻辑
+    if (state.currentDevice && options.saveRecord !== false) {
       await saveRemoteRecord();
     }
     if (stopRemote && controller) {

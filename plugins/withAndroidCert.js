@@ -59,10 +59,16 @@ function withCertFiles(config) {
       fs.copyFileSync(path.join(projectRoot, 'plugins/MediaProxyModule.kt'), path.join(javaDir, 'MediaProxyModule.kt'));
       fs.copyFileSync(path.join(projectRoot, 'plugins/MediaProxyLive.kt'), path.join(javaDir, 'MediaProxyLive.kt'));
       fs.copyFileSync(path.join(projectRoot, 'plugins/MediaProxyPlaylist.kt'), path.join(javaDir, 'MediaProxyPlaylist.kt'));
+      fs.copyFileSync(path.join(projectRoot, 'plugins/MediaProxyAdFilter.kt'), path.join(javaDir, 'MediaProxyAdFilter.kt'));
       const testDir = path.join(projectRoot, 'android/app/src/test/java/com/oriontv');
       fs.mkdirSync(testDir, { recursive: true });
       fs.copyFileSync(path.join(projectRoot, 'plugins/MediaProxyPlaylistTest.kt'), path.join(testDir, 'MediaProxyPlaylistTest.kt'));
       fs.copyFileSync(path.join(projectRoot, 'plugins/MediaProxyLiveTest.kt'), path.join(testDir, 'MediaProxyLiveTest.kt'));
+      fs.copyFileSync(path.join(projectRoot, 'plugins/MediaProxyAdFilterTest.kt'), path.join(testDir, 'MediaProxyAdFilterTest.kt'));
+      // 广告过滤回归数据（27 个真实源）：JVM 单测从测试资源里读，不能依赖 org.json
+      const testResourcesDir = path.join(projectRoot, 'android/app/src/test/resources');
+      fs.mkdirSync(testResourcesDir, { recursive: true });
+      fs.copyFileSync(path.join(projectRoot, 'tests/ad-filter/ad-dataset.tsv'), path.join(testResourcesDir, 'ad-dataset.tsv'));
       console.log('✅ ISRG 根证书和旧 Android TLS 支持代码已复制到原生 Android 目录');
 
       return config;

@@ -297,6 +297,26 @@ describe('推送新媒体后的加载判定（保守：只认明确失败）', (
     expectFellBack();
   });
 
+  it('投屏状态下直接退出播放页：写播放记录（和本机播放同一套逻辑）', async () => {
+    mockEpisode = { url: 'http://cdn/ep1.m3u8' };
+    let position = 30000;
+    mockController.getPositionInfo.mockImplementation(async () => ({
+      positionMillis: (position += 1000),
+      trackDurationMillis: 600000,
+      positionSupported: true,
+      trackUri: '',
+    }));
+    await useDlnaStore.getState().enableCast();
+    await jest.advanceTimersByTimeAsync(5000);
+    mockSavePlayRecord.mockClear();
+
+    await useDlnaStore.getState().disableCast({ restoreLocal: false, stopRemote: true });
+
+    expect(mockController.stop).toHaveBeenCalled();
+    expect(mockSavePlayRecord).toHaveBeenCalledWith({}, expect.objectContaining({ immediate: true }));
+    expect(useDlnaStore.getState().enabled).toBe(false);
+  });
+
   it('剧集切下一集，Macast 加载期间报 STOPPED 但仍持有新片源：保持投屏，加载完成后正常播放', async () => {
     mockEpisode = { url: 'http://cdn/ep1.m3u8' };
     let position = 0;

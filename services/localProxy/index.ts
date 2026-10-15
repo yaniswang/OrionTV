@@ -6,6 +6,7 @@
 
 import Logger from '@/utils/Logger';
 import { getNativeMediaProxy } from './native';
+import { SettingsManager } from '@/services/storage';
 
 const logger = Logger.withTag('VideoPrefetch');
 const DEFAULT_PORT = 18923;
@@ -68,13 +69,26 @@ export function isHlsUrl(url: string | undefined | null): boolean {
   return url.toLowerCase().includes('m3u8');
 }
 
+/**
+ * 广告过滤开关（设置里默认关闭，开启后包装地址会带 /_noad 前缀）。
+ * 只认"保存过"的设置：设置页里改了开关但没点保存，不生效。
+ */
+async function isAdFilterEnabled(): Promise<boolean> {
+  try {
+    const settings = await SettingsManager.get();
+    return settings.adFilterEnabled === true;
+  } catch {
+    return false;
+  }
+}
+
 /** 把播放地址交给原生代理包装；失败时返回原地址。 */
 export async function resolvePlayUrl(url: string): Promise<string> {
   if (!isHlsUrl(url)) return url;
   if (!(await ensureLocalProxy())) return url;
 
   try {
-    const wrapped = await getNativeMediaProxy()?.wrapUrl(url);
+    const wrapped = await getNativeMediaProxy()?.wrapUrl(url, await isAdFilterEnabled());
     return typeof wrapped === 'string' && wrapped ? wrapped : url;
   } catch (error) {
     logger.warn(`原生代理包装播放地址失败: ${String(error)}`);
@@ -102,7 +116,7 @@ export async function mapEpisodesWithLocalProxy(urls: string[]): Promise<string[
   if (!(await ensureLocalProxy())) return urls;
 
   try {
-    const wrapped = await getNativeMediaProxy()?.wrapUrls(urls);
+    const wrapped = await getNativeMediaProxy()?.wrapUrls(urls, await isAdFilterEnabled());
     return Array.isArray(wrapped) && wrapped.length === urls.length ? wrapped : urls;
   } catch (error) {
     logger.warn(`原生代理包装剧集地址失败: ${String(error)}`);
