@@ -6,6 +6,19 @@ import { AdFilterSection } from "@/components/settings/AdFilterSection";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { useSettingsStore } from "@/stores/settingsStore";
 
+// 捕获组件注册的电视遥控器处理函数，模拟遥控器确认键
+var tvEventHandler: ((event: { eventType: string }) => void) | null = null;
+jest.mock("react-native/Libraries/Components/TV/useTVEventHandler", () => {
+  return (handler: (event: { eventType: string }) => void) => {
+    tvEventHandler = handler;
+  };
+});
+
+// 焦点动画用的是 Animated.spring，会在测试结束后继续跑定时器；本用例只关心开关逻辑
+jest.mock("@/hooks/useAnimation", () => ({
+  useButtonAnimation: () => ({ transform: [{ scale: 1 }] }),
+}));
+
 jest.mock("@react-native-async-storage/async-storage", () =>
   require("@react-native-async-storage/async-storage/jest/async-storage-mock"),
 );
@@ -41,7 +54,7 @@ describe("AdFilterSection", () => {
     expect(onChanged).toHaveBeenCalledTimes(2);
   });
 
-  it("开关只做展示：自己不吃触摸、不改状态，避免和 store 不同步", () => {
+  it("开关只做展示：触摸走整行，开关自身不接收触摸也不改状态", () => {
     const onChanged = jest.fn();
     let tree: ReturnType<typeof create>;
     act(() => {
@@ -49,24 +62,55 @@ describe("AdFilterSection", () => {
     });
 
     const toggle = tree!.root.findByType(Switch);
-    // 开关自己不接 onValueChange：原生 Switch 会自己消费触摸并改状态，
-    // 一旦它和 store 不同步，就会表现为"点不动 / 关不掉"
-    expect(toggle.props.onValueChange).toBeUndefined();
-    // 遥控器焦点必须落在整行上，否则确认键只会切到原生开关
-    expect(toggle.props.focusable).toBe(false);
+    // 开关自己不处理交互（和"启用远程输入"一致），避免原生开关和 store 不同步
+    expect(toggle.props.pointerEvents).toBe("none");
+    act(() => {
+      toggle.props.onValueChange(true);
+    });
+    expect(useSettingsStore.getState().adFilterEnabled).toBe(false);
 
-    // 整个开关区域都不接收触摸，触摸透传给整行
+    // 整个开关区域也不接收触摸，触摸透传给整行
     const nonTouchable = tree!.root.findAll(
       (node) => node.props?.pointerEvents === "none" && node.type === "View",
     );
     expect(nonTouchable.length).toBeGreaterThan(0);
 
-    // 唯一的状态入口是整行
+    // 手机：点整行切换
     const section = tree!.root.findByType(SettingsSection);
     act(() => {
       section.props.onPress();
     });
     expect(useSettingsStore.getState().adFilterEnabled).toBe(true);
     expect(onChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it("电视：整行获得焦点后按确认键（select 事件）能开关", () => {
+    const onChanged = jest.fn();
+    let tree: ReturnType<typeof create>;
+    act(() => {
+      tree = create(<AdFilterSection onChanged={onChanged} />);
+    });
+    const section = tree!.root.findByType(SettingsSection);
+
+    // 整行没焦点时不响应遥控器
+    act(() => {
+      tvEventHandler?.({ eventType: "select" });
+    });
+    expect(useSettingsStore.getState().adFilterEnabled).toBe(false);
+
+    // 整行获得焦点后，确认键切换
+    act(() => {
+      section.props.onFocus();
+    });
+    act(() => {
+      tvEventHandler?.({ eventType: "select" });
+    });
+    expect(useSettingsStore.getState().adFilterEnabled).toBe(true);
+    expect(onChanged).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      tvEventHandler?.({ eventType: "select" });
+    });
+    expect(useSettingsStore.getState().adFilterEnabled).toBe(false);
   });
 });

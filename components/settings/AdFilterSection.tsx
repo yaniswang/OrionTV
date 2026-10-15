@@ -1,5 +1,5 @@
 import React, { useCallback } from "react";
-import { View, Switch, StyleSheet, Animated, Platform, TouchableOpacity } from "react-native";
+import { View, Switch, StyleSheet, Animated, Platform, TouchableOpacity, useTVEventHandler } from "react-native";
 import { ThemedText } from "@/components/ThemedText";
 import { SettingsSection } from "./SettingsSection";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -31,6 +31,18 @@ export const AdFilterSection: React.FC<AdFilterSectionProps> = ({ onChanged, onF
     applyToggle(!adFilterEnabled);
   }, [adFilterEnabled, applyToggle]);
 
+  // 电视遥控器：和"启用远程输入"同一套做法——整行获得焦点后按确认键发的是 select 事件，
+  // Pressable 的 onPress 在电视上不触发，必须在这里处理。
+  const handleTVEvent = useCallback(
+    (event: any) => {
+      if (isFocused && event.eventType === "select") {
+        applyToggle(!adFilterEnabled);
+      }
+    },
+    [isFocused, adFilterEnabled, applyToggle]
+  );
+  useTVEventHandler(handleTVEvent);
+
   const handleSectionFocus = () => {
     setIsFocused(true);
     onFocus?.();
@@ -51,9 +63,8 @@ export const AdFilterSection: React.FC<AdFilterSectionProps> = ({ onChanged, onF
           </ThemedText>
         </View>
         {/*
-          开关只做展示，触摸统一交给整行（SettingsSection 的 Pressable）。
-          原生 Switch 会自己消费触摸并在原生侧改状态，一旦它和 store 不同步，
-          就会出现"开关点不动 / 关不掉"，所以这里让整个开关区域都不接收触摸。
+          开关只做展示：触摸和遥控器都交给整行，避免原生 Switch 自己改状态后和 store 不同步
+          （表现为"点不动 / 关不掉"）。做法和"启用远程输入"一致。
         */}
         <Animated.View style={animationStyle} pointerEvents="none">
           {Platform.OS === "ios" && Platform.isTV ? (
@@ -63,6 +74,8 @@ export const AdFilterSection: React.FC<AdFilterSectionProps> = ({ onChanged, onF
           ) : (
             <Switch
               value={adFilterEnabled}
+              onValueChange={() => { }} // 禁用 Switch 的直接交互
+              pointerEvents="none"
               focusable={false}
               trackColor={{ false: "#767577", true: Colors.dark.primary }}
               thumbColor={adFilterEnabled ? "#ffffff" : "#f4f3f4"}
