@@ -115,7 +115,3 @@ OrionTV 仅作为视频搜索工具，不存储、上传或分发任何视频内
 
 - [MoonTV](https://github.com/senshinya/MoonTV) - 一个基于 Next.js 的视频聚合应用
 - [LibreTV](https://github.com/LibreSpark/LibreTV) - 一个开源的视频流媒体应用
-
-感谢以下项目提供 API Key 的赞助
-
-- [gpt-load](https://github.com/tbphp/gpt-load) - 一个高性能的 OpenAI 格式 API 多密钥轮询代理服务器，支持负载均衡，使用 Go 语言开发
