@@ -31,6 +31,7 @@ import java.io.BufferedOutputStream
 import java.io.ByteArrayOutputStream
 import java.io.BufferedWriter
 import java.io.File
+import java.io.FileOutputStream
 import java.io.FileWriter
 import java.io.IOException
 import java.io.OutputStream
@@ -162,6 +163,8 @@ class MediaProxyModule(
   private var debugLogWriter: BufferedWriter? = null
   private val debugLogFile: File by lazy { File(reactContext.filesDir, "media-proxy.log") }
   private val manifestRefsFile: File by lazy { File(reactContext.filesDir, "media-proxy-manifests.json") }
+  /** 预取分片落盘目录：只放已完成预取的分片，进程重启时清空 */
+  private val prefetchCacheDir: File by lazy { File(reactContext.cacheDir, "media-proxy-cache") }
   private val manifestStoreLock = Any()
   @Volatile private var manifestRefsLoaded = false
   @Volatile private var manifestRefsDirty = false
@@ -328,6 +331,7 @@ class MediaProxyModule(
   private fun ensureStarted(preferredPort: Int): String {
     origin?.let { return it }
     loadManifestRefs()
+    cleanPrefetchCacheDir()
     val lan = getLanIPv4Address() ?: throw IOException("未获取到局域网 IP")
     val candidates = listOf(0) + (0 until PORT_ATTEMPTS).map { preferredPort + it }
     var lastError: Throwable? = null
@@ -351,6 +355,17 @@ class MediaProxyModule(
       }
     }
     throw IOException("本地代理启动失败: ${lastError?.message}")
+  }
+
+  /** 清掉上次运行遗留的预取文件（进程被杀时来不及删除）。 */
+  private fun cleanPrefetchCacheDir() {
+    try {
+      prefetchCacheDir.listFiles()?.forEach { file ->
+        if (file.isFile) file.delete()
+      }
+    } catch (error: Throwable) {
+      debugLog("清理预取文件缓存失败: ${error.message}")
+    }
   }
 
   @Synchronized
@@ -589,6 +604,39 @@ class MediaProxyModule(
       existing != null -> "在途"
       else -> "上游"
     }
+
+    // 预取分片已经落盘：直接从文件回给播放器，不把整段重新读回内存
+    if (existing != null && existing.prefetch && existing.fileReady) {
+      val cachedFile = synchronized(existing.lock) {
+        val file = existing.cacheFile
+        if (
+          existing.fileReady &&
+          existing.consumers.isEmpty() &&
+          file != null &&
+          file.exists() &&
+          downloads.remove(key, existing)
+        ) {
+          file
+        } else {
+          null
+        }
+      }
+      if (cachedFile != null) {
+        try {
+          writeFileCache(existing, cachedFile, output, keepAlive)
+          debugLog("读取数据 pid=$pid sid=$sid 来源=文件缓存 字节=${cachedFile.length()}")
+        } finally {
+          releaseDownload(key, existing)
+        }
+        maybePrefetch(pid, sid, headers)
+        return
+      }
+      // 文件被系统清掉了：丢掉这条失效缓存，走正常回源
+      if (existing.fileReady && existing.cacheFile?.exists() != true && existing.consumers.isEmpty()) {
+        releaseDownload(key, existing, force = true)
+      }
+    }
+
     var download: SharedDownload
     var consumer: Consumer
     while (true) {
@@ -620,6 +668,36 @@ class MediaProxyModule(
     consumer.join()
 
     maybePrefetch(pid, sid, headers)
+  }
+
+  /** 把落盘的预取分片写给播放器；上游没给 Content-Length 时用 chunked。 */
+  private fun writeFileCache(
+    download: SharedDownload,
+    file: File,
+    output: BufferedOutputStream,
+    keepAlive: Boolean,
+  ) {
+    val chunked = download.contentLength < 0
+    output.write(buildHead(download, chunked, keepAlive).toByteArray(Charsets.ISO_8859_1))
+    file.inputStream().use { input ->
+      val buffer = ByteArray(BUFFER_BYTES)
+      while (true) {
+        val read = input.read(buffer)
+        if (read < 0) break
+        if (read == 0) continue
+        if (chunked) {
+          output.write("${Integer.toHexString(read)}$CRLF".toByteArray(Charsets.ISO_8859_1))
+          output.write(buffer, 0, read)
+          output.write(CRLF.toByteArray(Charsets.ISO_8859_1))
+        } else {
+          output.write(buffer, 0, read)
+        }
+      }
+    }
+    if (chunked) {
+      output.write("0$CRLF$CRLF".toByteArray(Charsets.ISO_8859_1))
+    }
+    output.flush()
   }
 
   /** 清单 / key / 其它资源：整段取回后再返回（体量小） */
@@ -1075,6 +1153,10 @@ class MediaProxyModule(
     @Volatile var cachedBytes = 0L
     /** 是否已经计入清单在途数，保证只加减一次 */
     var inFlightCounted = false
+    /** 预取分片落盘的文件；落盘后内存里的 chunks 会被清空 */
+    @Volatile var cacheFile: File? = null
+    /** 预取分片是否已经在文件缓存里 */
+    @Volatile var fileReady = false
   }
 
   private inner class Consumer(
@@ -1178,6 +1260,31 @@ class MediaProxyModule(
       "预取结束 pid=${download.pid} sid=${download.sid} 在途=${playlist?.inFlightCount?.get() ?: 0} " +
         "缓存字节=${playlist?.cacheBytes?.get() ?: 0} 用时=${elapsed}ms",
     )
+  }
+
+  /**
+   * 必须在持有 download.lock 时调用：把已完成、没人读的预取分片从内存搬到文件。
+   * 落盘失败就保留内存里的分片继续用，不影响播放。
+   */
+  private fun offloadPrefetchToFileLocked(download: SharedDownload) {
+    if (download.fileReady || download.failure != null || download.chunks.isEmpty()) return
+    var file: File? = null
+    try {
+      if (!prefetchCacheDir.exists() && !prefetchCacheDir.mkdirs()) return
+      file = File(prefetchCacheDir, "${download.pid}_${download.sid}.bin")
+      FileOutputStream(file, false).use { out ->
+        for (chunk in download.chunks) {
+          out.write(chunk)
+        }
+      }
+      download.cacheFile = file
+      download.fileReady = true
+      download.chunks.clear()
+      debugLog("预取落盘 pid=${download.pid} sid=${download.sid} 字节=${file.length()}")
+    } catch (error: Throwable) {
+      file?.delete()
+      debugLog("预取落盘失败 pid=${download.pid} sid=${download.sid} error=${error.message}")
+    }
   }
 
   /** 必须在持有 download.lock 时调用。 */
@@ -1295,6 +1402,10 @@ class MediaProxyModule(
             download.completed = true
             download.completedAt = System.currentTimeMillis()
             markDownloadFinishedLocked(download)
+            // 预取分片没人正在读时立刻落盘，把内存还给系统（低端电视堆很小）
+            if (download.prefetch && download.failure == null && download.consumers.isEmpty()) {
+              offloadPrefetchToFileLocked(download)
+            }
             download.lock.notifyAll()
           }
           logPrefetchEnd(download)
@@ -1468,6 +1579,9 @@ class MediaProxyModule(
     download.released = true
     download.completed = true
     download.chunks.clear()
+    download.cacheFile?.delete()
+    download.cacheFile = null
+    download.fileReady = false
     download.lock.notifyAll()
   }
 
