@@ -11,6 +11,7 @@ interface UpdateState {
   updateAvailable: boolean;
   currentVersion: string;
   remoteVersion: string;
+  downloadFileName: string;
   downloadUrl: string;
   releaseNotes: string;
   publishedAt: string;
@@ -42,6 +43,7 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
   updateAvailable: false,
   currentVersion: updateService.getCurrentVersion(),
   remoteVersion: '',
+  downloadFileName: '',
   downloadUrl: '',
   releaseNotes: '',
   publishedAt: '',
@@ -73,6 +75,7 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
 
       set({
         remoteVersion: versionInfo.version,
+        downloadFileName: versionInfo.fileName,
         downloadUrl: versionInfo.downloadUrl,
         releaseNotes: versionInfo.releaseNotes,
         publishedAt: versionInfo.publishedAt,
@@ -110,9 +113,9 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
 
   // 开始下载
   startDownload: async () => {
-    const { downloadUrl } = get();
+    const { downloadUrl, downloadFileName } = get();
     
-    if (!downloadUrl) {
+    if (!downloadUrl || !downloadFileName) {
       set({ error: '下载地址无效' });
       return;
     }
@@ -126,6 +129,7 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
 
       const filePath = await updateService.downloadApk(
         downloadUrl,
+        downloadFileName,
         (progress) => {
           set({ downloadProgress: progress });
         }
@@ -191,6 +195,7 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
       downloading: false,
       downloadProgress: 0,
       downloadedPath: null,
+      downloadFileName: '',
       error: null,
       showUpdateModal: false,
       isLatestVersion: false, // 重置时也要重置这个状态

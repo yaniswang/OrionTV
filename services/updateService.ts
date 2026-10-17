@@ -6,13 +6,15 @@ import Toast from '@/utils/Toast';
 import { version as currentVersion } from '../package.json';
 import { UPDATE_CONFIG } from '../constants/UpdateConfig';
 import Logger from '@/utils/Logger';
-import { Platform } from 'react-native';
+import { PermissionsAndroid, Platform } from 'react-native';
 import ReactNativeBlobUtil from 'react-native-blob-util';
 
 const logger = Logger.withTag('UpdateService');
 
 interface VersionInfo {
   version: string;
+  /** GitHub release 里的 APK 文件名，本地保持一致，方便"已存在就跳过下载" */
+  fileName: string;
   downloadUrl: string;
   releaseNotes: string;
   publishedAt: string;
@@ -76,8 +78,11 @@ class UpdateService {
         if (!apkAsset?.browser_download_url) {
           throw new Error('Latest release APK asset not found');
         }
+        // 本地文件名固定为 orionTV.<版本>.apk，版本号拼进文件名，便于判断是否已下载
+        const fileName = `orionTV.${remoteVersion}.apk`;
         return {
           version: remoteVersion,
+          fileName,
           downloadUrl: UPDATE_CONFIG.getDownloadUrl(apkAsset.browser_download_url),
           releaseNotes: release.body?.trim() ?? '',
           publishedAt: release.published_at ?? '',
@@ -110,15 +115,21 @@ class UpdateService {
         throw new Error('Document directory is not available');
       }
       const listing = await FileSystem.readDirectoryAsync(dirUri);
-      const apkFiles = listing.filter(name => name.startsWith('OrionTV_v') && name.endsWith('.apk'));
+      // 清理上次中断留下的临时文件
+      for (const name of listing.filter(name => name.endsWith('.apk.part'))) {
+        await FileSystem.deleteAsync(`${dirUri}${name}`, { idempotent: true }).catch(() => {});
+      }
+      const apkFiles = listing.filter(name => /^oriontv.*\.apk$/i.test(name));
 
       if (apkFiles.length <= 2) return;
 
-      const sorted = apkFiles.sort((a, b) => {
-        const numA = parseInt(a.replace(/[^0-9]/g, ''), 10);
-        const numB = parseInt(b.replace(/[^0-9]/g, ''), 10);
-        return numB - numA; // 倒序（最新在前）
-      });
+      const withTime = await Promise.all(
+        apkFiles.map(async name => {
+          const info = await FileSystem.getInfoAsync(`${dirUri}${name}`);
+          return { name, time: info.exists ? info.modificationTime ?? 0 : 0 };
+        }),
+      );
+      const sorted = withTime.sort((a, b) => b.time - a.time).map(item => item.name);
 
       const stale = sorted.slice(2); // 保留最新的两个
       for (const file of stale) {
@@ -140,21 +151,33 @@ class UpdateService {
    * --------------------------------------------------------------- */
   async downloadApk(
     url: string,
+    fileName: string,
     onProgress?: (percent: number) => void,
   ): Promise<string> {
     const maxRetries = 3;
     await this.cleanOldApkFiles();
 
+    const localName = fileName.replace(/[\\/]/g, '_');
+    const fileUri = `${FileSystem.documentDirectory}${localName}`;
+    const partUri = `${fileUri}.part`;
+
+    // 同名安装包已经下载过：跳过下载，直接复用现有安装包
+    const existing = await FileSystem.getInfoAsync(fileUri);
+    if (existing.exists && (existing.size ?? 0) > 0) {
+      logger.debug(`APK already downloaded: ${localName}`);
+      onProgress?.(100);
+      return fileUri;
+    }
+
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        const timestamp = Date.now();
-        const fileName = `OrionTV_v${timestamp}.apk`;
-        const fileUri = `${FileSystem.documentDirectory}${fileName}`;
+        // 先写到 .part，下载完整后再改名，避免把半截文件当成"已下载"
+        await FileSystem.deleteAsync(partUri, { idempotent: true });
 
         // expo-file-system 把下载进度回调参数统一为 `{totalBytesWritten, totalBytesExpectedToWrite}`
         const downloadResumable = FileSystem.createDownloadResumable(
           url,
-          fileUri,
+          partUri,
           {
             // Android 需要在 AndroidManifest 中声明 INTERNET、WRITE_EXTERNAL_STORAGE (API 33+ 使用 MANAGE_EXTERNAL_STORAGE)
             // 这里不使用系统下载管理器，因为我们想自己控制进度回调。
@@ -168,19 +191,17 @@ class UpdateService {
             }
           },
         );
-        const { uri, status } = await downloadResumable.downloadAsync();
-        if (status !== 200) {
-          await FileSystem.deleteAsync(uri, { idempotent: true }); 
+        const result = await downloadResumable.downloadAsync();
+        if (!result || result.status !== 200) {
+          await FileSystem.deleteAsync(partUri, { idempotent: true }).catch(() => {});
           throw new Error('更新失败，没有发现有效APK文件！');
         }
-        else if (uri) {
-          logger.debug(`APK downloaded to ${uri}`);
-          return uri;
-        }
-        else {
-          throw new Error('Download failed: No URI available');
-        }
+        await FileSystem.deleteAsync(fileUri, { idempotent: true }).catch(() => {});
+        await FileSystem.moveAsync({ from: partUri, to: fileUri });
+        logger.debug(`APK downloaded to ${fileUri}`);
+        return fileUri;
       } catch (e) {
+        await FileSystem.deleteAsync(partUri, { idempotent: true }).catch(() => {});
         logger.warn(`downloadApk attempt ${attempt}/${maxRetries}`, e);
         if (attempt === maxRetries) {
           Toast.show({
@@ -213,6 +234,82 @@ class UpdateService {
     }
   }
 
+  /**
+   * Android 6（API 23）回退到公共 Download 目录前必须申请运行时存储权限。
+   * 只在清单里声明是不够的，否则写入时会报 "open failed: EACCES (Permission denied)"。
+   */
+  private async ensureLegacyStoragePermission(): Promise<void> {
+    const permission = PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE;
+    if (await PermissionsAndroid.check(permission)) return;
+    const result = await PermissionsAndroid.request(permission, {
+      title: '需要存储权限',
+      message: '应用专属目录安装失败，更新包需要复制到下载目录后重试。',
+      buttonPositive: '允许',
+      buttonNegative: '取消',
+    });
+    if (result !== PermissionsAndroid.RESULTS.GRANTED) {
+      Toast.show({
+        type: 'error',
+        text1: '安装失败',
+        text2: '没有存储权限，无法写入下载目录',
+      });
+      throw new Error('WRITE_EXTERNAL_STORAGE denied');
+    }
+  }
+
+  /** Android 6 的安装器不支持 content://，需要把 APK 放到安装器可读取的外部路径。 */
+  private getLegacyExternalDownloadDir(fileUri: string): string {
+    const match = fileUri.match(/^file:\/\/\/data\/(?:user\/\d+|data)\/([^/]+)/);
+    if (!match?.[1]) {
+      throw new Error(`Cannot resolve Android package name from ${fileUri}`);
+    }
+    const externalRoot = ReactNativeBlobUtil.fs.dirs.SDCardDir.replace(/\/+$/, '');
+    return `${externalRoot}/Android/data/${match[1]}/files/Download`;
+  }
+
+  private async copyApkToDirectory(
+    fileUri: string,
+    targetDir: string,
+    fileName: string,
+  ): Promise<string> {
+    if (!(await ReactNativeBlobUtil.fs.exists(targetDir))) {
+      await ReactNativeBlobUtil.fs.mkdir(targetDir);
+    }
+
+    const targetPath = `${targetDir}/${fileName}`;
+    const copied = await ReactNativeBlobUtil.fs.exists(targetPath);
+    const sourceSize = (await ReactNativeBlobUtil.fs.stat(fileUri)).size;
+    const targetSize = copied ? (await ReactNativeBlobUtil.fs.stat(targetPath)).size : -1;
+    if (!copied || targetSize !== sourceSize) {
+      if (copied) await ReactNativeBlobUtil.fs.unlink(targetPath).catch(() => {});
+      await ReactNativeBlobUtil.fs.cp(fileUri, targetPath);
+    }
+    return targetPath;
+  }
+
+  private async installLegacyApk(fileUri: string): Promise<void> {
+    const fileName = fileUri.split('/').pop() ?? `orionTV.${currentVersion}.apk`;
+    try {
+      const appSpecificPath = await this.copyApkToDirectory(
+        fileUri,
+        this.getLegacyExternalDownloadDir(fileUri),
+        fileName,
+      );
+      await ReactNativeBlobUtil.android.actionViewIntent(appSpecificPath, ANDROID_MIME_TYPE);
+      return;
+    } catch (error) {
+      logger.warn('App-specific external APK install failed, falling back to public Download', error);
+    }
+
+    await this.ensureLegacyStoragePermission();
+    const publicPath = await this.copyApkToDirectory(
+      fileUri,
+      ReactNativeBlobUtil.fs.dirs.DownloadDir,
+      fileName,
+    );
+    await ReactNativeBlobUtil.android.actionViewIntent(publicPath, ANDROID_MIME_TYPE);
+  }
+
   /** --------------------------------------------------------------
    *  4️⃣ 安装 APK（只在 Android 可用，使用 expo-intent-launcher）
    * --------------------------------------------------------------- */
@@ -225,13 +322,10 @@ class UpdateService {
 
     // ② 只在 Android 里执行
     if (Platform.OS === 'android') {
-      // Android 6 的安装器不支持 content://，需要先复制到应用外部 Download 目录，
-      // 再使用 file:// 交给系统安装器。
+      // Android 6 的安装器不支持 content://，优先使用应用专属外部目录和 file://。
+      // 该目录不需要存储权限；只有安装器无法读取时才回退到公共 Download。
       if (Platform.Version < 24) {
-        const downloadDir = ReactNativeBlobUtil.fs.dirs.DownloadDir;
-        const downloadPath = `${downloadDir}/OrionTV_v${Date.now()}.apk`;
-        await ReactNativeBlobUtil.fs.cp(fileUri, downloadPath);
-        await ReactNativeBlobUtil.android.actionViewIntent(downloadPath, ANDROID_MIME_TYPE);
+        await this.installLegacyApk(fileUri);
         return;
       }
 
