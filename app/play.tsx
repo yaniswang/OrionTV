@@ -31,6 +31,7 @@ import { DanmakuOverlay } from "@/components/DanmakuOverlay";
 import { DanmakuSettingsModal } from "@/components/DanmakuSettingsModal";
 import { DanmakuManualMatchModal } from "@/components/DanmakuManualMatchModal";
 import { useDanmakuAutoLoad } from "@/hooks/useDanmakuAutoLoad";
+import { useSettingsStore } from "@/stores/settingsStore";
 
 const logger = Logger.withTag('PlayScreen');
 
@@ -196,6 +197,7 @@ export default function PlayScreen() {
   } = usePlaybackController();
 
   useDanmakuAutoLoad();
+  const danmakuConfigured = useSettingsStore((state) => !!state.danmakuApiUrl.trim());
 
 
   const previousCastingRef = useRef(isCasting);
@@ -602,7 +604,8 @@ export default function PlayScreen() {
         <LoadingContainer style={dynamicStyles.loadingContainer} currentEpisode={currentEpisode} />
       )}
 
-      <DanmakuOverlay />
+      {/* 未配置弹幕 API 时不渲染任何弹幕相关组件 */}
+      {danmakuConfigured && <DanmakuOverlay />}
 
       {controlsMountedRef.current && (
         <PlayerControls
@@ -625,8 +628,8 @@ export default function PlayScreen() {
       {currentEpisode?.url && (<EpisodeSelectionModal />)}
       {currentEpisode?.url && (<SourceSelectionModal />)}
       {currentEpisode?.url && (<SpeedSelectionModal />)}
-      {currentEpisode?.url && (<DanmakuSettingsModal />)}
-      {currentEpisode?.url && (<DanmakuManualMatchModal />)}
+      {danmakuConfigured && currentEpisode?.url && (<DanmakuSettingsModal />)}
+      {danmakuConfigured && currentEpisode?.url && (<DanmakuManualMatchModal />)}
       <DLNADeviceModal
         visible={isCasting && showDlnaDeviceModal}
         onClose={() => setShowDlnaDeviceModal(false)}

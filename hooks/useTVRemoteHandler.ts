@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useTVEventHandler, HWEvent } from "react-native";
 import usePlayerStore from "@/stores/playerStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 import { usePlaybackController } from "./usePlaybackController";
 
 const SEEK_STEP = 20 * 1000; // 快进/快退的时间步长（毫秒）
@@ -170,8 +171,8 @@ export const useTVRemoteHandler = () => {
           setShowControls(true);
           break;
         case "up":
-          // 向上唤起控制条时，焦点直接进入顶部弹幕信息区
-          setPreferDanmakuFocus(true);
+          // 向上唤起控制条时，焦点直接进入顶部弹幕信息区；未配置弹幕 API 时信息区不显示，按向下处理
+          setPreferDanmakuFocus(!!useSettingsStore.getState().danmakuApiUrl.trim());
           setShowControls(true);
           break;
       }

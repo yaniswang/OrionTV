@@ -40,6 +40,7 @@ import { buildPlaybackTitle } from '@/utils/PlaybackTitleUtils';
 import { DanmakuOnIcon, DanmakuOffIcon, DanmakuSettingsIcon } from "@/components/icons/DanmakuIcons";
 import { DanmakuInfoBar } from "@/components/DanmakuInfoBar";
 import { useDanmakuStore } from "@/stores/danmakuStore";
+import { useSettingsStore } from "@/stores/settingsStore";
 
 interface PlayerControlsProps {
   showControls: boolean;
@@ -90,6 +91,8 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
 
   const { detail } = useDetailStore();
   const resources = useSources();
+  // 未配置弹幕 API 时隐藏所有弹幕入口
+  const danmakuConfigured = useSettingsStore((state) => !!state.danmakuApiUrl.trim());
   const danmakuEnabled = useDanmakuStore((state) => state.enabled);
   const toggleDanmaku = useDanmakuStore((state) => state.toggleEnabled);
   const preferDanmakuFocus = usePlayerStore((state) => state.preferDanmakuFocus);
@@ -185,7 +188,7 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
           {displayTitle}
         </Text>
         {detail?.useProxy && <Send color="#00bb5e" size={18} />}
-        {!showLockControls && (
+        {danmakuConfigured && !showLockControls && (
           <DanmakuInfoBar
             pillRef={pillRef}
             downFocusTag={focusTags.play}
@@ -278,7 +281,9 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
               <MediaButton
                 ref={playButtonRef}
                 onPress={() => void togglePlayPause()}
-                hasTVPreferredFocus={focusReady && !(preferDanmakuFocus && danmakuEnabled)}
+                hasTVPreferredFocus={
+                  focusReady && !(preferDanmakuFocus && danmakuEnabled && danmakuConfigured)
+                }
                 nextFocusUp={focusTags.pill}
               >
                 {status.isLoaded && status.isPlaying ? (
@@ -322,11 +327,13 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
                 <Gauge color="white" size={24} />
               </MediaButton>
 
-              <MediaButton onPress={toggleDanmaku} nextFocusUp={focusTags.pill}>
-                {danmakuEnabled ? <DanmakuOnIcon size={26} /> : <DanmakuOffIcon size={26} />}
-              </MediaButton>
+              {danmakuConfigured && (
+                <MediaButton onPress={toggleDanmaku} nextFocusUp={focusTags.pill}>
+                  {danmakuEnabled ? <DanmakuOnIcon size={26} /> : <DanmakuOffIcon size={26} />}
+                </MediaButton>
+              )}
 
-              {danmakuEnabled && (
+              {danmakuConfigured && danmakuEnabled && (
                 <MediaButton onPress={() => setShowDanmakuSettingsModal(true)} nextFocusUp={focusTags.pill}>
                   <DanmakuSettingsIcon size={26} />
                 </MediaButton>
