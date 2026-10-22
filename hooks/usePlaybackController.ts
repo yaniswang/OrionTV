@@ -84,12 +84,15 @@ export const usePlaybackController = () => {
         : undefined;
     const resumePlaying = casting ? castState.isPlaying : localState.status.isPlaying;
 
-    await useDetailStore.getState().setDetail(item);
     const player = usePlayerStore.getState();
     const episodeIndex = Math.min(
       Math.max(0, player.currentEpisodeIndex),
       Math.max(0, item.episodes.length - 1),
     );
+    // 先清空旧源剧集：loadVideo 重建详情时播放器会重新挂载，新剧集要等存储读取、代理映射后
+    // 才写入，期间若仍是旧剧集，会先把旧源重新播一遍再切到新源
+    usePlayerStore.setState({ episodes: [] });
+    await useDetailStore.getState().setDetail(item);
     await loadLocalVideo({
       source: item.source,
       id: item.id,

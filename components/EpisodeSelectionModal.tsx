@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text, StyleSheet, Platform } from "react-native";
 import { FlashList } from "@shopify/flash-list";
 import Modal from "react-native-modal";
 import { StyledButton } from "./StyledButton";
 import usePlayerStore from "@/stores/playerStore";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
+import { useScreenDimensions } from "@/hooks/useScreenDimensions";
 import { usePlaybackController } from "@/hooks/usePlaybackController";
 
 interface EpisodeSelectionModalProps {}
@@ -17,6 +18,7 @@ interface FlashItemData {
 export const EpisodeSelectionModal: React.FC<EpisodeSelectionModalProps> = () => {
   // 只订阅需要的字段：播放进度每 500ms 变一次，整店订阅会让这个弹窗跟着每秒重渲染两次
   const showEpisodeModal = usePlayerStore((s) => s.showEpisodeModal);
+  const screen = useScreenDimensions();
   const episodes = usePlayerStore((s) => s.episodes);
   const currentEpisodeIndex = usePlayerStore((s) => s.currentEpisodeIndex);
   const { playEpisode } = usePlaybackController();
@@ -64,7 +66,7 @@ export const EpisodeSelectionModal: React.FC<EpisodeSelectionModalProps> = () =>
   };
   
   return (
-    <Modal isVisible={showEpisodeModal} statusBarTranslucent={true} onBackButtonPress={onClose} onBackdropPress={onClose} onSwipeComplete={onClose} swipeDirection="down" style={styles.modalContainer}>
+    <Modal isVisible={showEpisodeModal} statusBarTranslucent={true} deviceWidth={screen.width} deviceHeight={screen.height} onBackButtonPress={onClose} onBackdropPress={onClose} onSwipeComplete={onClose} swipeDirection="down" style={styles.modalContainer}>
       <View style={styles.modalContent}>
         <Text style={styles.modalTitle}>{'选集'+(episodes.length>1?` (${episodes.length})`:'')}</Text>
         {episodes.length > episodeGroupSize && (
@@ -103,7 +105,8 @@ export const EpisodeSelectionModal: React.FC<EpisodeSelectionModalProps> = () =>
                 text={item.title || `第 ${absoluteIndex + 1} 集`}
                 onPress={() => onSelectEpisode(absoluteIndex)}
                 isSelected={currentEpisodeIndex === absoluteIndex}
-                hasTVPreferredFocus={currentEpisodeIndex === absoluteIndex}
+                // 只在 TV 上抢焦点：手机上焦点会让按压水波纹常驻，选中的绿色被叠成青色
+                hasTVPreferredFocus={Platform.isTV && currentEpisodeIndex === absoluteIndex}
                 style={styles.episodeItem}
                 textStyle={styles.episodeItemText}
               />

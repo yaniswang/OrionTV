@@ -17,6 +17,11 @@ const STORAGE_KEY = "mytv_danmaku";
 const CACHE_TTL_MS = 2 * 60 * 60 * 1000;
 const CACHE_MAX_ENTRIES = 3;
 
+/** 没有匹配到番剧/剧集（不是加载失败） */
+export const DANMAKU_NO_MATCH_ERROR = "未找到匹配的弹幕，请手动匹配";
+/** 匹配到了但该集没有弹幕（不是加载失败） */
+export const DANMAKU_EMPTY_ERROR = "当前集暂无弹幕";
+
 export interface DanmakuSettings {
   /** 0-1 */
   opacity: number;
@@ -256,7 +261,7 @@ export const useDanmakuStore = create<DanmakuState>((set, get) => ({
           match: null,
           matchMode: null,
           loading: false,
-          error: "未找到匹配的弹幕，请手动匹配",
+          error: DANMAKU_NO_MATCH_ERROR,
           loadedAt: Date.now(),
         });
         return;
@@ -305,14 +310,15 @@ export const useDanmakuStore = create<DanmakuState>((set, get) => ({
       const cached = readCache(match.episodeId, options?.force === true);
       const result = cached || (await fetchDanmakuComments(baseUrl, match.episodeId));
       if (seq !== requestSeq) return;
-      if (!cached) writeCache(match.episodeId, result);
+      // 0 条不缓存：服务端拉取上游失败时也会返回 0 条，缓存后 2 小时内自动加载都会直接拿到空结果
+      if (!cached && result.comments.length > 0) writeCache(match.episodeId, result);
       set({
         comments: result.comments,
         matchMode,
         videoDuration: result.videoDuration || null,
         loadedAt: Date.now(),
         loading: false,
-        error: result.comments.length ? null : "当前集暂无弹幕",
+        error: result.comments.length ? null : DANMAKU_EMPTY_ERROR,
       });
       if (options?.rememberSelection) {
         try {

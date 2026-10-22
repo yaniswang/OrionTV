@@ -11,9 +11,108 @@ import {
   getDanmakuTravelSpeed,
   getDanmakuTrackCount,
   getDanmakuVisualLane,
+  planDanmakuPrefill,
   takeRandomDanmaku,
   willDanmakuCollide,
 } from "@/utils/danmakuLayout";
+
+describe("SEEK 后铺满泳道", () => {
+  const plan = (
+    candidates: { id: string; time: number; width: number; speed: number }[],
+    laneCount = 1,
+    gap = 10,
+    random: () => number = () => 0,
+  ) =>
+    planDanmakuPrefill({
+      screenWidth: 1000,
+      positionSec: 20,
+      candidates,
+      laneCount,
+      getGap: () => gap,
+      random,
+    });
+
+  it("按弹幕时间与速度反推当前左端坐标", () => {
+    // 提前 10 秒、速度 100：从右边缘 1000 走了 1000，正好在 x=0
+    expect(plan([{ id: "a", time: 10, width: 100, speed: 100 }])).toEqual([
+      { lane: 0, left: 0, item: { id: "a", time: 10, width: 100, speed: 100 } },
+    ]);
+    expect(plan([{ id: "b", time: 18, width: 100, speed: 100 }])[0].left).toBe(800);
+  });
+
+  it("左端小于 0 或尚未到时间的弹幕不放入", () => {
+    expect(
+      plan([
+        { id: "early", time: 9.9, width: 100, speed: 100 },
+        { id: "future", time: 20, width: 100, speed: 100 },
+        { id: "later", time: 20.5, width: 100, speed: 100 },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("同泳道按左端从小到大排列且保持间距", () => {
+    const result = plan([
+      { id: "c", time: 15, width: 100, speed: 100 },
+      { id: "a", time: 10, width: 100, speed: 100 },
+      // 左端 50，与 a(0~100) 重叠，单泳道时放不下
+      { id: "overlap", time: 10.5, width: 100, speed: 100 },
+    ]);
+    expect(result.map((p) => [p.item.id, p.left])).toEqual([
+      ["a", 0],
+      ["c", 500],
+    ]);
+  });
+
+  it("冲突的弹幕放入下一个泳道", () => {
+    const result = plan(
+      [
+        { id: "a", time: 10, width: 100, speed: 100 },
+        { id: "b", time: 10.5, width: 100, speed: 100 },
+      ],
+      2,
+    );
+    expect(result.map((p) => [p.item.id, p.lane, p.left])).toEqual([
+      ["a", 0, 0],
+      ["b", 1, 50],
+    ]);
+  });
+
+  it("在所有放得下的泳道中随机挑选，避免从上到下排成阶梯", () => {
+    const candidates = [{ id: "a", time: 10, width: 100, speed: 100 }];
+    expect(plan(candidates, 3, 10, () => 0)[0].lane).toBe(0);
+    expect(plan(candidates, 3, 10, () => 0.5)[0].lane).toBe(1);
+    expect(plan(candidates, 3, 10, () => 0.99)[0].lane).toBe(2);
+    // a 占用第 2 道后，与之重叠的 b 只能在剩余两道里选
+    const result = plan(
+      [
+        { id: "a", time: 10, width: 100, speed: 100 },
+        { id: "b", time: 10.5, width: 100, speed: 100 },
+      ],
+      3,
+      10,
+      () => 0.99,
+    );
+    expect(result.map((p) => [p.item.id, p.lane])).toEqual([
+      ["a", 2],
+      ["b", 1],
+    ]);
+  });
+
+  it("后面更快的弹幕会在前一条离场前追尾时不放入", () => {
+    // a 尾部需 1 秒离场；b 速度 400、左端 300，1 秒后已越过左边缘追上 a
+    const result = plan([
+      { id: "a", time: 10, width: 100, speed: 100 },
+      { id: "b", time: 18.25, width: 100, speed: 400 },
+    ]);
+    expect(result.map((p) => p.item.id)).toEqual(["a"]);
+  });
+
+  it("弹幕不足时对应位置留空", () => {
+    const result = plan([{ id: "only", time: 19, width: 100, speed: 100 }], 3);
+    expect(result).toHaveLength(1);
+    expect(result[0].left).toBe(900);
+  });
+});
 
 describe("秒桶弹幕调度参数", () => {
   it("按密度生成固定间距区间", () => {

@@ -110,6 +110,12 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
   const pillRef = React.useRef<View>(null);
   const playButtonRef = React.useRef<View>(null);
   const [focusTags, setFocusTags] = React.useState<{ pill?: number; play?: number }>({});
+  // 面板常驻、隐藏时屏蔽子树焦点；重新显示时要等容器解除屏蔽（上一次提交）后再请求焦点
+  const [focusReady, setFocusReady] = React.useState(false);
+
+  React.useEffect(() => {
+    setFocusReady(showControls);
+  }, [showControls]);
 
   React.useEffect(() => {
     setFocusTags({
@@ -163,7 +169,12 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
   };
 
   return (
-    <View style={styles.controlContainer}>
+    <View
+      style={[styles.controlContainer, !showControls && styles.hidden]}
+      pointerEvents={showControls ? undefined : "none"}
+      // @ts-expect-error react-native-tvos Android 原生属性，类型未声明；false 时屏蔽子树焦点
+      tvFocusable={Platform.isTV ? showControls : undefined}
+    >
       <View style={styles.topLeftContainer}>
         {!Platform.isTV && !showLockControls && (
           <Pressable onPress={handelBack} style={styles.topBackButton}>
@@ -174,6 +185,14 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
           {displayTitle}
         </Text>
         {detail?.useProxy && <Send color="#00bb5e" size={18} />}
+        {!showLockControls && (
+          <DanmakuInfoBar
+            pillRef={pillRef}
+            downFocusTag={focusTags.play}
+            preferFocus={focusReady && preferDanmakuFocus}
+            visible={showControls}
+          />
+        )}
       </View>
 
       <View style={styles.topRightContainer}>
@@ -206,14 +225,6 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
           </Pressable>
         )}
       </View>
-
-      {!showLockControls && (
-        <DanmakuInfoBar
-          pillRef={pillRef}
-          downFocusTag={focusTags.play}
-          preferFocus={preferDanmakuFocus}
-        />
-      )}
 
       {!Platform.isTV && (
         <View style={styles.lockContainer}>
@@ -267,7 +278,7 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
               <MediaButton
                 ref={playButtonRef}
                 onPress={() => void togglePlayPause()}
-                hasTVPreferredFocus={showControls && !(preferDanmakuFocus && danmakuEnabled)}
+                hasTVPreferredFocus={focusReady && !(preferDanmakuFocus && danmakuEnabled)}
                 nextFocusUp={focusTags.pill}
               >
                 {status.isLoaded && status.isPlaying ? (
@@ -367,6 +378,9 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
   },
+  hidden: {
+    opacity: 0,
+  },
   controlsOverlay: {
     position: 'absolute',
     bottom: 0,
@@ -429,6 +443,8 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   topTitleText: {
+    // 标题完整显示，不截断
+    flexShrink: 0,
     color: "white",
     fontSize: 16,
     fontWeight: "bold",
@@ -442,7 +458,8 @@ const styles = StyleSheet.create({
     display: 'flex',
     flexDirection: 'row',
     alignItems: 'center',
-    maxWidth: '34%',
+    // 标题后面接弹幕信息条，按内容自然宽度排列
+    zIndex: 20,
   },
   topBackButton: {
     padding: 5,

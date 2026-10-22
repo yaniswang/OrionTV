@@ -40,6 +40,8 @@ interface PlayerState {
   showDanmakuSettingsModal: boolean;
   showDanmakuManualModal: boolean;
   preferDanmakuFocus: boolean;
+  /** 弹幕加载详情展开中：控制面板暂停自动隐藏 */
+  danmakuDetailOpen: boolean;
   showNextEpisodeOverlay: boolean;
   isSeeking: boolean;
   seekCommitVersion: number;
@@ -75,6 +77,7 @@ interface PlayerState {
   setShowDanmakuSettingsModal: (show: boolean) => void;
   setShowDanmakuManualModal: (show: boolean) => void;
   setPreferDanmakuFocus: (prefer: boolean) => void;
+  setDanmakuDetailOpen: (open: boolean) => void;
   setShowNextEpisodeOverlay: (show: boolean) => void;
   setPlaybackRate: (rate: number) => void;
   setIntroEndTime: (positionMillis?: number) => void;
@@ -115,6 +118,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
   showDanmakuSettingsModal: false,
   showDanmakuManualModal: false,
   preferDanmakuFocus: false,
+  danmakuDetailOpen: false,
   showNextEpisodeOverlay: false,
   isSeeking: false,
   seekCommitVersion: 0,
@@ -546,6 +550,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
   setShowDanmakuSettingsModal: (show) => set({ showDanmakuSettingsModal: show }),
   setShowDanmakuManualModal: (show) => set({ showDanmakuManualModal: show }),
   setPreferDanmakuFocus: (prefer) => set({ preferDanmakuFocus: prefer }),
+  setDanmakuDetailOpen: (open) => set({ danmakuDetailOpen: open }),
   setShowNextEpisodeOverlay: (show) => set({ showNextEpisodeOverlay: show }),
 
   setPlaybackRate: async (rate) => {
@@ -584,6 +589,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       showDanmakuSettingsModal: false,
       showDanmakuManualModal: false,
       preferDanmakuFocus: false,
+      danmakuDetailOpen: false,
       showNextEpisodeOverlay: false,
       initialPosition: 0,
       playbackRate: 1.0,

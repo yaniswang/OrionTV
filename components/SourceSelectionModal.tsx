@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, StyleSheet, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, ActivityIndicator, Platform } from "react-native";
 import { FlashList } from "@shopify/flash-list";
 import Modal from "react-native-modal";
 import { StyledButton } from "./StyledButton";
@@ -8,6 +8,7 @@ import useDetailStore, { EXCELLENT_SEGMENT_RATIO, SearchResultWithResolution } f
 import usePlayerStore from "@/stores/playerStore";
 import Logger from '@/utils/Logger';
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
+import { useScreenDimensions } from "@/hooks/useScreenDimensions";
 import { getCommonResponsiveStyles } from "@/utils/ResponsiveStyles";
 import { FontAwesome } from "@expo/vector-icons";
 import { SpeedTestIcon } from "./SpeedTestIcon";
@@ -18,6 +19,7 @@ const logger = Logger.withTag('SourceSelectionModal');
 export const SourceSelectionModal: React.FC = () => {
   // 响应式布局配置
   const responsiveConfig = useResponsiveLayout();
+  const screen = useScreenDimensions();
   const commonStyles = getCommonResponsiveStyles(responsiveConfig);
   const { deviceType, spacing } = responsiveConfig;
 
@@ -45,7 +47,7 @@ export const SourceSelectionModal: React.FC = () => {
   };
 
   return (
-    <Modal isVisible={showSourceModal} statusBarTranslucent={true} onBackButtonPress={onClose} onBackdropPress={onClose} onSwipeComplete={onClose} swipeDirection="down" style={styles.modalContainer}>
+    <Modal isVisible={showSourceModal} statusBarTranslucent={true} deviceWidth={screen.width} deviceHeight={screen.height} onBackButtonPress={onClose} onBackdropPress={onClose} onSwipeComplete={onClose} swipeDirection="down" style={styles.modalContainer}>
       <View style={styles.modalContent}>
         <View style={styles.modalTitleContainer}>
           {!allSourcesLoaded && (<ActivityIndicator style={{marginRight: 5}} />)}
@@ -64,7 +66,8 @@ export const SourceSelectionModal: React.FC = () => {
               <StyledButton
                 onPress={() => onSelectSource(item)}
                 isSelected={isSelected}
-                hasTVPreferredFocus={isSelected}
+                // 只在 TV 上抢焦点：手机上焦点会让按压水波纹常驻，选中的绿色被叠成青色
+                hasTVPreferredFocus={Platform.isTV && isSelected}
                 style={styles.sourceItem}
                 textStyle={dynamicStyles.sourceButton}
               >

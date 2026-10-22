@@ -25,7 +25,8 @@ export const useDanmakuAutoLoad = () => {
   }, [hydrate]);
 
   useEffect(() => {
-    if (!hydrated || !enabled || !apiUrl.trim() || !title || episodeIndex < 0) return;
+    // 换源时剧集会被短暂清空，此时不加载，避免按 0 集多发一次匹配请求
+    if (!hydrated || !enabled || !apiUrl.trim() || !title || episodeIndex < 0 || episodeCount <= 0) return;
     void loadForEpisode({
       title,
       year,

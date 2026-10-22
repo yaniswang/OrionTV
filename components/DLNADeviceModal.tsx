@@ -4,6 +4,7 @@ import Modal from 'react-native-modal';
 import { Cast, Check, RefreshCw, Wifi, X } from 'lucide-react-native';
 import { StyledButton } from './StyledButton';
 import useDlnaStore from '@/stores/dlnaStore';
+import { useScreenDimensions } from '@/hooks/useScreenDimensions';
 import type { DLNADevice } from '@/services/dlna/types';
 
 interface DLNADeviceModalProps {
@@ -19,6 +20,7 @@ export const DLNADeviceModal: React.FC<DLNADeviceModalProps> = ({ visible, onClo
   const error = useDlnaStore((state) => state.error);
   const refreshDevices = useDlnaStore((state) => state.refreshDevices);
   const selectDevice = useDlnaStore((state) => state.selectDevice);
+  const screen = useScreenDimensions();
 
   const renderDevice = ({ item }: { item: DLNADevice }) => {
     const selected = currentDevice?.id === item.id;
@@ -53,6 +55,8 @@ export const DLNADeviceModal: React.FC<DLNADeviceModalProps> = ({ visible, onClo
     <Modal
       isVisible={visible}
       statusBarTranslucent={true}
+      deviceWidth={screen.width}
+      deviceHeight={screen.height}
       onBackButtonPress={onClose}
       onBackdropPress={onClose}
       onSwipeComplete={onClose}

@@ -26,6 +26,7 @@ export const useTVRemoteHandler = () => {
     setShowSourceModal,
     setShowSpeedModal,
     setPlaybackRate,
+    danmakuDetailOpen,
   } = usePlayerStore();
   const { togglePlayPause, seekBy, isCasting } = usePlaybackController();
 
@@ -48,6 +49,9 @@ export const useTVRemoteHandler = () => {
     modalRef.current.showDanmakuManualModal = showDanmakuManualModal;
   },[showEpisodeModal, showSpeedModal, showSourceModal, showDanmakuSettingsModal, showDanmakuManualModal])
   
+  const danmakuDetailOpenRef = useRef(danmakuDetailOpen);
+  danmakuDetailOpenRef.current = danmakuDetailOpen;
+
   // 重置或启动隐藏控件的定时器
   const resetTimer = useCallback(() => {
     // 清除之前的定时器
@@ -55,6 +59,8 @@ export const useTVRemoteHandler = () => {
       clearTimeout(controlsTimer.current);
       controlsTimer.current = null;
     }
+    // 弹幕加载详情展开期间不自动隐藏
+    if (danmakuDetailOpenRef.current) return;
     // 设置新的定时器
     controlsTimer.current = setTimeout(() => {
       setShowControls(false);
@@ -70,7 +76,8 @@ export const useTVRemoteHandler = () => {
       !showSourceModal &&
       !showSpeedModal &&
       !showDanmakuSettingsModal &&
-      !showDanmakuManualModal
+      !showDanmakuManualModal &&
+      !danmakuDetailOpen
     ) {
       resetTimer();
     }
@@ -82,7 +89,7 @@ export const useTVRemoteHandler = () => {
         controlsTimer.current = null;
       }
     };
-  }, [showControls, showEpisodeModal, showSourceModal, showSpeedModal, showDanmakuSettingsModal, showDanmakuManualModal]);
+  }, [showControls, showEpisodeModal, showSourceModal, showSpeedModal, showDanmakuSettingsModal, showDanmakuManualModal, danmakuDetailOpen]);
 
   // 组件卸载时清除快进定时器
   useEffect(() => {

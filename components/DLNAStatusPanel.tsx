@@ -1,5 +1,6 @@
 import React from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { AlertCircle, Cast, CheckCircle2, Wifi } from 'lucide-react-native';
 import useDlnaStore from '@/stores/dlnaStore';
 
@@ -79,6 +80,20 @@ export const DLNAStatusPanel: React.FC<DLNAStatusPanelProps> = ({ liveTitle }) =
 
   return (
     <View style={styles.container}>
+      {/* 投屏时手机主要用来看弹幕：纯黑与白色弹幕反差过大易疲劳，改用低饱和深色渐变并压暗四周 */}
+      <LinearGradient
+        pointerEvents="none"
+        colors={['#1f2a36', '#1b2430', '#16302e']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+      <LinearGradient
+        pointerEvents="none"
+        colors={['rgba(0,0,0,0.28)', 'transparent', 'transparent', 'rgba(0,0,0,0.32)']}
+        locations={[0, 0.3, 0.7, 1]}
+        style={StyleSheet.absoluteFill}
+      />
       <View pointerEvents="none" style={styles.card}>
         <View style={[styles.iconWrap, { borderColor: accent }]}>
           <StatusIcon color={accent} size={36} />
@@ -113,7 +128,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
-    backgroundColor: 'black',
+    backgroundColor: '#1b2430',
   },
   card: {
     width: '100%',
@@ -122,6 +137,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 28,
     paddingVertical: 30,
     borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: 'rgba(0,0,0,0.22)',
   },
   iconWrap: {
     width: 68,

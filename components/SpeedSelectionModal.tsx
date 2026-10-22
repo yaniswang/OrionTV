@@ -1,16 +1,18 @@
 import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text, StyleSheet, Platform } from "react-native";
 import { FlashList } from "@shopify/flash-list";
 import Modal from "react-native-modal";
 import { StyledButton } from "./StyledButton";
 import usePlayerStore from "@/stores/playerStore";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
+import { useScreenDimensions } from "@/hooks/useScreenDimensions";
 import { usePlaybackController } from "@/hooks/usePlaybackController";
 
 export const SpeedSelectionModal: React.FC = () => {
   const { showSpeedModal, setShowSpeedModal } = usePlayerStore();
   const { playbackRate, availablePlaybackRates, setPlaybackRate } = usePlaybackController();
   const responsiveConfig = useResponsiveLayout();
+  const screen = useScreenDimensions();
 
   const onSelectSpeed = (rate: number) => {
     void setPlaybackRate(rate);
@@ -22,7 +24,7 @@ export const SpeedSelectionModal: React.FC = () => {
   };
 
   return (
-    <Modal isVisible={showSpeedModal} statusBarTranslucent={true} onBackButtonPress={onClose} onBackdropPress={onClose} onSwipeComplete={onClose} swipeDirection="down" style={styles.modalContainer}>
+    <Modal isVisible={showSpeedModal} statusBarTranslucent={true} deviceWidth={screen.width} deviceHeight={screen.height} onBackButtonPress={onClose} onBackdropPress={onClose} onSwipeComplete={onClose} swipeDirection="down" style={styles.modalContainer}>
       <View style={styles.modalContent}>
         <Text style={styles.modalTitle}>播放速度</Text>
         <FlashList
@@ -36,7 +38,8 @@ export const SpeedSelectionModal: React.FC = () => {
               text={`${item}x`}
               onPress={() => onSelectSpeed(item)}
               isSelected={playbackRate === item}
-              hasTVPreferredFocus={playbackRate === item}
+              // 只在 TV 上抢焦点：手机上焦点会让按压水波纹常驻，选中的绿色被叠成青色
+              hasTVPreferredFocus={Platform.isTV && playbackRate === item}
               style={styles.speedItem}
               textStyle={styles.speedItemText}
             />

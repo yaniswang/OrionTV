@@ -750,7 +750,7 @@ class MediaProxyModule(
           // /_noad 前缀要继续带到子清单、分片、密钥上，否则下一层清单又变回不过滤
           val base = proxyBase(origin ?: "", adFilter)
           val rewritten = if (MediaProxyPlaylist.isLeafPlaylist(text)) {
-            val leafText = if (adFilter) filterAds(text, target, headers) else text
+            val leafText = if (adFilter) filterAds(text, target, headers, notify = true) else text
             val leaf = MediaProxyPlaylist.rewriteLeafPlaylist(leafText, base, target)
             rememberManifestRef(leaf.pid, target, headers)
             rememberPlaylist(leaf.pid, leaf.segments)
@@ -979,7 +979,7 @@ class MediaProxyModule(
       }
       val base = proxyBase(originBase, adFilter)
       // /_noad 的清单要按同样的过滤规则重建，否则 pid 对不上（过滤会删行，pid 随之变化）
-      val leafText = if (adFilter) filterAds(text, ref.manifestUrl, ref.headers) else text
+      val leafText = if (adFilter) filterAds(text, ref.manifestUrl, ref.headers, notify = false) else text
       val leaf = MediaProxyPlaylist.rewriteLeafPlaylist(leafText, base, ref.manifestUrl)
       if (leaf.pid != pid) {
         debugLog("清单初始化标识不匹配 expected=$pid actual=${leaf.pid} url=${shortUrl(ref.manifestUrl)}")
@@ -1505,12 +1505,17 @@ class MediaProxyModule(
     }
   }
 
-  /** 定时清理过期清单和超过5分钟未消费的预取缓存。 */
+  /**
+   * 定时清理闲置清单的缓存和超过5分钟未消费的预取缓存。
+   * 闲置清单只释放缓存、保留分片地址：长时间暂停后播放器仍会按旧 pid 取分片，
+   * 若整份释放，只能重新拉清单恢复，而上游清单内容一变 pid 就对不上，后续分片全部失败。
+   * 分片地址占用很小，清单份数由 MAX_PLAYLISTS 兜底。
+   */
   private fun cleanupExpired() {
     val now = System.currentTimeMillis()
     playlists.values.toList().forEach { playlist ->
       if (now - playlist.lastActiveAt > CACHE_TTL_MS) {
-        releasePlaylist(playlist.pid)
+        releasePlaylistCache(playlist)
       }
     }
     downloads.values.toList().forEach { download ->
@@ -1535,12 +1540,21 @@ class MediaProxyModule(
     )
   }
 
+  /** 释放闲置清单的全部下载和预取缓存，保留清单本身（分片地址）。 */
+  private fun releasePlaylistCache(playlist: PlaylistState) {
+    val idle = downloads.values.filter { it.pid == playlist.pid }
+    if (idle.isEmpty()) return
+    val cacheBytes = playlist.cacheBytes.get()
+    idle.forEach { download -> releaseDownload(download.key, download) }
+    debugLog("清单闲置释放缓存 pid=${playlist.pid} 下载数=${idle.size} 缓存字节=$cacheBytes")
+  }
+
   private fun releasePlaylist(pid: String) {
     val playlist = playlists.remove(pid) ?: return
     downloads.values.toList().forEach { download ->
       if (download.pid == pid) releaseDownload(download.key, download)
     }
-    debugLog("清单过期释放 pid=$pid 缓存字节=${playlist.cacheBytes.get()}")
+    debugLog("清单淘汰释放 pid=$pid 缓存字节=${playlist.cacheBytes.get()}")
   }
 
   /**
@@ -1646,13 +1660,22 @@ class MediaProxyModule(
     }
   }
 
-  /** 清单广告过滤；任何异常都退回原样清单，不影响播放。 */
-  private fun filterAds(text: String, target: String, headers: Map<String, String>): String {
+  /**
+   * 清单广告过滤；任何异常都退回原样清单，不影响播放。
+   * notify 只在播放器请求清单时为 true；代理内部按分片恢复清单时不提示，
+   * 否则恢复失败会随每个分片请求反复弹"已过滤"。
+   */
+  private fun filterAds(
+    text: String,
+    target: String,
+    headers: Map<String, String>,
+    notify: Boolean,
+  ): String {
     return try {
       val result = MediaProxyAdFilter.filter(text, target, headers, adProbeIo, adRemovalCache)
       debugLog("广告过滤 url=${shortUrl(target)} 删除块=${result.removedBlocks} 本次探测=${result.analyzed}")
       // 命中缓存的清单也要提示：用户每次播放都该看到"过滤了几段"
-      if (result.removedBlocks > 0) {
+      if (notify && result.removedBlocks > 0) {
         emitAdFiltered(result.removedBlocks)
       }
       result.text

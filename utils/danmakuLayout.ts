@@ -137,7 +137,74 @@ export const getDanmakuCatchLeft = (
   (nextSpeed / Math.max(0.001, previousSpeed)) *
     (previousLeft + previousWidth);
 
-export const estimateDanmakuWidth = (text: string, fontSize: number): number => {
+export interface DanmakuPrefillCandidate {
+  time: number;
+  width: number;
+  speed: number;
+}
+
+/**
+ * SEEK 后一次性铺满泳道：弹幕视为在 time 时刻从右边缘进入、以 speed 匀速左移，
+ * 由此反推 positionSec 时的左端坐标，只保留落在 [0, screenWidth) 内的弹幕；
+ * 按左端从小到大，在所有不与前一条重叠、也不会追尾的泳道中随机挑一条放入
+ *（总选最上面的泳道会让各泳道起点从上到下排成阶梯），放不下的位置留空。
+ */
+export const planDanmakuPrefill = <T extends DanmakuPrefillCandidate>({
+  screenWidth,
+  positionSec,
+  candidates,
+  laneCount,
+  getGap,
+  random = Math.random,
+}: {
+  screenWidth: number;
+  positionSec: number;
+  candidates: T[];
+  laneCount: number;
+  getGap: () => number;
+  random?: () => number;
+}): { lane: number; left: number; item: T }[] => {
+  const placed = candidates
+    .filter((item) => item.time < positionSec && item.speed > 0)
+    .map((item) => ({
+      item,
+      left: screenWidth - item.speed * (positionSec - item.time),
+    }))
+    .filter(({ left }) => left >= 0)
+    .sort((a, b) => a.left - b.left);
+  const lanes = Array.from({ length: laneCount }, () => ({
+    last: null as { left: number; item: T } | null,
+    gap: getGap(),
+  }));
+  const result: { lane: number; left: number; item: T }[] = [];
+  placed.forEach(({ item, left }) => {
+    const fitting: number[] = [];
+    lanes.forEach(({ last, gap }, index) => {
+      if (
+        !last ||
+        (left >= last.left + last.item.width + gap &&
+          left >=
+            getDanmakuCatchLeft(
+              last.left,
+              last.item.width,
+              last.item.speed,
+              item.speed,
+              gap,
+            ))
+      ) {
+        fitting.push(index);
+      }
+    });
+    if (!fitting.length) return;
+    const laneIndex =
+      fitting[Math.min(fitting.length - 1, Math.floor(random() * fitting.length))];
+    lanes[laneIndex] = { last: { left, item }, gap: getGap() };
+    result.push({ lane: laneIndex, left, item });
+  });
+  return result;
+};
+
+export const estimateDanmakuWidth =(text: string, fontSize: number): number => {
   // 略高于一个 em 的宽度上限，既避免漏判，也不会人为制造过大空隙
   const glyphCount = Array.from(text).length;
   return Math.max(fontSize, glyphCount * fontSize * 1.04 + 6);

@@ -18,6 +18,7 @@ import {
   type DanmakuSettings,
 } from "@/stores/danmakuStore";
 import { StyledButton } from "./StyledButton";
+import { useScreenDimensions } from "@/hooks/useScreenDimensions";
 
 type RowKey = "density" | "opacity" | "area" | "fontSize" | "speed";
 const SLIDER_APPLY_DELAY_MS = 400;
@@ -142,6 +143,7 @@ const SliderRow = ({
 
 export const DanmakuSettingsModal: React.FC = () => {
   const { height: viewportHeight } = useWindowDimensions();
+  const screen = useScreenDimensions();
   const show = usePlayerStore((state) => state.showDanmakuSettingsModal);
   const setShow = usePlayerStore((state) => state.setShowDanmakuSettingsModal);
   const settings = useDanmakuStore((state) => state.settings);
@@ -349,6 +351,8 @@ export const DanmakuSettingsModal: React.FC = () => {
     <Modal
       isVisible={show}
       statusBarTranslucent
+      deviceWidth={screen.width}
+      deviceHeight={screen.height}
       backdropOpacity={0}
       onBackButtonPress={onClose}
       onBackdropPress={onClose}

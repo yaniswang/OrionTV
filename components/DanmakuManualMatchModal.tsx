@@ -1,11 +1,14 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Image,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  TVFocusGuideView,
   View,
   findNodeHandle,
 } from "react-native";
@@ -26,7 +29,12 @@ import {
   type DanmakuEpisode,
 } from "@/services/danmaku";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
+import { useScreenDimensions } from "@/hooks/useScreenDimensions";
 import { DanmakuSelectionManager } from "@/services/storage";
+import { api } from "@/services/api";
+
+/** 集列表每行占用高度：episodeItem.height 38 + marginBottom 6 */
+const EPISODE_ROW_HEIGHT = 44;
 
 export const DanmakuManualMatchModal: React.FC = () => {
   const show = usePlayerStore((state) => state.showDanmakuManualModal);
@@ -42,6 +50,7 @@ export const DanmakuManualMatchModal: React.FC = () => {
   const currentEpisodeCount = usePlayerStore((state) => state.episodes.length);
   const currentEpisodeNumber = currentEpisodeIndex + 1;
   const { screenWidth } = useResponsiveLayout();
+  const screen = useScreenDimensions();
 
   const [keyword, setKeyword] = useState("");
   const [results, setResults] = useState<DanmakuAnime[]>([]);
@@ -60,14 +69,14 @@ export const DanmakuManualMatchModal: React.FC = () => {
   const searchButtonRef = useRef<View>(null);
   const closeButtonRef = useRef<View>(null);
   const firstAnimeRef = useRef<View>(null);
-  const firstEpisodeRef = useRef<View>(null);
+  const entryEpisodeRef = useRef<View>(null);
   const [focusTags, setFocusTags] = useState<{
     input?: number;
     inputAnchor?: number;
     search?: number;
     close?: number;
     firstAnime?: number;
-    firstEpisode?: number;
+    entryEpisode?: number;
   }>({});
 
   // 只负责计算原生 tag，供上下左右焦点链使用
@@ -80,7 +89,7 @@ export const DanmakuManualMatchModal: React.FC = () => {
         search: findNodeHandle(searchButtonRef.current) ?? undefined,
         close: findNodeHandle(closeButtonRef.current) ?? undefined,
         firstAnime: findNodeHandle(firstAnimeRef.current) ?? undefined,
-        firstEpisode: findNodeHandle(firstEpisodeRef.current) ?? undefined,
+        entryEpisode: findNodeHandle(entryEpisodeRef.current) ?? undefined,
       });
     }, 320);
     return () => clearTimeout(timer);
@@ -164,9 +173,9 @@ export const DanmakuManualMatchModal: React.FC = () => {
     [baseUrl, currentEpisodeCount, playbackId, playbackSource, runLoadEpisodes, year],
   );
 
-  // 剧集列表加载后滚到当前播放集，避免用户以为没有选中
-  useEffect(() => {
-    if (!episodes.length) return;
+  // 当前选中集：优先已匹配的集，否则按播放集数推断
+  const currentEpisodeListIndex = useMemo(() => {
+    if (!episodes.length) return -1;
     const matchedEpisodeId =
       currentMatch && currentMatch.animeId === selected?.animeId
         ? currentMatch.episodeId
@@ -179,13 +188,19 @@ export const DanmakuManualMatchModal: React.FC = () => {
       (episode, position) =>
         (getDanmakuEpisodeNumber(episode) ?? position + 1) === currentEpisodeNumber,
     );
-    const index = matchedIndex >= 0 ? matchedIndex : playbackIndex;
+    return matchedIndex >= 0 ? matchedIndex : playbackIndex;
+  }, [episodes, currentEpisodeNumber, currentMatch, selected?.animeId]);
+
+  // 剧集列表加载后滚到当前播放集，避免用户以为没有选中。
+  // 列表每次加载都会重新挂载，首次定位交给 initialScrollIndex；这里处理列表已显示后选中集变化的情况
+  useEffect(() => {
+    const index = currentEpisodeListIndex;
     if (index < 0) return;
     const timer = setTimeout(() => {
       episodeListRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0 });
     }, 80);
     return () => clearTimeout(timer);
-  }, [episodes, currentEpisodeNumber, currentMatch, selected?.animeId]);
+  }, [currentEpisodeListIndex]);
 
   // 打开时用当前剧名预搜索，TV 上无需输入即可选剧
   useEffect(() => {
@@ -241,30 +256,39 @@ export const DanmakuManualMatchModal: React.FC = () => {
     <Modal
       isVisible={show}
       statusBarTranslucent
+      deviceWidth={screen.width}
+      deviceHeight={screen.height}
       onBackButtonPress={onClose}
       onBackdropPress={onClose}
       style={styles.modal}
     >
       <View style={styles.content}>
         <View style={styles.header}>
-          <View>
+          <View style={styles.titleRow}>
             <Text style={styles.title}>手动匹配弹幕</Text>
-            <Text style={styles.subtitle}>搜索番剧并指定集数，立即覆盖当前弹幕</Text>
+            <Text style={styles.subtitle} numberOfLines={1}>
+              搜索番剧并指定集数，立即覆盖当前弹幕
+            </Text>
           </View>
-          <Pressable
-            ref={closeButtonRef}
-            focusable
-            nextFocusDown={focusTags.search}
-            nextFocusLeft={focusTags.inputAnchor}
-            style={({ focused }) => [styles.closeButton, focused && styles.closeButtonFocused]}
-            onPress={onClose}
-            accessibilityLabel="关闭手动匹配弹窗"
-          >
-            <X color="#ffffff" size={20} />
-          </Pressable>
+          {/* TV 用遥控器返回键关闭，不显示关闭按钮 */}
+          {!Platform.isTV && (
+            <Pressable
+              ref={closeButtonRef}
+              focusable
+              nextFocusDown={focusTags.search}
+              nextFocusLeft={focusTags.inputAnchor}
+              style={({ focused }) => [styles.closeButton, focused && styles.closeButtonFocused]}
+              onPress={onClose}
+              accessibilityLabel="关闭手动匹配弹窗"
+            >
+              <X color="#ffffff" size={20} />
+            </Pressable>
+          )}
         </View>
 
-        <View style={styles.searchRow}>
+        {/* TextInput 不支持 nextFocusRight，向右只能靠几何查找；集列表滚动后可视区上方被裁掉的行
+            与本行同高且更近，会抢走焦点，所以向右只在本行内查找 */}
+        <TVFocusGuideView style={styles.searchRow} trapFocusRight>
           <Pressable
             ref={inputAnchorRef}
             focusable
@@ -296,7 +320,7 @@ export const DanmakuManualMatchModal: React.FC = () => {
             focusable
             nextFocusLeft={focusTags.inputAnchor}
             nextFocusUp={focusTags.close}
-            nextFocusDown={focusTags.firstEpisode}
+            nextFocusDown={focusTags.entryEpisode}
             style={({ focused }) => [styles.searchButton, focused && styles.searchButtonFocused]}
             hasTVPreferredFocus={!results.length}
             onPress={() => void runSearch(keyword)}
@@ -305,13 +329,12 @@ export const DanmakuManualMatchModal: React.FC = () => {
             {searching ? <ActivityIndicator color="#04150c" size="small" /> : <Search color="#04150c" size={16} />}
             <Text style={styles.searchButtonText}>搜索弹幕源</Text>
           </Pressable>
-        </View>
+        </TVFocusGuideView>
 
         {!!error && <Text style={styles.error}>{error}</Text>}
 
         <View style={[styles.columns, !isWide && styles.columnsStacked]}>
           <View style={styles.column}>
-            <Text style={styles.columnTitle}>搜索结果（选择正确番剧）</Text>
             <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
               {results.map((anime, index) => {
                 const isSelected = selected?.animeId === anime.animeId;
@@ -321,7 +344,7 @@ export const DanmakuManualMatchModal: React.FC = () => {
                     ref={index === 0 ? firstAnimeRef : undefined}
                     hasTVPreferredFocus={index === 0}
                     nextFocusUp={index === 0 ? focusTags.inputAnchor : undefined}
-                    nextFocusRight={focusTags.firstEpisode}
+                    nextFocusRight={focusTags.entryEpisode}
                     onPress={() => onSelectAnime(anime)}
                     style={({ focused }) => [
                       styles.animeItem,
@@ -329,7 +352,15 @@ export const DanmakuManualMatchModal: React.FC = () => {
                       focused && styles.itemFocused,
                     ]}
                   >
-                    <View style={styles.poster} />
+                    {/* 底色作占位：无海报或加载失败时显示 */}
+                    <View style={styles.poster}>
+                      {!!anime.imageUrl && (
+                        <Image
+                          source={{ uri: api.getImageProxyUrl(anime.imageUrl) }}
+                          style={styles.posterImage}
+                        />
+                      )}
+                    </View>
                     <View style={styles.animeInfo}>
                       <Text style={styles.animeTitle} numberOfLines={2}>
                         {anime.animeTitle}
@@ -349,9 +380,6 @@ export const DanmakuManualMatchModal: React.FC = () => {
           </View>
 
           <View style={styles.column}>
-            <Text style={styles.columnTitle}>
-              {selected ? `集数列表：${selected.animeTitle}` : "集数列表"}
-            </Text>
             {loadingEpisodes ? (
               <ActivityIndicator color="#00bb5e" style={styles.loading} />
             ) : !selected ? (
@@ -361,7 +389,10 @@ export const DanmakuManualMatchModal: React.FC = () => {
                 <FlashList
                   ref={episodeListRef}
                   data={episodes}
-                  estimatedItemSize={46}
+                  initialScrollIndex={
+                    currentEpisodeListIndex >= 0 ? currentEpisodeListIndex : undefined
+                  }
+                  estimatedItemSize={EPISODE_ROW_HEIGHT}
                   drawDistance={500}
                   keyExtractor={(episode, index) => `${episode.episodeId}-${index}`}
                   extraData={`${currentMatch?.episodeId || ""}-${selected?.animeId || ""}-${currentEpisodeNumber}-${applyingId || ""}`}
@@ -379,7 +410,12 @@ export const DanmakuManualMatchModal: React.FC = () => {
                     const applying = applyingId === episode.episodeId;
                     return (
                       <Pressable
-                        ref={index === 0 ? firstEpisodeRef : undefined}
+                        // 列表打开即定位到当前集，第 0 项未必渲染；焦点从外部进入时落到当前集
+                        ref={
+                          index === Math.max(0, currentEpisodeListIndex)
+                            ? entryEpisodeRef
+                            : undefined
+                        }
                         nextFocusUp={focusTags.search}
                         nextFocusLeft={focusTags.firstAnime}
                         onPress={() => void onSelectEpisode(episode)}
@@ -428,7 +464,7 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 18,
     paddingTop: 14,
@@ -441,10 +477,17 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: "bold",
   },
+  // 副标题与标题同一行（基线对齐），节约标题栏高度
+  titleRow: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: 10,
+  },
   subtitle: {
+    flexShrink: 1,
     color: "rgba(255,255,255,0.55)",
     fontSize: 12,
-    marginTop: 4,
   },
   closeButton: {
     width: 32,
@@ -517,22 +560,18 @@ const styles = StyleSheet.create({
     borderRightWidth: 1,
     borderRightColor: "rgba(255,255,255,0.1)",
   },
-  columnTitle: {
-    color: "rgba(255,255,255,0.55)",
-    fontSize: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
   list: {
     flex: 1,
   },
   listContent: {
     paddingHorizontal: 12,
+    paddingTop: 10,
     paddingBottom: 12,
     gap: 6,
   },
   flashListContent: {
     paddingHorizontal: 12,
+    paddingTop: 10,
     paddingBottom: 12,
   },
   animeItem: {
@@ -559,6 +598,11 @@ const styles = StyleSheet.create({
     height: 42,
     borderRadius: 5,
     backgroundColor: "#2b3a41",
+    overflow: "hidden",
+  },
+  posterImage: {
+    width: "100%",
+    height: "100%",
   },
   animeInfo: {
     flex: 1,
@@ -587,8 +631,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     gap: 8,
+    // 固定行高（+ marginBottom 6 = EPISODE_ROW_HEIGHT），保证按索引定位时未渲染行的偏移准确
+    height: 38,
     paddingHorizontal: 10,
-    paddingVertical: 9,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.1)",

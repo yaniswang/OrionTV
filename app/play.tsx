@@ -174,6 +174,9 @@ export default function PlayScreen() {
     loadVideo,
   } = usePlayerStore();
   const currentEpisode = usePlayerStore(selectCurrentEpisode);
+  // 控制面板首次打开后常驻，之后只切换显示：每次重新挂载约百个视图会卡住界面线程，弹幕随之停顿
+  const controlsMountedRef = useRef(false);
+  if (showControls) controlsMountedRef.current = true;
   const {
     isCasting,
     isLoading,
@@ -601,7 +604,7 @@ export default function PlayScreen() {
 
       <DanmakuOverlay />
 
-      {showControls && (
+      {controlsMountedRef.current && (
         <PlayerControls
           showControls={showControls}
           setShowControls={setShowControls}
