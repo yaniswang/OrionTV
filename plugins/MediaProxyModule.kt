@@ -1806,5 +1806,5 @@ class MediaProxyPackage : ReactPackage {
     listOf(MediaProxyModule(reactContext))
 
   override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> =
-    emptyList()
+    listOf(DanmakuViewManager())
 }

@@ -1,9 +1,6 @@
 import React, {
-  forwardRef,
-  memo,
   useCallback,
   useEffect,
-  useImperativeHandle,
   useMemo,
   useRef,
   useState,
@@ -11,20 +8,14 @@ import React, {
 import {
   Dimensions,
   StyleSheet,
+  UIManager,
   View,
+  findNodeHandle,
+  requireNativeComponent,
   useWindowDimensions,
+  type StyleProp,
+  type ViewStyle,
 } from "react-native";
-import Animated, {
-  Easing,
-  cancelAnimation,
-  executeOnUIRuntimeSync,
-  runOnJS,
-  runOnUI,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-  type SharedValue,
-} from "react-native-reanimated";
 import { useDanmakuStore } from "@/stores/danmakuStore";
 import usePlayerStore from "@/stores/playerStore";
 import useDlnaStore from "@/stores/dlnaStore";
@@ -45,8 +36,6 @@ import {
 const SPAWN_INTERVAL_MS = 100;
 const STALL_CHECK_INTERVAL_MS = 500;
 const STALL_THRESHOLD_MS = 1500;
-/** JS 估算离场超过该秒数仍未收到动画结束回调时，兜底强制释放 */
-const EXIT_FALLBACK_SEC = 1;
 /** 起播跳转：播放位置进入目标前该范围内即视为到位 */
 const STARTUP_JUMP_TOLERANCE_MS = 3000;
 /** 起播跳转：加载结束后最多等待多久仍未到位则放行 */
@@ -72,7 +61,6 @@ interface ActiveDanmaku extends PreparedComment {
   startX: number;
   startWall: number;
   speed: number;
-  slotIndex: number;
 }
 
 interface LaneRuntime {
@@ -83,51 +71,28 @@ interface LaneRuntime {
   nextGap: number;
 }
 
-interface DanmakuSlotHandle {
-  play: (args: {
-    text: string;
-    color: string;
-    row: number;
-    secondary: boolean;
-    width: number;
-    speed: number;
-    startX: number;
-    /** 延迟补偿基准：UI 实际启动晚于该时刻多少，就把起点往前补多少 */
-    startWall: number;
-    /** 是否在 play 内同步预置起点；批量生成时传 false，由调用方统一预置 */
-    presetPosition?: boolean;
-    /** 挂载后保持隐藏，直到 reveal()；调用方需同时把 visible 预置为 0 */
-    hidden?: boolean;
-    onFinish: () => void;
-  }) => void;
-  /** 位移共享值，供批量生成时一次性预置起点 */
-  position: SharedValue<number>;
-  /** 可见度共享值，供批量生成时一次性预置隐藏 */
-  visible: SharedValue<number>;
-  /** issuedAt：JS 侧认为暂停发生的时刻，UI 执行较晚时按此回退位置 */
-  pause: (issuedAt?: number) => void;
-  /** issuedAt：恢复的基准时刻，早于当前时刻时按差值前进 */
-  resume: (issuedAt?: number) => void;
-  /** 允许以 hidden 方式生成的弹幕显示；返回 true 表示已挂载、需调用方立即（批量）设为可见 */
-  reveal: () => boolean;
-  stop: () => void;
-  setSpeed: (speed: number) => void;
+/** 发给原生画布的一条弹幕；坐标、速度单位为 dp，位置按 x = startX - speed × (now - startWall) 计算 */
+interface NativeDanmakuItem {
+  id: number;
+  text: string;
+  color: string;
+  row: number;
+  secondary: boolean;
+  startX: number;
+  startWall: number;
+  speed: number;
+  hidden: boolean;
 }
 
-interface DanmakuSlotProps {
-  screenWidth: number;
+/**
+ * 原生弹幕画布（plugins/DanmakuView.kt）：只负责绘制和移动，按时间戳自行逐帧计算位置，
+ * 与 JS 的估算公式一致；指令晚到也画在正确位置。
+ */
+const OrionDanmakuView = requireNativeComponent<{
+  style?: StyleProp<ViewStyle>;
   fontSize: number;
   lineHeight: number;
-}
-
-/** 一次同步批量设置可见度：可见度必须同步写入，按 JS 调用顺序生效 */
-const setVisibleSync = (values: SharedValue<number>[], value: number) => {
-  if (!values.length) return;
-  executeOnUIRuntimeSync((list: SharedValue<number>[], next: number) => {
-    "worklet";
-    for (let index = 0; index < list.length; index += 1) list[index].value = next;
-  })(values, value);
-};
+}>("OrionDanmakuView");
 
 const adjustBrightness =(hex: string, factor: number): string => {
   const match = /^#?([0-9a-f]{6})$/i.exec(hex);
@@ -139,214 +104,6 @@ const adjustBrightness =(hex: string, factor: number): string => {
     .toString(16)
     .padStart(6, "0")}`;
 };
-
-const DanmakuSlot = memo(
-  forwardRef<DanmakuSlotHandle, DanmakuSlotProps>(
-    ({ screenWidth, fontSize, lineHeight }, ref) => {
-      const [content, setContent] = useState<{
-        text: string;
-        color: string;
-        row: number;
-        secondary: boolean;
-        renderToken: number;
-      } | null>(null);
-      // Reanimated 按真实帧时间推进，避免原生 Animated 预计算帧在非严格 60Hz 屏上周期性跳帧
-      const translateX = useSharedValue(screenWidth);
-      // 停止时在 UI 线程立即隐藏：卸载要等 React 提交，SEEK 批量重铺时会延迟数百毫秒，
-      // 期间旧弹幕会定在原地；新文字挂载完成（首次布局）后再显示
-      const visible = useSharedValue(1);
-      const animationTokenRef = useRef(0);
-      const widthRef = useRef(0);
-      const speedRef = useRef(0);
-      const pausedRef = useRef(false);
-      const busyRef = useRef(false);
-      const finishCbRef = useRef<(() => void) | null>(null);
-      const renderTokenRef = useRef(0);
-
-      const animatedStyle = useAnimatedStyle(() => ({
-        opacity: visible.value,
-        transform: [{ translateX: translateX.value }],
-      }));
-
-      // false 时挂载后保持隐藏，直到 reveal()（SEEK 时提前挂载、等新位置开始播放再显示）
-      const revealOnMountRef = useRef(true);
-      const mountedTokenRef = useRef(0);
-
-      // 只处理当前这次播放的文字：已停止或已被新内容取代的旧文字，挂载完成时不能再把自己显示出来。
-      // 可见度一律同步写入：异步的 runOnUI 会排在队列里晚于后续的同步隐藏执行，把待命的弹幕又显示出来
-      const showMounted = useCallback(
-        (token: number) => {
-          if (token !== renderTokenRef.current || !busyRef.current) return;
-          mountedTokenRef.current = token;
-          if (!revealOnMountRef.current) return;
-          executeOnUIRuntimeSync(() => {
-            "worklet";
-            visible.value = 1;
-          })();
-        },
-        [visible],
-      );
-
-      const handleFinish = useCallback((token: number) => {
-        if (token !== animationTokenRef.current || pausedRef.current) return;
-        busyRef.current = false;
-        setContent(null);
-        const onFinish = finishCbRef.current;
-        finishCbRef.current = null;
-        onFinish?.();
-      }, []);
-
-      /**
-       * from 为 null 时从当前位置继续。issuedAt 是 JS 侧认为动画开始（或恢复）的时刻：
-       * UI 线程繁忙时（如起播时批量铺满）worklet 会晚执行，按延迟把起点往前补，
-       * 保证 UI 位置与 JS 的离场/碰撞估算一致。
-       */
-      const start = useCallback(
-        (from: number | null, issuedAt: number = Date.now()) => {
-          const speed = speedRef.current;
-          const width = widthRef.current;
-          if (!width || speed <= 0) return;
-          const token = ++animationTokenRef.current;
-          runOnUI(() => {
-            "worklet";
-            if (from === null) cancelAnimation(translateX);
-            const base = from === null ? translateX.value : from;
-            const lagSec = Math.max(0, Date.now() - issuedAt) / 1000;
-            translateX.value = base - speed * lagSec;
-            const remaining = Math.max(1, translateX.value + width);
-            translateX.value = withTiming(
-              -width,
-              { duration: (remaining / speed) * 1000, easing: Easing.linear },
-              (finished) => {
-                if (finished) runOnJS(handleFinish)(token);
-              },
-            );
-          })();
-        },
-        [handleFinish, translateX],
-      );
-
-      useImperativeHandle(
-        ref,
-        () => ({
-          play: ({
-            text,
-            color,
-            row,
-            secondary,
-            width,
-            speed,
-            startX,
-            startWall,
-            presetPosition = true,
-            hidden = false,
-            onFinish,
-          }) => {
-            widthRef.current = width;
-            speedRef.current = speed;
-            pausedRef.current = false;
-            busyRef.current = true;
-            finishCbRef.current = onFinish;
-            revealOnMountRef.current = !hidden;
-            // 新 Text 首次渲染会同步读取 UI 线程上的位移；先同步落到起点，
-            // 避免异步的 runOnUI 尚未执行时沿用上一条的结束位置在左侧闪现。
-            // 批量生成时由调用方统一预置（每次同步都要等 UI 线程，逐条做会卡住 JS）
-            if (presetPosition) {
-              executeOnUIRuntimeSync((x: number) => {
-                "worklet";
-                cancelAnimation(translateX);
-                translateX.value = x;
-              })(startX);
-            }
-            renderTokenRef.current += 1;
-            setContent({
-              text,
-              color,
-              row,
-              secondary,
-              renderToken: renderTokenRef.current,
-            });
-            start(startX, startWall);
-          },
-          pause: (issuedAt = Date.now()) => {
-            if (pausedRef.current || !busyRef.current) return;
-            pausedRef.current = true;
-            animationTokenRef.current += 1;
-            const speed = speedRef.current;
-            runOnUI(() => {
-              "worklet";
-              cancelAnimation(translateX);
-              // 指令在 UI 线程积压时动画会多走一段（启动时还按延迟补偿过），
-              // 退回到发出暂停时刻的位置，与 JS 冻结的位置一致
-              translateX.value += speed * (Math.max(0, Date.now() - issuedAt) / 1000);
-            })();
-          },
-          resume: (issuedAt = Date.now()) => {
-            if (!pausedRef.current) return;
-            pausedRef.current = false;
-            if (busyRef.current) start(null, issuedAt);
-          },
-          reveal: () => {
-            if (revealOnMountRef.current) return false;
-            revealOnMountRef.current = true;
-            // 已挂载的由调用方批量同步显示；尚未挂载的在首次布局时显示
-            return mountedTokenRef.current === renderTokenRef.current;
-          },
-          position: translateX,
-          visible,
-          stop: () => {
-            animationTokenRef.current += 1;
-            pausedRef.current = false;
-            busyRef.current = false;
-            finishCbRef.current = null;
-            // 隐藏由调用方批量同步处理（clearSlots），这里不写可见度，避免异步写入晚于后续同步显示
-            runOnUI(() => {
-              "worklet";
-              cancelAnimation(translateX);
-            })();
-            setContent(null);
-          },
-          setSpeed: (nextSpeed) => {
-            if (nextSpeed <= 0 || speedRef.current === nextSpeed) return;
-            speedRef.current = nextSpeed;
-            if (!busyRef.current || pausedRef.current) return;
-            start(null);
-          },
-        }),
-        [start, translateX, visible],
-      );
-
-      if (!content) return null;
-
-      return (
-        <Animated.Text
-          key={content.renderToken}
-          numberOfLines={1}
-          onLayout={() => showMounted(content.renderToken)}
-          // @ts-expect-error Android-only hardware raster cache prop, not in TextProps
-          renderToHardwareTextureAndroid
-          style={[
-            styles.item,
-            {
-              top:
-                content.row * lineHeight +
-                (content.secondary ? 1 : 0),
-              color: content.color,
-              fontSize,
-              lineHeight,
-              zIndex: content.secondary ? 0 : 1,
-            },
-            animatedStyle,
-          ]}
-        >
-          {content.text}
-        </Animated.Text>
-      );
-    },
-  ),
-);
-
-DanmakuSlot.displayName = "DanmakuSlot";
 
 export const DanmakuOverlay: React.FC = () => {
   const enabled = useDanmakuStore((state) => state.enabled);
@@ -414,8 +171,9 @@ export const DanmakuOverlay: React.FC = () => {
   const playingRef = useRef(playing);
   const nextIdRef = useRef(1);
   const lanesRef = useRef<LaneRuntime[]>([]);
-  const slotRefs = useRef<(DanmakuSlotHandle | null)[]>([]);
-  const slotItemsRef = useRef<(ActiveDanmaku | null)[]>([]);
+  const nativeRef = useRef<React.ElementRef<typeof OrionDanmakuView>>(null);
+  /** 本轮新生成、尚未发给原生画布的弹幕；任何其他指令发出前先合并发出，保证顺序 */
+  const pendingAddsRef = useRef<NativeDanmakuItem[]>([]);
 
   commentsRef.current = comments;
   settingsRef.current = settings;
@@ -429,24 +187,31 @@ export const DanmakuOverlay: React.FC = () => {
   );
   const rowCount = Math.max(1, Math.floor((layerHeight - 4) / lineHeight));
   const overlapTrackCount = getDanmakuTrackCount(rowCount, "overlap");
-  const slotCount = Math.max(48, overlapTrackCount * 4);
+  /** 同屏弹幕上限 */
+  const maxItems = Math.max(48, overlapTrackCount * 4);
+  const maxItemsRef = useRef(maxItems);
+  maxItemsRef.current = maxItems;
 
-  if (slotItemsRef.current.length !== slotCount) {
-    slotItemsRef.current = Array.from(
-      { length: slotCount },
-      (_, index) => slotItemsRef.current[index] ?? null,
-    );
-  }
-  const slotRefCallbacks = useMemo(
-    () =>
-      Array.from(
-        { length: slotCount },
-        (_, index) => (slot: DanmakuSlotHandle | null) => {
-          slotRefs.current[index] = slot;
-        },
-      ),
-    [slotCount],
-  );
+  const sendCommand = useCallback((command: string, args: unknown[] = []) => {
+    const tag = findNodeHandle(nativeRef.current);
+    if (tag == null) {
+      pendingAddsRef.current = [];
+      return;
+    }
+    if (command !== "add" && pendingAddsRef.current.length) {
+      const adds = pendingAddsRef.current;
+      pendingAddsRef.current = [];
+      UIManager.dispatchViewManagerCommand(tag, "add", [adds]);
+    }
+    UIManager.dispatchViewManagerCommand(tag, command, args);
+  }, []);
+
+  const flushAdds = useCallback(() => {
+    if (!pendingAddsRef.current.length) return;
+    const adds = pendingAddsRef.current;
+    pendingAddsRef.current = [];
+    sendCommand("add", [adds]);
+  }, [sendCommand]);
 
   const speedFactor = useMemo(() => {
     const index = Math.min(4, Math.max(0, Math.round(settings.speed) - 1));
@@ -498,32 +263,20 @@ export const DanmakuOverlay: React.FC = () => {
     [],
   );
 
-  const releaseItem = useCallback(
-    (lane: LaneRuntime, item: ActiveDanmaku, stopAnimation = false) => {
-      lane.items = lane.items.filter((candidate) => candidate.id !== item.id);
-      if (slotItemsRef.current[item.slotIndex]?.id === item.id) {
-        slotItemsRef.current[item.slotIndex] = null;
-        if (stopAnimation) {
-          slotRefs.current[item.slotIndex]?.stop();
-        }
-      }
-    },
-    [],
-  );
-
+  /** 生成一条弹幕：记入泳道并排队发给原生画布（由调用方 flushAdds 合并发出） */
   const spawnDanmaku = useCallback(
     (
       lane: LaneRuntime,
       prepared: PreparedComment,
       now: number,
       startX: number = width,
-      presetPosition = true,
       hidden = false,
-    ): DanmakuSlotHandle | null => {
-      const slotIndex = slotItemsRef.current.findIndex((item) => item === null);
-      if (slotIndex < 0) return null;
-      const slot = slotRefs.current[slotIndex];
-      if (!slot) return null;
+    ): boolean => {
+      const activeCount = lanesRef.current.reduce(
+        (count, candidate) => count + candidate.items.length,
+        0,
+      );
+      if (activeCount >= maxItemsRef.current) return false;
 
       const item: ActiveDanmaku = {
         ...prepared,
@@ -534,30 +287,22 @@ export const DanmakuOverlay: React.FC = () => {
         // 暂停中生成（如 SEEK 时铺满）按暂停时刻计时：恢复时整体平移 startWall 后正好从恢复时刻起算
         startWall: motionPausedRef.current ? (pausedAtRef.current ?? now) : now,
         speed: prepared.baseSpeed * speedFactorRef.current,
-        slotIndex,
       };
-      slotItemsRef.current[slotIndex] = item;
       lane.items.push(item);
-      // UI 的延迟补偿以指令发出时刻为准：暂停中生成时 startWall 可能是很久以前的暂停时刻，
-      // 用它补偿会把弹幕一下推出屏幕
-      const issuedAt = motionPausedRef.current ? Date.now() : item.startWall;
-      slot.play({
+      pendingAddsRef.current.push({
+        id: item.id,
         text: item.text,
         color: item.secondary ? item.secondaryColor : item.primaryColor,
         row: item.row,
         secondary: item.secondary,
-        width: item.width,
-        speed: item.speed,
         startX: item.startX,
-        startWall: issuedAt,
-        presetPosition,
+        startWall: item.startWall,
+        speed: item.speed,
         hidden,
-        onFinish: () => releaseItem(lane, item),
       });
-      if (motionPausedRef.current) slot.pause(issuedAt);
-      return slot;
+      return true;
     },
-    [releaseItem, width],
+    [width],
   );
 
   const createLane = useCallback(
@@ -576,15 +321,10 @@ export const DanmakuOverlay: React.FC = () => {
   );
 
   const clearSlots = useCallback(() => {
-    slotRefs.current.forEach((slot) => slot?.stop());
-    // 卸载要等 React 提交（批量时可达数百毫秒），先一次同步全部隐藏
-    setVisibleSync(
-      slotRefs.current.flatMap((slot) => (slot ? [slot.visible] : [])),
-      0,
-    );
-    slotItemsRef.current = slotItemsRef.current.map(() => null);
+    pendingAddsRef.current = [];
+    sendCommand("clear");
     lanesRef.current = [];
-  }, []);
+  }, [sendCommand]);
 
   /**
    * resumeAdvanceMs：恢复时额外前进的时长。SEEK 后检测到新位置开始播放时视频已经播了一小段，
@@ -596,8 +336,12 @@ export const DanmakuOverlay: React.FC = () => {
 
     if (nextPaused) {
       if (pausedAtRef.current === null) pausedAtRef.current = Date.now();
-    } else if (pausedAtRef.current !== null) {
-      const delta = Date.now() - pausedAtRef.current - resumeAdvanceMs;
+      sendCommand("pause", [pausedAtRef.current]);
+      return;
+    }
+    let delta = 0;
+    if (pausedAtRef.current !== null) {
+      delta = Date.now() - pausedAtRef.current - resumeAdvanceMs;
       pausedAtRef.current = null;
       lastAdvanceAtRef.current = Date.now();
       lanesRef.current.forEach((lane) => {
@@ -606,13 +350,16 @@ export const DanmakuOverlay: React.FC = () => {
         });
       });
     }
+    // 原生画布对各条 startWall 做同样的平移
+    sendCommand("resume", [delta]);
+  }, [sendCommand]);
 
-    const resumeIssuedAt = Date.now() - resumeAdvanceMs;
-    slotRefs.current.forEach((slot) => {
-      if (nextPaused) slot?.pause(pausedAtRef.current ?? undefined);
-      else slot?.resume(resumeIssuedAt);
-    });
-  }, []);
+  // 原生画布挂载时默认处于运动状态，同步当前的暂停状态
+  useEffect(() => {
+    if (enabled && motionPausedRef.current) {
+      sendCommand("pause", [pausedAtRef.current ?? Date.now()]);
+    }
+  }, [enabled, sendCommand]);
 
   const rebuildLanes = useCallback(() => {
     clearSlots();
@@ -686,33 +433,11 @@ export const DanmakuOverlay: React.FC = () => {
       });
       const now = Date.now();
       const used = new Set<DanmakuComment>();
-      const presets: {
-        position: SharedValue<number>;
-        visible: SharedValue<number>;
-        x: number;
-      }[] = [];
       placements.forEach(({ lane, left, item }) => {
-        const slot = spawnDanmaku(lanes[lane], item, now, left, false, hidden);
-        if (!slot) return;
+        if (!spawnDanmaku(lanes[lane], item, now, left, hidden)) return;
         used.add(item.comment);
-        presets.push({ position: slot.position, visible: slot.visible, x: left });
       });
-      // 一次同步统一预置起点（见 DanmakuSlot.play），逐条同步会让 JS 线程卡住数秒
-      if (presets.length) {
-        executeOnUIRuntimeSync(
-          (
-            list: { position: SharedValue<number>; visible: SharedValue<number>; x: number }[],
-            hide: boolean,
-          ) => {
-            "worklet";
-            for (let index = 0; index < list.length; index += 1) {
-              cancelAnimation(list[index].position);
-              list[index].position.value = list[index].x;
-              if (hide) list[index].visible.value = 0;
-            }
-          },
-        )(presets, hidden);
-      }
+      flushAdds();
       // 当前秒已铺出的弹幕不再从右侧重复出现
       activeSecondRef.current = -1;
       const activeBucket = getActiveBucket(positionSec);
@@ -720,7 +445,7 @@ export const DanmakuOverlay: React.FC = () => {
         if (used.has(activeBucket[index])) takeDanmakuAt(activeBucket, index);
       }
     },
-    [getActiveBucket, makePreparedComment, spawnDanmaku, width],
+    [flushAdds, getActiveBucket, makePreparedComment, spawnDanmaku, width],
   );
 
   useEffect(() => {
@@ -823,6 +548,9 @@ export const DanmakuOverlay: React.FC = () => {
       if (progressed && stalledRef.current) {
         stalledRef.current = false;
         setStalled(false);
+        // 卡顿（含 JS 线程被占住导致的误判）期间视频可能照常在播，以真实进度为跳变判断基准，
+        // 避免把这段进度当成跳变而清空重铺
+        lastRenderedPositionRef.current = position / 1000;
       }
       // 部分电视不返回可靠的 isPlaying，但位置持续前进即证明远端已经在播放。
       const explicitlyPaused =
@@ -952,16 +680,23 @@ export const DanmakuOverlay: React.FC = () => {
     if (previousSpeedFactorRef.current === speedFactor) return;
     previousSpeedFactorRef.current = speedFactor;
     const referenceWall = pausedAtRef.current ?? Date.now();
+    const updates: Pick<NativeDanmakuItem, "id" | "startX" | "startWall" | "speed">[] = [];
     lanesRef.current.forEach((lane) => {
       lane.items.forEach((item) => {
         const elapsed = Math.max(0, referenceWall - item.startWall) / 1000;
         item.startX -= item.speed * elapsed;
         item.startWall = referenceWall;
         item.speed = item.baseSpeed * speedFactor;
-        slotRefs.current[item.slotIndex]?.setSpeed(item.speed);
+        updates.push({
+          id: item.id,
+          startX: item.startX,
+          startWall: item.startWall,
+          speed: item.speed,
+        });
       });
     });
-  }, [speedFactor]);
+    if (updates.length) sendCommand("update", [updates]);
+  }, [sendCommand, speedFactor]);
 
   useEffect(() => {
     if (!enabled || !comments.length) return;
@@ -988,14 +723,7 @@ export const DanmakuOverlay: React.FC = () => {
         const playedMs = reached
           ? Math.max(0, position + (now - lastAdvanceAtRef.current) - seekTarget)
           : 0;
-        const mountedVisible: SharedValue<number>[] = [];
-        lanesRef.current.forEach((lane) => {
-          lane.items.forEach((item) => {
-            const slot = slotRefs.current[item.slotIndex];
-            if (slot?.reveal()) mountedVisible.push(slot.visible);
-          });
-        });
-        setVisibleSync(mountedVisible, 1);
+        sendCommand("revealAll");
         lastRenderedPositionRef.current = (seekTarget + playedMs) / 1000;
         syncMotionState(!playingRef.current || stalledRef.current, playedMs);
         return;
@@ -1028,14 +756,10 @@ export const DanmakuOverlay: React.FC = () => {
 
       const activeBucket = getActiveBucket(estimatedPositionSec);
       lanesRef.current.forEach((lane) => {
+        // 按估算宽度离场；原生画布按实际绘制宽度自行丢弃，不需要通知
         lane.items = lane.items.filter((item) => {
           const elapsed = Math.max(0, now - item.startWall) / 1000;
-          const left = item.startX - item.speed * elapsed;
-          // 离场由 UI 动画结束回调（onFinish）负责；UI 动画总比 JS 估算稍晚起步，
-          // 批量铺满时更明显，按估算一到左边缘就强制停止会让尾部还在屏幕上的弹幕瞬间消失。
-          // 这里只兜底：估算离场已超过 EXIT_FALLBACK_SEC 仍未回调才强制释放。
-          if (left + item.width >= -item.speed * EXIT_FALLBACK_SEC) return true;          releaseItem(lane, item, true);
-          return false;
+          return item.startX - item.speed * elapsed + item.width >= 0;
         });
         if (!lane.spawning) return;
         if (!activeBucket.length) return;
@@ -1049,17 +773,19 @@ export const DanmakuOverlay: React.FC = () => {
         if (!spawnDanmaku(lane, next, now)) return;        takeDanmakuAt(activeBucket, randomIndex);
         lane.nextGap = getDanmakuSpawnGap(densityRef.current);
       });
+      flushAdds();
     }, SPAWN_INTERVAL_MS);
     return () => clearInterval(timer);
   }, [
     canSpawnInLane,
     comments.length,
     enabled,
+    flushAdds,
     getActiveBucket,
     makePreparedComment,
     prefillLanes,
     rebuildLanes,
-    releaseItem,
+    sendCommand,
     spawnDanmaku,
     syncMotionState,
     width,
@@ -1080,15 +806,12 @@ export const DanmakuOverlay: React.FC = () => {
       onLayout={(event) => setLayoutWidth(event.nativeEvent.layout.width)}
       style={[styles.layer, { height: layerHeight, opacity: settings.opacity }]}
     >
-      {Array.from({ length: slotCount }, (_, index) => (
-        <DanmakuSlot
-          key={index}
-          ref={slotRefCallbacks[index]}
-          screenWidth={width}
-          fontSize={settings.fontSize}
-          lineHeight={lineHeight}
-        />
-      ))}
+      <OrionDanmakuView
+        ref={nativeRef}
+        style={StyleSheet.absoluteFill}
+        fontSize={settings.fontSize}
+        lineHeight={lineHeight}
+      />
     </View>
   );
 };
@@ -1100,14 +823,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     overflow: "hidden",
-  },
-  item: {
-    position: "absolute",
-    left: 0,
-    fontWeight: "600",
-    textShadowColor: "rgba(0, 0, 0, 0.95)",
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 1.5,
   },
 });
 
