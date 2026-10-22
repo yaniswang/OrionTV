@@ -1,5 +1,13 @@
 import React from "react";
-import { View, Text, StyleSheet, Pressable, Platform, type GestureResponderEvent } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  Platform,
+  findNodeHandle,
+  type GestureResponderEvent,
+} from "react-native";
 import {
   Pause,
   Play,
@@ -29,6 +37,9 @@ import { useBatteryLevel, useBatteryState, BatteryState } from 'expo-battery';
 import { format } from 'date-fns';
 import { usePlaybackController } from '@/hooks/usePlaybackController';
 import { buildPlaybackTitle } from '@/utils/PlaybackTitleUtils';
+import { DanmakuOnIcon, DanmakuOffIcon, DanmakuSettingsIcon } from "@/components/icons/DanmakuIcons";
+import { DanmakuInfoBar } from "@/components/DanmakuInfoBar";
+import { useDanmakuStore } from "@/stores/danmakuStore";
 
 interface PlayerControlsProps {
   showControls: boolean;
@@ -74,10 +85,14 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
     introEndTime,
     outroStartTime,
     isFavorited,
+    setShowDanmakuSettingsModal,
   } = usePlayerStore();
 
   const { detail } = useDetailStore();
   const resources = useSources();
+  const danmakuEnabled = useDanmakuStore((state) => state.enabled);
+  const toggleDanmaku = useDanmakuStore((state) => state.toggleEnabled);
+  const preferDanmakuFocus = usePlayerStore((state) => state.preferDanmakuFocus);
 
   const videoTitle = detail?.title || "";
   const currentEpisode = episodes[currentEpisodeIndex];
@@ -92,6 +107,16 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
   });
   const hasNextEpisode = currentEpisodeIndex < (episodes.length || 0) - 1;
   const progressBarWidthRef = React.useRef(0);
+  const pillRef = React.useRef<View>(null);
+  const playButtonRef = React.useRef<View>(null);
+  const [focusTags, setFocusTags] = React.useState<{ pill?: number; play?: number }>({});
+
+  React.useEffect(() => {
+    setFocusTags({
+      pill: findNodeHandle(pillRef.current) ?? undefined,
+      play: findNodeHandle(playButtonRef.current) ?? undefined,
+    });
+  }, [showControls, danmakuEnabled]);
 
   const formatTime = (milliseconds: number) => {
     if (!milliseconds) return "00:00";
@@ -145,20 +170,16 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
             <ChevronLeft color="white" size={26} />
           </Pressable>
         )}
-        <Text style={styles.topTitleText}>{displayTitle}</Text>
+        <Text style={styles.topTitleText} numberOfLines={1}>
+          {displayTitle}
+        </Text>
         {detail?.useProxy && <Send color="#00bb5e" size={18} />}
       </View>
 
-      <View style={styles.topCenterContainer} pointerEvents="none">
-        <Text style={styles.topCenterTimeText}>{format(new Date(), 'HH:mm')}</Text>
-      </View>
-
       <View style={styles.topRightContainer}>
+        <Text style={styles.topTimeText}>{format(new Date(), 'HH:mm')}</Text>
         {!Platform.isTV && (
           <>
-            {batteryPercent !== null && (
-              <Text style={styles.batteryPercentText}>{batteryPercent}%</Text>
-            )}
             <Battery
               percent={batteryPercent ?? 0}
               size={30}
@@ -166,6 +187,9 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
               charging={batteryState === BatteryState.CHARGING}
               outlined={false}
             />
+            {batteryPercent !== null && (
+              <Text style={styles.batteryPercentText}>{batteryPercent}%</Text>
+            )}
           </>
         )}
         {isCasting && castIconAvailable && !showLockControls && (
@@ -182,6 +206,14 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
           </Pressable>
         )}
       </View>
+
+      {!showLockControls && (
+        <DanmakuInfoBar
+          pillRef={pillRef}
+          downFocusTag={focusTags.play}
+          preferFocus={preferDanmakuFocus}
+        />
+      )}
 
       {!Platform.isTV && (
         <View style={styles.lockContainer}>
@@ -223,12 +255,21 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
 
             <View style={styles.bottomControls}>
               {episodes.length > 1 && (
-                <MediaButton onPress={onIntroPress} timeLabel={introEndTime ? formatTime(introEndTime) : undefined}>
+                <MediaButton
+                  onPress={onIntroPress}
+                  timeLabel={introEndTime ? formatTime(introEndTime) : undefined}
+                  nextFocusUp={focusTags.pill}
+                >
                   <ArrowDownToDot color="white" size={24} />
                 </MediaButton>
               )}
 
-              <MediaButton onPress={() => void togglePlayPause()} hasTVPreferredFocus={showControls}>
+              <MediaButton
+                ref={playButtonRef}
+                onPress={() => void togglePlayPause()}
+                hasTVPreferredFocus={showControls && !(preferDanmakuFocus && danmakuEnabled)}
+                nextFocusUp={focusTags.pill}
+              >
                 {status.isLoaded && status.isPlaying ? (
                   <Pause color="white" size={24} />
                 ) : (
@@ -237,35 +278,50 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
               </MediaButton>
 
               {episodes.length > 1 && (
-                <MediaButton onPress={onPlayNextEpisode} disabled={!hasNextEpisode}>
+                <MediaButton onPress={onPlayNextEpisode} disabled={!hasNextEpisode} nextFocusUp={focusTags.pill}>
                   <SkipForward color={hasNextEpisode ? "white" : "#666"} size={24} />
                 </MediaButton>
               )}
 
               {episodes.length > 1 && (
-                <MediaButton onPress={onOutroPress} timeLabel={outroStartTime ? formatTime(outroStartTime) : undefined}>
+                <MediaButton
+                  onPress={onOutroPress}
+                  timeLabel={outroStartTime ? formatTime(outroStartTime) : undefined}
+                  nextFocusUp={focusTags.pill}
+                >
                   <ArrowUpFromDot color="white" size={24} />
                 </MediaButton>
               )}
 
               {episodes.length > 1 && (
-                <MediaButton onPress={() => setShowEpisodeModal(true)}>
+                <MediaButton onPress={() => setShowEpisodeModal(true)} nextFocusUp={focusTags.pill}>
                   <List color="white" size={24} />
                 </MediaButton>
               )}
 
-              <MediaButton onPress={() => setShowSourceModal(true)}>
+              <MediaButton onPress={() => setShowSourceModal(true)} nextFocusUp={focusTags.pill}>
                 <Tv color="white" size={24} />
               </MediaButton>
 
               <MediaButton
                 onPress={() => setShowSpeedModal(true)}
                 timeLabel={playbackRate !== 1.0 ? `${playbackRate}x` : undefined}
+                nextFocusUp={focusTags.pill}
               >
                 <Gauge color="white" size={24} />
               </MediaButton>
 
-              <MediaButton onPress={toggleFavorite}>
+              <MediaButton onPress={toggleDanmaku} nextFocusUp={focusTags.pill}>
+                {danmakuEnabled ? <DanmakuOnIcon size={26} /> : <DanmakuOffIcon size={26} />}
+              </MediaButton>
+
+              {danmakuEnabled && (
+                <MediaButton onPress={() => setShowDanmakuSettingsModal(true)} nextFocusUp={focusTags.pill}>
+                  <DanmakuSettingsIcon size={26} />
+                </MediaButton>
+              )}
+
+              <MediaButton onPress={toggleFavorite} nextFocusUp={focusTags.pill}>
                 <Heart
                   size={24}
                   color={isFavorited ? "#feff5f" : "white"}
@@ -386,30 +442,23 @@ const styles = StyleSheet.create({
     display: 'flex',
     flexDirection: 'row',
     alignItems: 'center',
+    maxWidth: '34%',
   },
   topBackButton: {
     padding: 5,
   },
-  topCenterContainer: {
-    position: "absolute",
-    top: 20,
-    left: 0,
-    right: 0,
-    height: 48,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  topCenterTimeText: {
+  topTimeText: {
     color: "white",
     fontSize: 16,
     fontWeight: "bold",
     lineHeight: 48,
+    marginRight: 8,
   },
   batteryPercentText: {
     color: "white",
     fontSize: 14,
     fontWeight: "bold",
-    marginRight: 4,
+    marginLeft: 4,
   },
   topRightContainer: {
     position: "absolute",

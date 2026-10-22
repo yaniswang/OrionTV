@@ -11,6 +11,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { useRemoteControlStore } from "@/stores/remoteControlStore";
 import { APIConfigSection } from "@/components/settings/APIConfigSection";
 import { M3u8ProxySection } from "@/components/settings/M3u8ProxySection";
+import { DanmakuApiSection } from "@/components/settings/DanmakuApiSection";
 import { AdFilterSection } from "@/components/settings/AdFilterSection";
 import { RemoteInputSection } from "@/components/settings/RemoteInputSection";
 import { UpdateSection } from "@/components/settings/UpdateSection";
@@ -35,7 +36,7 @@ function isSectionItem(
 }
 
 export default function SettingsScreen() {
-  const { loadSettings, saveSettings, setApiBaseUrl, setM3u8Proxy } = useSettingsStore();
+  const { loadSettings, saveSettings, setApiBaseUrl, setM3u8Proxy, setDanmakuApiUrl } = useSettingsStore();
   const { lastMessage, targetPage, clearMessage } = useRemoteControlStore();
   const backgroundColor = useThemeColor({}, "background");
   const insets = useSafeAreaInsets();
@@ -53,6 +54,7 @@ export default function SettingsScreen() {
   const saveButtonRef = useRef<any>(null);
   const apiSectionRef = useRef<any>(null);
   const m3u8ProxySectionRef = useRef<any>(null);
+  const danmakuSectionRef = useRef<any>(null);
 
   useEffect(() => {
     loadSettings();
@@ -77,6 +79,9 @@ export default function SettingsScreen() {
     else if (currentSection === "m3u8_proxy" && m3u8ProxySectionRef.current) {
       // M3u8 proxy Config Section
       setM3u8Proxy(message);
+    }
+    else if (currentSection === "danmaku" && danmakuSectionRef.current) {
+      setDanmakuApiUrl(message);
     }
   };
 
@@ -134,7 +139,7 @@ export default function SettingsScreen() {
           onChanged={markAsChanged}
           hideDescription={deviceType === "mobile"}
           onFocus={() => {
-            setCurrentFocusIndex(1);
+            setCurrentFocusIndex(2);
             setCurrentSection("m3u8_proxy");
           }}
         />
@@ -143,10 +148,24 @@ export default function SettingsScreen() {
     },
     {
       component: (
+        <DanmakuApiSection
+          ref={danmakuSectionRef}
+          onChanged={markAsChanged}
+          hideDescription={deviceType === "mobile"}
+          onFocus={() => {
+            setCurrentFocusIndex(3);
+            setCurrentSection("danmaku");
+          }}
+        />
+      ),
+      key: "danmaku",
+    },
+    {
+      component: (
         <AdFilterSection
           onChanged={markAsChanged}
           onFocus={() => {
-            setCurrentFocusIndex(2);
+            setCurrentFocusIndex(4);
             setCurrentSection("ad_filter");
           }}
         />

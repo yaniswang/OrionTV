@@ -13,7 +13,20 @@ const CONTROLS_TIMEOUT = 5000;
  * @returns onScreenPress - 一个函数，用于处理屏幕点击事件，以显示控件并重置定时器。
  */
 export const useTVRemoteHandler = () => {
-  const { showControls, setShowControls, showEpisodeModal, showSourceModal, showSpeedModal, setShowEpisodeModal, setShowSourceModal, setShowSpeedModal, setPlaybackRate } = usePlayerStore();
+  const {
+    showControls,
+    setShowControls,
+    showEpisodeModal,
+    showSourceModal,
+    showSpeedModal,
+    showDanmakuSettingsModal,
+    showDanmakuManualModal,
+    setPreferDanmakuFocus,
+    setShowEpisodeModal,
+    setShowSourceModal,
+    setShowSpeedModal,
+    setPlaybackRate,
+  } = usePlayerStore();
   const { togglePlayPause, seekBy, isCasting } = usePlaybackController();
 
   const controlsTimer = useRef<NodeJS.Timeout | null>(null);
@@ -22,6 +35,8 @@ export const useTVRemoteHandler = () => {
     showEpisodeModal: false,
     showSpeedModal: false,
     showSourceModal: false,
+    showDanmakuSettingsModal: false,
+    showDanmakuManualModal: false,
   });
   
   // 每次modal变更同步到ref
@@ -29,7 +44,9 @@ export const useTVRemoteHandler = () => {
     modalRef.current.showEpisodeModal = showEpisodeModal;
     modalRef.current.showSpeedModal = showSpeedModal;
     modalRef.current.showSourceModal = showSourceModal;
-  },[showEpisodeModal, showSpeedModal, showSourceModal])
+    modalRef.current.showDanmakuSettingsModal = showDanmakuSettingsModal;
+    modalRef.current.showDanmakuManualModal = showDanmakuManualModal;
+  },[showEpisodeModal, showSpeedModal, showSourceModal, showDanmakuSettingsModal, showDanmakuManualModal])
   
   // 重置或启动隐藏控件的定时器
   const resetTimer = useCallback(() => {
@@ -47,7 +64,14 @@ export const useTVRemoteHandler = () => {
 
   // 当控件显示时，启动定时器
   useEffect(() => {
-    if (showControls && !showEpisodeModal && !showSourceModal && !showSpeedModal) {
+    if (
+      showControls &&
+      !showEpisodeModal &&
+      !showSourceModal &&
+      !showSpeedModal &&
+      !showDanmakuSettingsModal &&
+      !showDanmakuManualModal
+    ) {
       resetTimer();
     }
 
@@ -58,7 +82,7 @@ export const useTVRemoteHandler = () => {
         controlsTimer.current = null;
       }
     };
-  }, [showControls, showEpisodeModal, showSourceModal, showSpeedModal]);
+  }, [showControls, showEpisodeModal, showSourceModal, showSpeedModal, showDanmakuSettingsModal, showDanmakuManualModal]);
 
   // 组件卸载时清除快进定时器
   useEffect(() => {
@@ -73,7 +97,13 @@ export const useTVRemoteHandler = () => {
   const handleTVEvent = useCallback(
     (event: HWEvent) => {
       const m = modalRef.current;
-      if (m.showEpisodeModal || m.showSpeedModal || m.showSourceModal) {
+      if (
+        m.showEpisodeModal ||
+        m.showSpeedModal ||
+        m.showSourceModal ||
+        m.showDanmakuSettingsModal ||
+        m.showDanmakuManualModal
+      ) {
         return;
       }
 
@@ -95,6 +125,7 @@ export const useTVRemoteHandler = () => {
 
       switch (event.eventType) {
         case "select":
+          setPreferDanmakuFocus(false);
           togglePlayPause();
           setShowControls(true);
           break;
@@ -128,6 +159,12 @@ export const useTVRemoteHandler = () => {
           }
           break;
         case "down":
+          setPreferDanmakuFocus(false);
+          setShowControls(true);
+          break;
+        case "up":
+          // 向上唤起控制条时，焦点直接进入顶部弹幕信息区
+          setPreferDanmakuFocus(true);
           setShowControls(true);
           break;
       }
@@ -142,6 +179,7 @@ export const useTVRemoteHandler = () => {
       togglePlayPause,
       seekBy,
       isCasting,
+      setPreferDanmakuFocus,
     ]
   );
 
@@ -149,6 +187,7 @@ export const useTVRemoteHandler = () => {
 
   // 处理屏幕点击事件
   const onScreenPress = () => {
+    setPreferDanmakuFocus(false);
     // 切换控件的显示状态
     const newShowControls = !showControls;
     setShowControls(newShowControls);

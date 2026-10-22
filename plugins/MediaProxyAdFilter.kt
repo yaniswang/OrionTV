@@ -37,7 +37,7 @@ object MediaProxyAdFilter {
   const val PROBE_BUDGET_MS = 8000L
 
   /** 探针并发数；实测 322 块的最大清单约 5 秒探完。 */
-  const val PROBE_CONCURRENCY = 24
+  const val PROBE_CONCURRENCY = 8
 
   /** 时间轴允许的偏差。 */
   const val TOLERANCE_SEC = 1.0

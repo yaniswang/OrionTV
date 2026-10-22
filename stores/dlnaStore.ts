@@ -78,6 +78,7 @@ interface DLNAState {
   playbackEstablished: boolean;
   playbackRate: number;
   isSeeking: boolean;
+  seekCommitVersion: number;
   seekPosition: number;
   isSeekSupported: boolean;
   capabilities: DLNAControlCapabilities | null;
@@ -186,6 +187,7 @@ function initialState() {
     playbackEstablished: false,
     playbackRate: 1,
     isSeeking: false,
+    seekCommitVersion: 0,
     seekPosition: 0,
     isSeekSupported: true,
     capabilities: null,
@@ -499,6 +501,7 @@ const useDlnaStore = create<DLNAState>((set, get) => {
     if (!activeController || state.phase !== 'connected' || !state.isSeeking || state.durationMillis <= 0) return;
     const target = state.seekPosition * state.durationMillis;
     try {
+      set({ seekCommitVersion: get().seekCommitVersion + 1 });
       await activeController.seekTo(target);
       if (controller !== activeController) return;
       set({ isSeeking: false, positionMillis: target });

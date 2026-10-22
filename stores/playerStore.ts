@@ -37,8 +37,12 @@ interface PlayerState {
   showEpisodeModal: boolean;
   showSourceModal: boolean;
   showSpeedModal: boolean;
+  showDanmakuSettingsModal: boolean;
+  showDanmakuManualModal: boolean;
+  preferDanmakuFocus: boolean;
   showNextEpisodeOverlay: boolean;
   isSeeking: boolean;
+  seekCommitVersion: number;
   seekPosition: number;
   progressPosition: number;
   bufferedPosition: number;
@@ -68,6 +72,9 @@ interface PlayerState {
   setShowEpisodeModal: (show: boolean) => void;
   setShowSourceModal: (show: boolean) => void;
   setShowSpeedModal: (show: boolean) => void;
+  setShowDanmakuSettingsModal: (show: boolean) => void;
+  setShowDanmakuManualModal: (show: boolean) => void;
+  setPreferDanmakuFocus: (prefer: boolean) => void;
   setShowNextEpisodeOverlay: (show: boolean) => void;
   setPlaybackRate: (rate: number) => void;
   setIntroEndTime: (positionMillis?: number) => void;
@@ -105,8 +112,12 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
   showEpisodeModal: false,
   showSourceModal: false,
   showSpeedModal: false,
+  showDanmakuSettingsModal: false,
+  showDanmakuManualModal: false,
+  preferDanmakuFocus: false,
   showNextEpisodeOverlay: false,
   isSeeking: false,
+  seekCommitVersion: 0,
   seekPosition: 0,
   progressPosition: 0,
   bufferedPosition: 0,
@@ -353,18 +364,20 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
 
   togglePlayPause: async () => {
     const { status, videoRef } = get();
-    if (status?.isLoaded) {
-      try {
-        if (status?.isPlaying) {
-          await videoRef?.current?.pause();
-        }
-        else {
-          await videoRef?.current?.resume();
-        }
-      } catch (error) {
-        logger.debug("Failed to toggle play/pause:", error);
-        Toast.show({ type: "error", text1: "操作失败" });
+    if (!status?.isLoaded) return;
+    const nextPlaying = !status.isPlaying;
+    // 立即更新播放状态，弹幕和按钮不用等原生回调
+    set({ status: { ...status, isPlaying: nextPlaying } });
+    try {
+      if (nextPlaying) {
+        await videoRef?.current?.resume();
+      } else {
+        await videoRef?.current?.pause();
       }
+    } catch (error) {
+      set({ status: { ...get().status, isPlaying: !nextPlaying } });
+      logger.debug("Failed to toggle play/pause:", error);
+      Toast.show({ type: "error", text1: "操作失败" });
     }
   },
 
@@ -413,6 +426,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       clearTimeout(seekTimeout);
     }
     const timeoutId = setTimeout(async () => {
+      set({ seekCommitVersion: get().seekCommitVersion + 1 });
       try {
         await videoRef?.current?.seek(newPosition / 1000);
       } catch (error) {
@@ -529,6 +543,9 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
   setShowEpisodeModal: (show) => set({ showEpisodeModal: show }),
   setShowSourceModal: (show) => set({ showSourceModal: show }),
   setShowSpeedModal: (show) => set({ showSpeedModal: show }),
+  setShowDanmakuSettingsModal: (show) => set({ showDanmakuSettingsModal: show }),
+  setShowDanmakuManualModal: (show) => set({ showDanmakuManualModal: show }),
+  setPreferDanmakuFocus: (prefer) => set({ preferDanmakuFocus: prefer }),
   setShowNextEpisodeOverlay: (show) => set({ showNextEpisodeOverlay: show }),
 
   setPlaybackRate: async (rate) => {
@@ -564,6 +581,9 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       showEpisodeModal: false,
       showSourceModal: false,
       showSpeedModal: false,
+      showDanmakuSettingsModal: false,
+      showDanmakuManualModal: false,
+      preferDanmakuFocus: false,
       showNextEpisodeOverlay: false,
       initialPosition: 0,
       playbackRate: 1.0,

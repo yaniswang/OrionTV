@@ -195,3 +195,39 @@ describe('播放页进入时的 detail 复用', () => {
     expect(usePlayerStore.getState().episodes.length).toBeGreaterThan(0);
   });
 });
+
+describe('播放器 Seek 提交时机', () => {
+  it('预览阶段不清泳道，500ms 后真正调用 seek 才增加提交版本', async () => {
+    jest.useFakeTimers();
+    const seek = jest.fn(async () => {});
+    usePlayerStore.setState({
+      videoRef: { current: { seek } } as any,
+      status: {
+        isLoaded: true,
+        isPlaying: true,
+        durationMillis: 100_000,
+        positionMillis: 10_000,
+        playableDurationMillis: 100_000,
+        didJustFinish: false,
+      },
+      isSeeking: false,
+      seekPosition: 0,
+      seekCommitVersion: 0,
+      _seekTimeout: undefined,
+    });
+
+    usePlayerStore.getState().seek(5_000);
+    expect(usePlayerStore.getState().isSeeking).toBe(true);
+    expect(usePlayerStore.getState().seekCommitVersion).toBe(0);
+    expect(seek).not.toHaveBeenCalled();
+
+    await jest.advanceTimersByTimeAsync(499);
+    expect(usePlayerStore.getState().seekCommitVersion).toBe(0);
+    expect(seek).not.toHaveBeenCalled();
+
+    await jest.advanceTimersByTimeAsync(1);
+    expect(usePlayerStore.getState().seekCommitVersion).toBe(1);
+    expect(seek).toHaveBeenCalledWith(15);
+    jest.useRealTimers();
+  });
+});

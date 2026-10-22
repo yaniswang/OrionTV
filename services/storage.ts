@@ -14,6 +14,7 @@ const STORAGE_KEYS = {
   SEARCH_HISTORY: "mytv_search_history",
   LOGIN_CREDENTIALS: "mytv_login_credentials",
   ACCOUNTS: "mytv_accounts",
+  DANMAKU_SELECTIONS: "mytv_danmaku_selections",
 } as const;
 
 // --- Type Definitions (aligned with api.ts) ---
@@ -33,6 +34,8 @@ export interface PlayerSettings {
 export interface AppSettings {
   apiBaseUrl: string;
   m3u8Proxy: string;
+  /** 弹幕 API 基地址（danmu_api，可带 token 路径），留空则关闭弹幕 */
+  danmakuApiUrl: string;
   /** M3U8 广告过滤开关，默认关闭 */
   adFilterEnabled: boolean;
   remoteInputEnabled: boolean;
@@ -67,6 +70,17 @@ export interface SavedAccount {
 export interface AccountsData {
   accounts: SavedAccount[];
   currentId: string | null;
+}
+
+/** 手动匹配记住的番剧来源，按播放源和内容 ID 复用 */
+export interface DanmakuSelectionMemory {
+  animeId: number;
+  animeTitle: string;
+  source?: string;
+  episodeId?: number;
+  episodeNumber?: number;
+  playbackEpisodeNumber?: number;
+  updatedAt: number;
 }
 
 // --- Helper ---
@@ -352,6 +366,7 @@ export class SettingsManager {
     const defaultSettings: AppSettings = {
       apiBaseUrl: "",
       m3u8Proxy: '',
+      danmakuApiUrl: "",
       adFilterEnabled: false,
       remoteInputEnabled: true,
       videoSource: {
@@ -430,5 +445,71 @@ export class AccountManager {
     } catch (error) {
       logger.error("Failed to save accounts:", error);
     }
+  }
+}
+
+// --- DanmakuSelectionManager (Uses AsyncStorage) ---
+export class DanmakuSelectionManager {
+  private static readonly MAX_ENTRIES = 100;
+
+  static async getAll(): Promise<Record<string, DanmakuSelectionMemory>> {
+    try {
+      const data = await AsyncStorage.getItem(STORAGE_KEYS.DANMAKU_SELECTIONS);
+      return data ? JSON.parse(data) : {};
+    } catch (error) {
+      logger.info("Failed to get danmaku selections:", error);
+      return {};
+    }
+  }
+
+  static async get(
+    source: string,
+    id: string | number,
+  ): Promise<DanmakuSelectionMemory | null> {
+    const normalizedSource = source.trim();
+    const normalizedId = String(id).trim();
+    if (!normalizedSource || !normalizedId) return null;
+    const all = await this.getAll();
+    return all[generateKey(normalizedSource, normalizedId)] || null;
+  }
+
+  static async save(
+    source: string,
+    id: string | number,
+    selection: {
+      animeId: number;
+      animeTitle: string;
+      source?: string;
+      episodeId?: number;
+      episodeNumber?: number;
+      playbackEpisodeNumber?: number;
+    },
+  ): Promise<void> {
+    const normalizedSource = source.trim();
+    const normalizedId = String(id).trim();
+    if (!normalizedSource || !normalizedId || !selection.animeId) return;
+    const key = generateKey(normalizedSource, normalizedId);
+    const all = await this.getAll();
+    all[key] = { ...selection, updatedAt: Date.now() };
+
+    const entries = Object.entries(all);
+    if (entries.length > this.MAX_ENTRIES) {
+      entries.sort((a, b) => b[1].updatedAt - a[1].updatedAt);
+      const kept = Object.fromEntries(entries.slice(0, this.MAX_ENTRIES));
+      await AsyncStorage.setItem(STORAGE_KEYS.DANMAKU_SELECTIONS, JSON.stringify(kept));
+      return;
+    }
+    await AsyncStorage.setItem(STORAGE_KEYS.DANMAKU_SELECTIONS, JSON.stringify(all));
+  }
+
+  static async remove(source: string, id: string | number): Promise<void> {
+    const normalizedSource = source.trim();
+    const normalizedId = String(id).trim();
+    if (!normalizedSource || !normalizedId) return;
+    const key = generateKey(normalizedSource, normalizedId);
+    const all = await this.getAll();
+    if (!all[key]) return;
+    delete all[key];
+    await AsyncStorage.setItem(STORAGE_KEYS.DANMAKU_SELECTIONS, JSON.stringify(all));
   }
 }

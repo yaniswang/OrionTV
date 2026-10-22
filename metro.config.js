@@ -31,5 +31,11 @@ config.watchFolders = [projectRoot];
 // Keep package resolution scoped to this project.
 config.resolver.nodeModulesPaths = [path.resolve(projectRoot, "node_modules")];
 config.resolver.disableHierarchicalLookup = true;
+const defaultBlockList = config.resolver.blockList;
+const nativeBuildOutputs =
+  /[\\/]\.cxx[\\/]|[\\/]android[\\/]\.gradle[\\/]|[\\/]android[\\/](?:app[\\/])?build[\\/]|[\\/]ios[\\/]build[\\/]|[\\/]ios[\\/]DerivedData[\\/]/;
+config.resolver.blockList = new RegExp(
+  `(?:${defaultBlockList instanceof RegExp ? defaultBlockList.source : "^$"})|(?:${nativeBuildOutputs.source})`,
+);
 
 module.exports = config;

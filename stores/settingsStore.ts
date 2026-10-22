@@ -12,6 +12,7 @@ const logger = Logger.withTag('SettingsStore');
 interface SettingsState {
   apiBaseUrl: string;
   m3u8Proxy: string;
+  danmakuApiUrl: string;
   adFilterEnabled: boolean;
   m3uUrl: string;
   m3uUa: string;
@@ -30,6 +31,7 @@ interface SettingsState {
   fetchLiveSource: () => Promise<void>;
   setApiBaseUrl: (url: string) => void;
   setM3u8Proxy: (url: string) => void;
+  setDanmakuApiUrl: (url: string) => void;
   setAdFilterEnabled: (enabled: boolean) => void;
   setRemoteInputEnabled: (enabled: boolean) => void;
   saveSettings: () => Promise<void>;
@@ -41,6 +43,7 @@ interface SettingsState {
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   apiBaseUrl: "",
   m3u8Proxy: '',
+  danmakuApiUrl: "",
   adFilterEnabled: false,
   m3uUrl: "",
   m3uUa: '',
@@ -57,6 +60,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     set({
       apiBaseUrl: settings.apiBaseUrl,
       m3u8Proxy: settings.m3u8Proxy,
+      danmakuApiUrl: settings.danmakuApiUrl || "",
       adFilterEnabled: settings.adFilterEnabled || false,
       remoteInputEnabled: settings.remoteInputEnabled || false,
       videoSource: settings.videoSource || {
@@ -103,11 +107,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
   setApiBaseUrl: (url) => set({ apiBaseUrl: url }),
   setM3u8Proxy: (url) => set({ m3u8Proxy: url }),
+  setDanmakuApiUrl: (url) => set({ danmakuApiUrl: url }),
   setAdFilterEnabled: (enabled) => set({ adFilterEnabled: enabled }),
   setRemoteInputEnabled: (enabled) => set({ remoteInputEnabled: enabled }),
   setVideoSource: (config) => set({ videoSource: config }),
   saveSettings: async () => {
-    const { apiBaseUrl, m3u8Proxy, adFilterEnabled, remoteInputEnabled, videoSource } = get();
+    const { apiBaseUrl, m3u8Proxy, danmakuApiUrl, adFilterEnabled, remoteInputEnabled, videoSource } = get();
 
     const currentSettings = await SettingsManager.get()
     const currentApiBaseUrl = currentSettings.apiBaseUrl;
@@ -136,6 +141,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     await SettingsManager.save({
       apiBaseUrl: processedApiBaseUrl,
       m3u8Proxy: processedM3u8Proxy,
+      danmakuApiUrl: danmakuApiUrl.trim(),
       adFilterEnabled,
       remoteInputEnabled,
       videoSource,
@@ -150,7 +156,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }
     api.setBaseUrl(processedApiBaseUrl);
     // Also update the URL in the state so the input field shows the processed URL
-    set({ isModalVisible: false, apiBaseUrl: processedApiBaseUrl, m3u8Proxy: processedM3u8Proxy });
+    set({
+      isModalVisible: false,
+      apiBaseUrl: processedApiBaseUrl,
+      m3u8Proxy: processedM3u8Proxy,
+      danmakuApiUrl: danmakuApiUrl.trim(),
+    });
     await get().fetchServerConfig();
   },
   showModal: () => set({ isModalVisible: true }),

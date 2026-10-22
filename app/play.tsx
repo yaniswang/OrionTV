@@ -27,6 +27,10 @@ import { DLNADeviceModal } from "@/components/DLNADeviceModal";
 import { usePlaybackController } from "@/hooks/usePlaybackController";
 import useDlnaStore from "@/stores/dlnaStore";
 import { stopProxyServer } from "@/services/localProxy";
+import { DanmakuOverlay } from "@/components/DanmakuOverlay";
+import { DanmakuSettingsModal } from "@/components/DanmakuSettingsModal";
+import { DanmakuManualMatchModal } from "@/components/DanmakuManualMatchModal";
+import { useDanmakuAutoLoad } from "@/hooks/useDanmakuAutoLoad";
 
 const logger = Logger.withTag('PlayScreen');
 
@@ -187,6 +191,8 @@ export default function PlayScreen() {
     getBrightness: getPlaybackBrightness,
     setBrightness: setPlaybackBrightness,
   } = usePlaybackController();
+
+  useDanmakuAutoLoad();
 
 
   const previousCastingRef = useRef(isCasting);
@@ -567,7 +573,11 @@ export default function PlayScreen() {
   }
 
   return (
-    <ThemedView focusable style={dynamicStyles.container}>
+    <ThemedView
+      focusable
+      hasTVPreferredFocus={Platform.isTV && !showControls}
+      style={dynamicStyles.container}
+    >
       {/* 投屏时卸载本机 Video，主画面固定为 DLNA 设备切换列表。 */}
       {isCasting ? (
         <GestureHandlerRootView style={{ flex: 1 }}>
@@ -588,6 +598,8 @@ export default function PlayScreen() {
       ) : (
         <LoadingContainer style={dynamicStyles.loadingContainer} currentEpisode={currentEpisode} />
       )}
+
+      <DanmakuOverlay />
 
       {showControls && (
         <PlayerControls
@@ -610,6 +622,8 @@ export default function PlayScreen() {
       {currentEpisode?.url && (<EpisodeSelectionModal />)}
       {currentEpisode?.url && (<SourceSelectionModal />)}
       {currentEpisode?.url && (<SpeedSelectionModal />)}
+      {currentEpisode?.url && (<DanmakuSettingsModal />)}
+      {currentEpisode?.url && (<DanmakuManualMatchModal />)}
       <DLNADeviceModal
         visible={isCasting && showDlnaDeviceModal}
         onClose={() => setShowDlnaDeviceModal(false)}

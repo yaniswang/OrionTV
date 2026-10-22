@@ -12,11 +12,13 @@ interface StyledButtonProps extends PressableProps {
   isSelected?: boolean;
   isLoading?: boolean;
   style?: StyleProp<ViewStyle>;
+  buttonStyle?: StyleProp<ViewStyle>;
+  buttonFocusStyle?: StyleProp<ViewStyle>;
   textStyle?: StyleProp<TextStyle>;
 }
 
 export const StyledButton = forwardRef<View, StyledButtonProps>(
-  ({ children, text, variant = "default", isSelected = false, isLoading = false, style, textStyle, ...rest }, ref) => {
+  ({ children, text, variant = "default", isSelected = false, isLoading = false, style, buttonStyle, buttonFocusStyle, textStyle, ...rest }, ref) => {
     const colorScheme = "dark";
     const colors = Colors[colorScheme];
     const [isFocused, setIsFocused] = React.useState(false);
@@ -108,20 +110,30 @@ export const StyledButton = forwardRef<View, StyledButtonProps>(
       },
     });
 
+    const { onFocus, onBlur, ...pressableProps } = rest;
+
     return (
       <Animated.View style={[animationStyle, style]}>
         <Pressable
           android_ripple={Platform.isTV || deviceType !== 'tv'? { color: 'transparent' } : { color: Colors.dark.link }}
           ref={ref}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
+          onFocus={(event) => {
+            setIsFocused(true);
+            onFocus?.(event);
+          }}
+          onBlur={(event) => {
+            setIsFocused(false);
+            onBlur?.(event);
+          }}
           style={({ focused }) => [
             styles.button,
             variantStyles[variant].button,
             isSelected && (variantStyles[variant].selectedButton ?? styles.selectedButton),
             focused && (variantStyles[variant].focusedButton ?? styles.focusedButton),
+            buttonStyle,
+            focused && buttonFocusStyle,
           ]}
-          {...rest}
+          {...pressableProps}
         >
           {isLoading && <ActivityIndicator />}
           {text ? (
