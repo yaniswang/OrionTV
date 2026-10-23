@@ -31,7 +31,7 @@ export default function RootLayout() {
   const [loaded, error] = useFonts({
     SpaceMono: require("../assets/fonts/SpaceMono-Regular.ttf"),
   });
-  const { loadSettings, fetchLiveSource, remoteInputEnabled, apiBaseUrl, serverConfig } = useSettingsStore();
+  const { loadSettings, fetchLiveSource, fetchAppConfig, remoteInputEnabled, apiBaseUrl, serverConfig } = useSettingsStore();
   const { startServer, stopServer } = useRemoteControlStore();
   const { checkLoginStatus, isLoggedIn } = useAuthStore();
   const { checkForUpdate, lastCheckTime } = useUpdateStore();
@@ -58,12 +58,13 @@ export default function RootLayout() {
     }
   }, [apiBaseUrl, serverConfig, checkLoginStatus]);
 
-  // 直播源接口需要登录：登录后（含启动时已登录）再拉取
+  // 直播源接口和 config.json 都需要登录：登录后（含启动时已登录）再拉取
   useEffect(() => {
     if (isLoggedIn) {
       fetchLiveSource();
+      fetchAppConfig();
     }
-  }, [isLoggedIn, apiBaseUrl, fetchLiveSource]);
+  }, [isLoggedIn, apiBaseUrl, fetchLiveSource, fetchAppConfig]);
 
   useEffect(() => {
     if (loaded || error) {

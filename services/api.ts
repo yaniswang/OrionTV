@@ -94,6 +94,20 @@ export interface ServerConfig {
   StorageType: "localstorage" | "redis" | string;
 }
 
+/** 站长放在服务器 public 目录的 config.json：弹幕 API 与 M3U8 代理只从这里来 */
+export interface AppConfig {
+  danmakuApiUrl: string;
+  m3u8Proxy: string;
+}
+
+/** 发往服务器的请求统一带的 UA：服务器前面的反代（Lucky）按它放行 */
+export const SERVER_USER_AGENT = "OrionTV";
+
+const withServerUserAgent = (headers?: HeadersInit): Record<string, string> => ({
+  ...(headers as Record<string, string> | undefined),
+  "User-Agent": SERVER_USER_AGENT,
+});
+
 /** 修改密码时服务器返回的错误，message 为可直接展示的提示 */
 export class ChangePasswordError extends Error {
   constructor(message: string) {
@@ -120,7 +134,10 @@ export class API {
       throw new Error("API_URL_NOT_SET");
     }
 
-    const response = await fetch(`${this.baseURL}${url}`, options);
+    const response = await fetch(`${this.baseURL}${url}`, {
+      ...options,
+      headers: withServerUserAgent(options.headers),
+    });
 
     if (response.status === 401) {
       throw new Error("UNAUTHORIZED");
@@ -156,7 +173,7 @@ export class API {
     }
     const response = await fetch(`${this.baseURL}/api/change-password`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: withServerUserAgent({ "Content-Type": "application/json" }),
       body: JSON.stringify({ oldPassword, newPassword }),
     });
     const data = await response.json().catch(() => ({}));
@@ -178,6 +195,27 @@ export class API {
   async getServerConfig(): Promise<ServerConfig> {
     const response = await this._fetch("/api/server-config");
     return response.json();
+  }
+
+  /**
+   * 读取服务器的 config.json（服务端中间件要求登录）。
+   * 文件不存在返回 null；未登录会被重定向到登录页，解析 JSON 失败而抛错。
+   */
+  async getAppConfig(): Promise<AppConfig | null> {
+    if (!this.baseURL) {
+      throw new Error("API_URL_NOT_SET");
+    }
+    const response = await fetch(`${this.baseURL}/config.json`, {
+      headers: withServerUserAgent({ Accept: "application/json" }),
+    });
+    if (response.status === 404) return null;
+    if (response.status === 401) throw new Error("UNAUTHORIZED");
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+    const data = await response.json();
+    return {
+      danmakuApiUrl: typeof data?.danmakuApiUrl === "string" ? data.danmakuApiUrl : "",
+      m3u8Proxy: typeof data?.m3u8Proxy === "string" ? data.m3u8Proxy : "",
+    };
   }
 
   async getFavorites(key?: string): Promise<Record<string, Favorite> | Favorite | null> {
@@ -241,8 +279,12 @@ export class API {
     return response.json();
   }
 
-  getImageProxyUrl(imageUrl: string): string {
-    return `${this.baseURL}/api/image-proxy?url=${encodeURIComponent(imageUrl)}`;
+  /** 海报走服务器的图片代理：图片请求不经过 fetch，UA 要放在 Image 的 source.headers 里 */
+  getImageProxySource(imageUrl: string): { uri: string; headers: Record<string, string> } {
+    return {
+      uri: `${this.baseURL}/api/image-proxy?url=${encodeURIComponent(imageUrl)}`,
+      headers: withServerUserAgent(),
+    };
   }
 
   async getDoubanData(
@@ -325,9 +367,9 @@ export class API {
   private async _createSearchEventSource(query: string): Promise<EventSource> {
     const auth = await this._getAuthToken();
     return new EventSource(`${this.baseURL}/api/search/ws?q=${encodeURIComponent(query)}`, {
-      headers: {
+      headers: withServerUserAgent({
         Cookie: `auth=${auth};`
-      }
+      })
     });
   }
 

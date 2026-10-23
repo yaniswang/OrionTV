@@ -33,9 +33,6 @@ export interface PlayerSettings {
 
 export interface AppSettings {
   apiBaseUrl: string;
-  m3u8Proxy: string;
-  /** 弹幕 API 基地址（danmu_api，可带 token 路径），留空则关闭弹幕 */
-  danmakuApiUrl: string;
   /** M3U8 广告过滤开关，默认关闭 */
   adFilterEnabled: boolean;
   remoteInputEnabled: boolean;
@@ -365,8 +362,6 @@ export class SettingsManager {
   static async get(): Promise<AppSettings> {
     const defaultSettings: AppSettings = {
       apiBaseUrl: "",
-      m3u8Proxy: '',
-      danmakuApiUrl: "",
       adFilterEnabled: false,
       remoteInputEnabled: true,
       videoSource: {
@@ -386,7 +381,10 @@ export class SettingsManager {
 
   static async save(settings: Partial<AppSettings>): Promise<void> {
     const currentSettings = await this.get();
-    const updatedSettings = { ...currentSettings, ...settings };
+    const updatedSettings: Record<string, unknown> = { ...currentSettings, ...settings };
+    // 弹幕 API 和 M3U8 代理改由服务器 config.json 提供，清掉旧版本存在本地的值
+    delete updatedSettings.m3u8Proxy;
+    delete updatedSettings.danmakuApiUrl;
     await AsyncStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(updatedSettings));
   }
 

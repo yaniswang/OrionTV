@@ -59,12 +59,12 @@ describe("search history", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
       `http://demo/api/searchhistory?keyword=${encodeURIComponent("凡人 修仙传")}`,
-      { method: "DELETE" }
+      { method: "DELETE", headers: { "User-Agent": "OrionTV" } }
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
       "http://demo/api/searchhistory",
-      { method: "DELETE" }
+      { method: "DELETE", headers: { "User-Agent": "OrionTV" } }
     );
   });
 });

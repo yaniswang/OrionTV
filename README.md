@@ -23,7 +23,28 @@
 - **现代化前端**: 使用 Expo、React Native TVOS 和 TypeScript 构建，性能卓越。
 - **Expo Router**: 基于文件系统的路由，使导航逻辑清晰简单。
 - **TV 优化的 UI**: 专为电视遥控器交互设计的用户界面。
-- **支持M3u8代理**: 支持M3U8代理，解决晚高峰源播放比较卡的问题，结合此项目使用：https://github.com/yaniswang/m3u8-proxy
+- **支持M3u8代理**: 支持M3U8代理，解决晚高峰源播放比较卡的问题
+- **支持多线程播放**: 播放时使用5线程同时播放，晚高峰一点都不卡
+- **支持弹幕**: 支持danmu_api，并实现和bilibili几乎一致的弹幕体验
+- **支持DLNA投屏**: 支持投屏到国内所有主流电视机上
+
+## 🛠️ 如何开启M3U8代理和弹幕
+
+在MoonTV根目录下放置：config.json，内容如下：
+
+```
+{
+	"m3u8Proxy": "https://xxx.xxxx.xxx", 
+	"danmakuApiUrl": "https://tv.xxx.xxx:1234/danmu/xxxx"
+}
+```
+
+特别说明：
+
+1. 如果项目前面有类似Lucky中转模块，可以在上面直接配置文件返回
+2. 如果没有，只能将文件挂载进docker
+
+M3U8代理的详细部署请参考：https://github.com/yaniswang/m3u8-proxy
 
 ## 🛠️ 技术栈
 

@@ -11,7 +11,9 @@ const logger = Logger.withTag('SettingsStore');
 
 interface SettingsState {
   apiBaseUrl: string;
+  /** 来自服务器 config.json，不在本地保存 */
   m3u8Proxy: string;
+  /** 来自服务器 config.json，不在本地保存；为空则不加载弹幕 */
   danmakuApiUrl: string;
   adFilterEnabled: boolean;
   m3uUrl: string;
@@ -29,9 +31,8 @@ interface SettingsState {
   loadSettings: () => Promise<void>;
   fetchServerConfig: () => Promise<void>;
   fetchLiveSource: () => Promise<void>;
+  fetchAppConfig: () => Promise<void>;
   setApiBaseUrl: (url: string) => void;
-  setM3u8Proxy: (url: string) => void;
-  setDanmakuApiUrl: (url: string) => void;
   setAdFilterEnabled: (enabled: boolean) => void;
   setRemoteInputEnabled: (enabled: boolean) => void;
   saveSettings: () => Promise<void>;
@@ -59,8 +60,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const settings = await SettingsManager.get();
     set({
       apiBaseUrl: settings.apiBaseUrl,
-      m3u8Proxy: settings.m3u8Proxy,
-      danmakuApiUrl: settings.danmakuApiUrl || "",
       adFilterEnabled: settings.adFilterEnabled || false,
       remoteInputEnabled: settings.remoteInputEnabled || false,
       videoSource: settings.videoSource || {
@@ -105,18 +104,33 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       logger.warn("Failed to fetch live source:", error);
     }
   },
+  // config.json 在服务端需要登录，由 RootLayout 在登录后调用
+  fetchAppConfig: async () => {
+    try {
+      const config = await api.getAppConfig();
+      const danmakuApiUrl = config?.danmakuApiUrl.trim() ?? "";
+      const rawProxy = config?.m3u8Proxy.trim() ?? "";
+      const m3u8Proxy = rawProxy && (rawProxy.endsWith("/") ? rawProxy : `${rawProxy}/`);
+      if (m3u8Proxy !== get().m3u8Proxy) {
+        // 代理地址变了，旧的完整测速结果不能继续复用
+        clearSpeedTestCache();
+        useDetailStore.setState({ detail: null });
+      }
+      set({ danmakuApiUrl, m3u8Proxy });
+      logger.info(`App config: danmaku=${danmakuApiUrl ? "on" : "off"}, m3u8Proxy=${m3u8Proxy || "none"}`);
+    } catch (error) {
+      logger.warn("Failed to fetch app config:", error);
+    }
+  },
   setApiBaseUrl: (url) => set({ apiBaseUrl: url }),
-  setM3u8Proxy: (url) => set({ m3u8Proxy: url }),
-  setDanmakuApiUrl: (url) => set({ danmakuApiUrl: url }),
   setAdFilterEnabled: (enabled) => set({ adFilterEnabled: enabled }),
   setRemoteInputEnabled: (enabled) => set({ remoteInputEnabled: enabled }),
   setVideoSource: (config) => set({ videoSource: config }),
   saveSettings: async () => {
-    const { apiBaseUrl, m3u8Proxy, danmakuApiUrl, adFilterEnabled, remoteInputEnabled, videoSource } = get();
+    const { apiBaseUrl, adFilterEnabled, remoteInputEnabled, videoSource } = get();
 
     const currentSettings = await SettingsManager.get()
     const currentApiBaseUrl = currentSettings.apiBaseUrl;
-    const currentM3u8Proxy = currentSettings.m3u8Proxy;
     let processedApiBaseUrl = apiBaseUrl.trim();
     if (processedApiBaseUrl.endsWith("/")) {
       processedApiBaseUrl = processedApiBaseUrl.slice(0, -1);
@@ -136,12 +150,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       }
     }
 
-    const processedM3u8Proxy = m3u8Proxy && m3u8Proxy + (m3u8Proxy.endsWith('/') ? '' : '/') || '';
-
     await SettingsManager.save({
       apiBaseUrl: processedApiBaseUrl,
-      m3u8Proxy: processedM3u8Proxy,
-      danmakuApiUrl: danmakuApiUrl.trim(),
       adFilterEnabled,
       remoteInputEnabled,
       videoSource,
@@ -149,18 +159,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     if ( currentApiBaseUrl !== processedApiBaseUrl) {
       await AsyncStorage.setItem('authCookies', '');
     }
-    if (currentM3u8Proxy !== processedM3u8Proxy) {
-      // 代理地址变了，旧的完整测速结果不能继续复用
-      clearSpeedTestCache();
-      useDetailStore.setState({detail: null});
-    }
     api.setBaseUrl(processedApiBaseUrl);
     // Also update the URL in the state so the input field shows the processed URL
     set({
       isModalVisible: false,
       apiBaseUrl: processedApiBaseUrl,
-      m3u8Proxy: processedM3u8Proxy,
-      danmakuApiUrl: danmakuApiUrl.trim(),
     });
     await get().fetchServerConfig();
   },

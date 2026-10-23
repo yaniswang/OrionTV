@@ -25,7 +25,7 @@ describe("api.changePassword", () => {
 
     expect(fetchMock).toHaveBeenCalledWith("http://server-a/api/change-password", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "User-Agent": "OrionTV" },
       body: JSON.stringify({ oldPassword: "old-pw", newPassword: "new-pw" }),
     });
   });

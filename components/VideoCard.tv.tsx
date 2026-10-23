@@ -149,7 +149,7 @@ const VideoCard = forwardRef<View, VideoCardProps>(
           delayLongPress={1000}
         >
           <View style={styles.card}>
-            <Image source={{ uri: api.getImageProxyUrl(poster) }} style={styles.poster} />
+            <Image source={api.getImageProxySource(poster)} style={styles.poster} />
             {isFocused && (
               <View style={styles.overlay}>
                 {isContinueWatching && (

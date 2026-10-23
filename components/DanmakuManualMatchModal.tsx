@@ -356,7 +356,7 @@ export const DanmakuManualMatchModal: React.FC = () => {
                     <View style={styles.poster}>
                       {!!anime.imageUrl && (
                         <Image
-                          source={{ uri: api.getImageProxyUrl(anime.imageUrl) }}
+                          source={api.getImageProxySource(anime.imageUrl)}
                           style={styles.posterImage}
                         />
                       )}
