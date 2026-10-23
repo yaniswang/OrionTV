@@ -5,6 +5,7 @@ import {
   getBilibiliDanmakuDurationSec,
   getDanmakuBaseSpeed,
   getDanmakuCatchLeft,
+  getDanmakuJumpWindowSec,
   getDanmakuLeftAtTime,
   getDanmakuSafeGap,
   getDanmakuSpawnGap,
@@ -15,6 +16,26 @@ import {
   takeRandomDanmaku,
   willDanmakuCollide,
 } from "@/utils/danmakuLayout";
+
+describe("时间线窗口", () => {
+  const slowest = getDanmakuBaseSpeed(0);
+
+  it("1 倍速：最慢弹幕横穿屏幕的时长", () => {
+    expect(getDanmakuJumpWindowSec(960, 1, 1)).toBeCloseTo(960 / slowest);
+  });
+
+  it("按播放倍速换算成视频时间", () => {
+    expect(getDanmakuJumpWindowSec(960, 1, 8)).toBeCloseTo((960 / slowest) * 8);
+  });
+
+  it("弹幕调速越快窗口越短", () => {
+    expect(getDanmakuJumpWindowSec(960, 2, 1)).toBeCloseTo(960 / slowest / 2);
+  });
+
+  it("倍速异常时按 1 倍速处理", () => {
+    expect(getDanmakuJumpWindowSec(960, 1, 0)).toBeCloseTo(960 / slowest);
+  });
+});
 
 describe("SEEK 后铺满泳道", () => {
   const plan = (

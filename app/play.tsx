@@ -151,7 +151,8 @@ export default function PlayScreen() {
   const episodeIndex = parseInt(episodeIndexStr || "0", 10);
   const position = positionStr ? parseInt(positionStr, 10) : undefined;
 
-  const { detail } = useDetailStore();
+  // 只订阅 detail：测速期间 searchResults/testingSource 频繁更新，订阅整个 store 会让播放页整页重渲染
+  const detail = useDetailStore((s) => s.detail);
   const source = sourceStr || detail?.source;
   const id = videoId || detail?.id.toString();
   const title = videoTitle || detail?.title || "";

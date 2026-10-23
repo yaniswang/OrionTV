@@ -25,6 +25,7 @@ import {
   estimateDanmakuWidth,
   getDanmakuBaseSpeed,
   getDanmakuCatchLeft,
+  getDanmakuJumpWindowSec,
   getDanmakuSpawnGap,
   getDanmakuTrackCount,
   getDanmakuVisualLane,
@@ -127,6 +128,8 @@ export const DanmakuOverlay: React.FC = () => {
   );
   const castSeekPosition = useDlnaStore((state) => state.seekPosition);
   const castDurationMillis = useDlnaStore((state) => state.durationMillis);
+  const localPlaybackRate = usePlayerStore((state) => state.playbackRate);
+  const castPlaybackRate = useDlnaStore((state) => state.playbackRate);
   // 本机起播时还没跳到续播位置（见本机状态订阅）：视频虽在播放，弹幕视为未播放
   const [startupJumpPending, setStartupJumpPending] = useState(false);
   const playing = isCasting ? castPlaying : localPlaying && !startupJumpPending;
@@ -138,6 +141,7 @@ export const DanmakuOverlay: React.FC = () => {
   const playbackDurationMillis = isCasting
     ? castDurationMillis
     : localDurationMillis;
+  const playbackRate = isCasting ? castPlaybackRate : localPlaybackRate;
   const { width: windowWidth, height } = useWindowDimensions();
   // 安卓沉浸式下 window 宽度会扣除挖孔/导航栏，弹幕起点以覆盖层实际宽度为准
   const [layoutWidth, setLayoutWidth] = useState(0);
@@ -160,6 +164,10 @@ export const DanmakuOverlay: React.FC = () => {
   const seekPrefillDeadlineRef = useRef(0);
   /** 播放器已结束 SEEK（isSeeking 变回 false），开始等待新位置真正播放 */
   const seekReleasedRef = useRef(false);
+  /** 本轮 SEEK 是否清屏重铺（偏差超出时间线窗口）；没清屏时屏上原有弹幕接着走 */
+  const seekClearedRef = useRef(false);
+  /** 本轮 SEEK 的比较基准：第一次 SEEK 前的渲染位置，连续多次 SEEK 不能各自只比上一次目标 */
+  const seekBaseSecRef = useRef(0);
   const lastSeekCommitVersionRef = useRef(seekCommitVersion);
   const seekSourceIsCastingRef = useRef(isCasting);
   const commentsBySecondRef = useRef<(DanmakuComment[] | undefined)[]>([]);
@@ -169,6 +177,8 @@ export const DanmakuOverlay: React.FC = () => {
   const settingsRef = useRef(settings);
   const densityRef = useRef<DanmakuDensity>(settings.density);
   const playingRef = useRef(playing);
+  /** 播放倍速：进度外推、跳变窗口、预铺坐标都要按它把真实时间换算成视频时间 */
+  const playbackRateRef = useRef(1);
   const nextIdRef = useRef(1);
   const lanesRef = useRef<LaneRuntime[]>([]);
   const nativeRef = useRef<React.ElementRef<typeof OrionDanmakuView>>(null);
@@ -178,6 +188,7 @@ export const DanmakuOverlay: React.FC = () => {
   commentsRef.current = comments;
   settingsRef.current = settings;
   playingRef.current = playing;
+  playbackRateRef.current = playbackRate > 0 ? playbackRate : 1;
 
   const lineHeight = Math.max(1, Math.round(settings.fontSize * 1.5));
   const screenHeight = Math.max(height, Dimensions.get("screen").height);
@@ -404,7 +415,8 @@ export const DanmakuOverlay: React.FC = () => {
   const prefillLanes = useCallback(
     (positionSec: number, hidden = false) => {
       const speedFactor = speedFactorRef.current;
-      const lookbackSec = width / (getDanmakuBaseSpeed(0) * speedFactor);
+      const rate = playbackRateRef.current;
+      const lookbackSec = getDanmakuJumpWindowSec(width, speedFactor, rate);
       const fromSecond = Math.max(0, Math.floor(positionSec - lookbackSec));
       const candidates: (PreparedComment & {
         comment: DanmakuComment;
@@ -418,7 +430,8 @@ export const DanmakuOverlay: React.FC = () => {
           candidates.push({
             ...prepared,
             comment,
-            time: comment.time,
+            // 倍速下视频时间差要换算成弹幕实际移动的真实时间，坐标才对
+            time: positionSec - (positionSec - comment.time) / rate,
             speed: prepared.baseSpeed * speedFactor,
           });
         });
@@ -457,10 +470,15 @@ export const DanmakuOverlay: React.FC = () => {
     }
     if (seekCommitVersion === lastSeekCommitVersionRef.current) return;
     lastSeekCommitVersionRef.current = seekCommitVersion;
+    // 连续 SEEK（上一次还没放行又 SEEK）：基准沿用第一次 SEEK 前的位置；
+    // 本轮已经清过屏的，屏上只剩为旧目标预铺的隐藏弹幕，必须按新目标重铺
+    const chainCleared = seekingRef.current && seekClearedRef.current;
+    if (!seekingRef.current) seekBaseSecRef.current = lastRenderedPositionRef.current;
     seekingRef.current = true;
     setApplyingSeek(true);
     syncMotionState(true);
     if (!playbackDurationMillis) {
+      seekClearedRef.current = true;
       rebuildLanes();
       return;
     }
@@ -468,15 +486,26 @@ export const DanmakuOverlay: React.FC = () => {
       0,
       Math.min(seekPosition * playbackDurationMillis, playbackDurationMillis),
     );
+    const targetSec = targetPositionMillis / 1000;
+    const windowSec = getDanmakuJumpWindowSec(
+      width,
+      speedFactorRef.current,
+      playbackRateRef.current,
+    );
+    seekClearedRef.current =
+      chainCleared || Math.abs(targetSec - seekBaseSecRef.current) > windowSec;
     seekTargetPositionRef.current = targetPositionMillis;
-    lastRenderedPositionRef.current = targetPositionMillis / 1000;
+    lastRenderedPositionRef.current = targetSec;
     lastAdvanceAtRef.current = Date.now();
     activeSecondRef.current = -1;
     activeBucketRef.current = [];
-    // 按目标位置提前铺好并挂载，但保持隐藏、暂停；等新位置真正开始播放再显示并移动（见调度循环），
-    // 把批量挂载的耗时放在缓冲期间
-    rebuildLanes();
-    prefillLanes(targetPositionMillis / 1000, true);
+    if (seekClearedRef.current) {
+      // 超出窗口：按目标位置提前铺好并挂载，但保持隐藏、暂停；等新位置真正开始播放再显示并移动（见调度循环），
+      // 把批量挂载的耗时放在缓冲期间
+      rebuildLanes();
+      prefillLanes(targetSec, true);
+    }
+    // 窗口内：屏上弹幕保留，暂停到新位置开始播放后接着走，新弹幕从目标时间点取
     seekReleasedRef.current = false;
   }, [
     isCasting,
@@ -486,6 +515,7 @@ export const DanmakuOverlay: React.FC = () => {
     seekCommitVersion,
     seekPosition,
     syncMotionState,
+    width,
   ]);
 
   useEffect(() => {
@@ -708,24 +738,30 @@ export const DanmakuOverlay: React.FC = () => {
 
       // SEEK 结束后等新位置真正开始播放：进度越过目标（且不是 SEEK 前的旧进度）才放行，
       // 显示提前铺好的弹幕，并按已播放的时长整体前进后开始移动
+      const rate = playbackRateRef.current;
       const seekTarget = seekTargetPositionRef.current;
       if (seekingRef.current && seekTarget !== null && seekReleasedRef.current) {
         const position = lastPositionRef.current;
+        // 倍速下一次进度上报就会前进好几秒，到位判定范围按倍速放大
         const reached =
           playingRef.current &&
           position > seekTarget &&
-          position <= seekTarget + SEEK_REACHED_WINDOW_MS;
+          position <= seekTarget + SEEK_REACHED_WINDOW_MS * rate;
         if (!reached && now <= seekPrefillDeadlineRef.current) return;
         seekingRef.current = false;
         seekReleasedRef.current = false;
         seekTargetPositionRef.current = null;
         setApplyingSeek(false);
         const playedMs = reached
-          ? Math.max(0, position + (now - lastAdvanceAtRef.current) - seekTarget)
+          ? Math.max(0, position + (now - lastAdvanceAtRef.current) * rate - seekTarget)
           : 0;
         sendCommand("revealAll");
         lastRenderedPositionRef.current = (seekTarget + playedMs) / 1000;
-        syncMotionState(!playingRef.current || stalledRef.current, playedMs);
+        // 预铺的弹幕按已播视频时长（换算成真实时间）前进；没清屏时屏上是原有弹幕，从暂停处接着走
+        syncMotionState(
+          !playingRef.current || stalledRef.current,
+          seekClearedRef.current ? playedMs / rate : 0,
+        );
         return;
       }
 
@@ -735,16 +771,16 @@ export const DanmakuOverlay: React.FC = () => {
       if (motionShouldPause) {
         return;
       }
+      // 两次进度上报之间按倍速外推
       const estimatedPositionSec = Math.max(
         0,
-        (lastPositionRef.current + (now - lastAdvanceAtRef.current)) / 1000,
+        (lastPositionRef.current + (now - lastAdvanceAtRef.current) * rate) / 1000,
       );
       // 跳变 = 偏离"上次渲染位置 + 本轮间隔"；JS 被卡住期间视频照常播放，不能当成跳变重铺
-      const expectedPositionSec = lastRenderedPositionRef.current + tickGapSec;
-      if (
-        estimatedPositionSec < expectedPositionSec - 1 ||
-        estimatedPositionSec > expectedPositionSec + 2
-      ) {
+      const expectedPositionSec = lastRenderedPositionRef.current + tickGapSec * rate;
+      // 偏差在时间线窗口内不清屏：屏上弹幕自然移出，新弹幕从当前时间点取
+      const jumpWindowSec = getDanmakuJumpWindowSec(width, speedFactorRef.current, rate);
+      if (Math.abs(estimatedPositionSec - expectedPositionSec) > jumpWindowSec) {
         rebuildLanes();
         prefillLanes(estimatedPositionSec);
         prefillPendingRef.current = false;

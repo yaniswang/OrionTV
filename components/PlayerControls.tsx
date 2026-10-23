@@ -31,7 +31,6 @@ import { MediaButton } from "@/components/MediaButton";
 import { StyledButton } from "./StyledButton";
 import usePlayerStore from "@/stores/playerStore";
 import useDetailStore from "@/stores/detailStore";
-import { useSources } from "@/stores/sourceStore";
 import { Battery } from '@brightlayer-ui/react-native-progress-icons';
 import { useBatteryLevel, useBatteryState, BatteryState } from 'expo-battery';
 import { format } from 'date-fns';
@@ -89,8 +88,11 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
     setShowDanmakuSettingsModal,
   } = usePlayerStore();
 
-  const { detail } = useDetailStore();
-  const resources = useSources();
+  // 只订阅用到的字段：测速期间 searchResults/sources 频繁更新，订阅整个 store 会让控制栏跟着重渲染
+  const detail = useDetailStore((s) => s.detail);
+  const currentSourceName = useDetailStore(
+    (s) => s.sources.find((r) => r.source === s.detail?.source)?.source_name,
+  );
   // 未配置弹幕 API 时隐藏所有弹幕入口
   const danmakuConfigured = useSettingsStore((state) => !!state.danmakuApiUrl.trim());
   const danmakuEnabled = useDanmakuStore((state) => state.enabled);
@@ -100,8 +102,6 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
   const videoTitle = detail?.title || "";
   const currentEpisode = episodes[currentEpisodeIndex];
   const currentEpisodeTitle = currentEpisode?.title;
-  const currentSource = resources.find((r) => r.source === detail?.source);
-  const currentSourceName = currentSource?.source_name;
   const displayTitle = buildPlaybackTitle({
     title: videoTitle,
     episodeCount: episodes.length,

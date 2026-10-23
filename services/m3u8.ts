@@ -193,11 +193,17 @@ const readText = async (response: Response) => ({
   body: await response.text(),
 });
 
-const readBytes = async (response: Response) => ({
-  status: response.status,
-  ok: response.ok,
-  byteLength: (await response.arrayBuffer()).byteLength,
-});
+/**
+ * 只取字节数，分片内容留在原生层：arrayBuffer() 在 RN 里是"原生 base64 → JS 逐字节解码"，
+ * 2MB 分片会同步卡住 JS 线程几百毫秒，解码耗时还会被算进加载耗时、拉低倍率。
+ * 读完立刻 close() 释放原生内存。
+ */
+const readBytes = async (response: Response) => {
+  const blob = (await response.blob()) as Blob & { close?: () => void };
+  const byteLength = blob.size;
+  blob.close?.();
+  return { status: response.status, ok: response.ok, byteLength };
+};
 
 const readHead = async (response: Response) => ({ status: response.status, ok: response.ok });
 

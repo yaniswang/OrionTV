@@ -48,7 +48,7 @@ const makeResponse = (status: number, body: string, bytes: number) => ({
   status,
   ok: status >= 200 && status < 300,
   text: async () => body,
-  arrayBuffer: async () => new ArrayBuffer(bytes),
+  blob: async () => ({ size: bytes, close: () => {} }),
 });
 
 beforeEach(() => {

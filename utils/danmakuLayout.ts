@@ -90,6 +90,18 @@ export const getDanmakuBaseSpeed = (textWidth: number): number =>
   Math.min(DANMAKU_MAX_SPEED, 67.5 + textWidth * 0.15);
 
 /**
+ * 时间线窗口（视频秒）：最慢弹幕横穿屏幕期间视频播过的时长。
+ * 屏上弹幕本来就分布在这段视频时间里，进度偏差不超过它就不清屏；也是预铺的回看范围。
+ */
+export const getDanmakuJumpWindowSec = (
+  screenWidth: number,
+  speedFactor: number,
+  playbackRate: number,
+): number =>
+  (screenWidth / (getDanmakuBaseSpeed(0) * speedFactor)) *
+  (playbackRate > 0 ? playbackRate : 1);
+
+/**
  * 计算从左向右运动的新弹幕起点。
  * 正常从屏幕左侧 x=0 开始；被前面弹幕挤占时允许使用负坐标。
  */
