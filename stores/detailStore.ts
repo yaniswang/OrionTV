@@ -94,8 +94,8 @@ const useDetailStore = create<DetailState>((set, get) => ({
 
     /**
      * 蜂窝网络（手机流量）下跳过"完整测速"：它要下载分片，很费流量。
-     * 轻量 PING（清单 + HEAD）保留；测速被跳过时不再比较代理/直连，
-     * 直接按默认路线播放——配了代理就走代理，没配就走直连。
+     * 轻量 PING（清单 + HEAD）保留，而且所有源都要 PING（包括推荐源）：
+     * 路线全靠 PING 判定——代理通就走代理，不通（如 CF 1034 返回 403）就回退直连。
      */
     let skipFullSpeedTest = false;
     try {
@@ -535,8 +535,8 @@ const useDetailStore = create<DetailState>((set, get) => ({
           logger.info(`[SUCCESS] Preferred source "${preferredSource}" found ${preferredResult.length} results for "${q}"`);
           // 推荐源跳过 PING，直接完整测速；成功才插入播放，失败继续用 WS 结果自动切源
           const preferred = preferredResult.find(item => String(item.id) === String(id)) ?? preferredResult[0];
-          const preferredItem = makeUnmeasuredSource(preferred);
-          // 蜂窝网络下跳过完整测速：不比较代理/直连，直接按默认路线（有代理走代理，否则直连）播放
+          // 蜂窝网络下用 PING 代替完整测速：PING 自带"代理不通回退直连"，确定路线后直接播放
+          const preferredItem = skipFullSpeedTest ? await pingSource(preferred) : makeUnmeasuredSource(preferred);
           const measured = preferredItem
             ? (skipFullSpeedTest ? true : await measureOneInner(preferredItem))
             : false;
@@ -549,7 +549,7 @@ const useDetailStore = create<DetailState>((set, get) => ({
             insertAndEnqueue(preferredItem, false);
             logger.info(
               skipFullSpeedTest
-                ? `[测速] 推荐源 ${preferred.source_name} 蜂窝网络跳过完整测速，按默认路线（${preferredItem.useProxy ? '代理' : '直连'}）播放并排到列表第一位`
+                ? `[测速] 推荐源 ${preferred.source_name} 蜂窝网络跳过完整测速，按 PING 判定的路线（${preferredItem.useProxy ? '代理' : '直连'}）播放并排到列表第一位`
                 : `[测速] 推荐源 ${preferred.source_name} 完整测速通过，开始播放并排到列表第一位`,
             );
           } else {
@@ -608,10 +608,11 @@ const useDetailStore = create<DetailState>((set, get) => ({
 
           // WS 一条返回就 ping：ping 完立刻进测速队列，队列马上按顺序测，
           // 不用等所有源都搜完（第一个 ping 返回时如果没有推荐源就会自动开始播放）；
-          // 有推荐源时 WS 其它源跳过 PING，直接进列表并排队测速
+          // 有推荐源时 WS 其它源跳过 PING，直接进列表并排队测速；
+          // 蜂窝网络下没有完整测速来纠正路线，其它源也必须 PING 定路线
           const fresh = takeFresh();
           if (fresh.length > 0) {
-            if (hasPreferredSource) {
+            if (hasPreferredSource && !skipFullSpeedTest) {
               // 有推荐源：WS 其它源跳过 PING，直接显示在列表里，然后按顺序测速
               for (const searchResult of fresh) {
                 insertAndEnqueue(makeUnmeasuredSource(searchResult));

@@ -691,7 +691,7 @@ describe('蜂窝网络下跳过完整测速', () => {
     expect(state.allSourcesLoaded).toBe(true);
   });
 
-  it('有推荐源：不 PING、不下分片，没配代理就按直连播放', async () => {
+  it('有推荐源：用 PING 代替完整测速、不下分片，没配代理就按直连播放', async () => {
     const preferred = makeSource(1, 'pref', 'https://pref.example.com/index.m3u8');
     mockApi.searchVideo.mockResolvedValue({ results: [preferred] });
     mockApi.searchVideosWs.mockResolvedValue([{ type: 'complete' }]);
@@ -705,7 +705,7 @@ describe('蜂窝网络下跳过完整测速', () => {
       .init('白日提灯', '白日提灯', '2025', undefined as unknown as string, 'pref', '1', '');
 
     const state = useDetailStore.getState();
-    expect(probeCalls).toBe(0); // 推荐源本来就不 PING
+    expect(probeCalls).toBeGreaterThan(0); // 推荐源也要 PING
     expect(counter.segmentGets).toBe(0); // 完整测速跳过
     expect(state.testingSource).toBeNull();
     expect(state.searchResults.map((result) => result.source)).toEqual(['pref']);
@@ -716,7 +716,7 @@ describe('蜂窝网络下跳过完整测速', () => {
     expect(first.episodes[0]).toBe('https://pref.example.com/index.m3u8');
   });
 
-  it('有推荐源且配了代理：跳过测速后直接按代理路线播放', async () => {
+  it('有推荐源且配了代理、代理 PING 通：按代理路线播放', async () => {
     const proxyPrefix = 'https://proxy.example.com/';
     const preferred = makeSource(1, 'pref', 'https://pref.example.com/index.m3u8');
     mockApi.searchVideo.mockResolvedValue({ results: [preferred] });
@@ -731,9 +731,82 @@ describe('蜂窝网络下跳过完整测速', () => {
       .init('白日提灯', '白日提灯', '2025', undefined as unknown as string, 'pref', '1', proxyPrefix);
 
     const state = useDetailStore.getState();
+    expect(probeCalls).toBeGreaterThan(0);
     expect(counter.segmentGets).toBe(0);
     const [first] = state.searchResults;
-    expect(first.useProxy).toBe(true); // 默认路线：配了代理 -> 代理
+    expect(first.useProxy).toBe(true);
     expect(first.episodes[0]).toBe(proxyPrefix + 'https://pref.example.com/index.m3u8');
+  });
+
+  /** 代理一律 403（模拟 CF 1034），直连正常 */
+  const mockProxyForbiddenFetch = (proxyPrefix: string, counter: { segmentGets: number }) => {
+    global.fetch = jest.fn(async (input: any, init: any = {}) => {
+      const url = String(input);
+      if (url.startsWith(proxyPrefix)) return makeResponse(403, 'error code: 1034', 0);
+      if (init.method === 'HEAD') {
+        probeCalls++;
+        return makeResponse(200, '', 0);
+      }
+      if (url.includes('.m3u8')) return makeResponse(200, PLAYLIST, 0);
+      counter.segmentGets++;
+      return makeResponse(200, '', 512 * 1024);
+    }) as any;
+  };
+
+  it('有推荐源且代理 403：推荐源和后续 WS 源都 PING 后回退直连', async () => {
+    const proxyPrefix = 'https://proxy.example.com/';
+    const preferred = makeSource(1, 'pref', 'https://pref.example.com/index.m3u8');
+    const other = makeSource(2, 'other', 'https://other.example.com/index.m3u8');
+    mockApi.searchVideo.mockResolvedValue({ results: [preferred] });
+    mockApi.searchVideosWs.mockResolvedValue([
+      { type: 'source_result', results: [other] },
+      { type: 'complete' },
+    ]);
+    mockNetInfoFetch.mockResolvedValue({ type: 'cellular' });
+
+    const counter = { segmentGets: 0 };
+    mockProxyForbiddenFetch(proxyPrefix, counter);
+
+    await useDetailStore
+      .getState()
+      .init('白日提灯', '白日提灯', '2025', undefined as unknown as string, 'pref', '1', proxyPrefix);
+
+    const state = useDetailStore.getState();
+    expect(counter.segmentGets).toBe(0);
+    expect(state.detail?.source).toBe('pref');
+    expect(state.searchResults.map((result) => result.source)).toEqual(['pref', 'other']);
+    for (const result of state.searchResults) {
+      expect(result.useProxy).toBe(false);
+      expect(result.episodes[0].startsWith(proxyPrefix)).toBe(false);
+    }
+  });
+
+  it('有推荐源但代理和直连都 PING 不通：不插入推荐源，改用 WS 其它源', async () => {
+    const proxyPrefix = 'https://proxy.example.com/';
+    const preferred = makeSource(1, 'pref', 'https://pref.example.com/index.m3u8');
+    const other = makeSource(2, 'other', 'https://other.example.com/index.m3u8');
+    mockApi.searchVideo.mockResolvedValue({ results: [preferred] });
+    mockApi.searchVideosWs.mockResolvedValue([
+      { type: 'source_result', results: [other] },
+      { type: 'complete' },
+    ]);
+    mockNetInfoFetch.mockResolvedValue({ type: 'cellular' });
+
+    global.fetch = jest.fn(async (input: any, init: any = {}) => {
+      const url = String(input);
+      if (url.startsWith(proxyPrefix) || url.includes('pref.example.com')) return makeResponse(403, '', 0);
+      if (init.method === 'HEAD') return makeResponse(200, '', 0);
+      if (url.includes('.m3u8')) return makeResponse(200, PLAYLIST, 0);
+      return makeResponse(200, '', 512 * 1024);
+    }) as any;
+
+    await useDetailStore
+      .getState()
+      .init('白日提灯', '白日提灯', '2025', undefined as unknown as string, 'pref', '1', proxyPrefix);
+
+    const state = useDetailStore.getState();
+    expect(state.searchResults.map((result) => result.source)).toEqual(['other']);
+    expect(state.detail?.source).toBe('other');
+    expect(state.detail?.useProxy).toBe(false);
   });
 });
