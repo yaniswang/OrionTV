@@ -20,6 +20,8 @@ const useFavoritesStore = create<FavoritesState>((set) => ({
       const playRecords = await PlayRecordManager.getAll();
       const favoritesArray = [];
       Object.entries(favoritesData).map(([key, value]) => {
+        // 直播频道收藏只在直播页的「收藏」分组里显示
+        if (value?.origin === 'live') return;
         const favoriteObj = { ...value, key }
         const playRecord = playRecords[key];
         if(playRecord) {

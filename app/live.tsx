@@ -28,7 +28,8 @@ import Toast from "@/utils/Toast";
 import { useKeepAwake } from "expo-keep-awake";
 import LiveInfoBar from "@/components/live/LiveInfoBar";
 import LiveSeekBar, { PlaybackBadge } from "@/components/live/LiveSeekBar";
-import LiveChannelPanel from "@/components/live/LiveChannelPanel";
+import LiveChannelPanel, { FAVORITE_GROUP } from "@/components/live/LiveChannelPanel";
+import { loadLiveFavorites, addLiveFavorite, removeLiveFavorite } from "@/services/liveFavorites";
 import { LC, KeyHint, RoundButton, TouchTopBar } from "@/components/live/LiveUI";
 
 // 投屏入口只在手机和平板出现
@@ -76,7 +77,7 @@ const playbackEnd = (pb: Playback) =>
   isShiftStream(pb) ? Date.now() - LIVE_GUARD - SHIFT_TAIL_MARGIN : pb.actualEnd ?? pb.win.end;
 
 export default function LiveScreen() {
-  const { m3uUrl, m3uUa, epgUrl } = useSettingsStore();
+  const { m3uUrl, m3uUa, epgUrl, liveSourceKey, liveSourceName } = useSettingsStore();
   const router = useRouter();
   // 投屏时本机播放器已卸载，页面层保持常亮（与剧集页一致）
   useKeepAwake();
@@ -413,6 +414,64 @@ export default function LiveScreen() {
     loadChannels();
   }, [m3uUrl]);
 
+  // ---------- 频道收藏（服务端，与网页版互通） ----------
+  // 频道 → 服务端存储 key，按频道原顺序
+  const [favorites, setFavorites] = useState<Map<Channel, string>>(new Map());
+  useEffect(() => {
+    if (!liveSourceKey || channels.length === 0) return;
+    let cancelled = false;
+    loadLiveFavorites(liveSourceKey, channels)
+      .then((m) => { if (!cancelled) setFavorites(m); })
+      .catch((e) => console.warn('加载直播收藏失败', e));
+    return () => { cancelled = true; };
+  }, [liveSourceKey, channels]);
+
+  const favoritesRef = useRef(favorites);
+  favoritesRef.current = favorites;
+  const toggleFavorite = useCallback(async (ch: Channel) => {
+    if (!liveSourceKey) return;
+    const order = new Map(channels.map((c, i) => [c, i]));
+    const sorted = (m: Map<Channel, string>) => new Map([...m].sort((a, b) => order.get(a[0])! - order.get(b[0])!));
+    const oldKey = favoritesRef.current.get(ch);
+    // 先改界面，请求失败再改回来
+    setFavorites((m) => {
+      const next = new Map(m);
+      if (oldKey) next.delete(ch);
+      else next.set(ch, '');
+      return sorted(next);
+    });
+    try {
+      if (oldKey) {
+        await removeLiveFavorite(oldKey);
+        Toast.show({ type: 'info', text1: `已取消收藏 ${ch.name}` });
+      } else {
+        const key = await addLiveFavorite(liveSourceKey, liveSourceName, ch);
+        setFavorites((m) => (m.has(ch) ? new Map(m).set(ch, key) : m));
+        Toast.show({ type: 'success', text1: `已收藏 ${ch.name}`, text2: '在「收藏」分组里能找到' });
+      }
+    } catch (e) {
+      setFavorites((m) => {
+        const next = new Map(m);
+        if (oldKey) next.set(ch, oldKey);
+        else next.delete(ch);
+        return sorted(next);
+      });
+      Toast.show({ type: 'error', text1: oldKey ? '取消收藏失败' : '收藏失败', text2: '请稍后重试' });
+    }
+  }, [channels, liveSourceKey, liveSourceName]);
+
+  // 面板里的分组：「收藏」固定在最上面
+  const panelGroups = useMemo(() => [FAVORITE_GROUP, ...channelGroups], [channelGroups]);
+  const panelGrouped = useMemo<Record<string, Channel[]>>(
+    () => ({ ...groupedChannels, [FAVORITE_GROUP]: [...favorites.keys()] }),
+    [groupedChannels, favorites],
+  );
+  // 从哪个分组选的台，下次打开面板就停在哪个分组（该频道已不在那个分组时回到它自己的分组）
+  const [pickedGroup, setPickedGroup] = useState<string | null>(null);
+  const channelGroup = channel && pickedGroup && panelGrouped[pickedGroup]?.includes(channel)
+    ? pickedGroup
+    : channel?.group || "Other";
+
   const onChannelShown = (title: string) => {
     if (useDlnaStore.getState().enabled) {
       Toast.show({ type: 'info', text1: `电视已切换到 ${title}` });
@@ -427,16 +486,21 @@ export default function LiveScreen() {
     onChannelShown(channels[index].name);
   }, [channels, goLive]);
 
+  // 换台按面板的分组顺序（收藏 → 各分组）走：在当前分组里切，到分组末尾接下一个分组，首尾循环
   const changeChannel = useCallback((direction: "next" | "prev") => {
-    if (channels.length === 0) return;
-    const newIndex =
-      direction === "next"
-        ? (currentChannelIndex + 1) % channels.length
-        : (currentChannelIndex - 1 + channels.length) % channels.length;
-    switchToChannel(newIndex);
-  }, [channels, currentChannelIndex, switchToChannel]);
+    if (!channel) return;
+    const seq = panelGroups.flatMap((g) => (panelGrouped[g] || []).map((c) => ({ g, c })));
+    if (seq.length === 0) return;
+    let pos = seq.findIndex((x) => x.g === channelGroup && x.c === channel);
+    if (pos < 0) pos = seq.findIndex((x) => x.c === channel);
+    const next = seq[(pos + (direction === "next" ? 1 : -1) + seq.length) % seq.length];
+    const index = channels.indexOf(next.c);
+    if (index < 0) return;
+    setPickedGroup(next.g);
+    switchToChannel(index);
+  }, [channel, channels, channelGroup, panelGroups, panelGrouped, switchToChannel]);
 
-  // 面板里按 OK 选中后面板关闭，同一次按键松开时的 select 事件还会再到页面一次，要忽略
+  // 触屏：点面板外关闭面板时，同一次点击还会传到播放器，关闭后 300ms 内忽略点击（遥控器的 select 见 swallowNextSelect）
   const panelClosedAt = useRef(0);
   const closePanel = useCallback(() => {
     panelClosedAt.current = Date.now();
@@ -451,16 +515,27 @@ export default function LiveScreen() {
     setEpgReloadKey((k) => k + 1);
   }, []);
 
-  const selectChannelFromPanel = useCallback((ch: Channel, shouldClose: boolean) => {
+  // 面板里按 OK 选台 / 回看后面板关闭，同一次按键的 select 随后还会到页面一次，要吞掉。
+  // 实测小米电视上晚到 570ms（JS 忙时更久），不能按固定时间窗判断：只吞紧接着的一次，1.5 秒后失效
+  const swallowSelectUntil = useRef(0);
+  const swallowNextSelect = () => {
+    if (isTV) swallowSelectUntil.current = Date.now() + 1500;
+  };
+
+  const selectChannelFromPanel = useCallback((ch: Channel, shouldClose: boolean, group: string) => {
     const index = channels.indexOf(ch);
     if (index < 0) return;
+    if (shouldClose) swallowNextSelect();
+    setPickedGroup(group);
     if (index !== currentChannelIndex || st.current.playback) switchToChannel(index);
     if (shouldClose) closePanel();
   }, [channels, currentChannelIndex, switchToChannel, closePanel]);
 
-  const playSegmentFromPanel = useCallback((ch: Channel, seg: Segment) => {
+  const playSegmentFromPanel = useCallback((ch: Channel, seg: Segment, group: string) => {
     const index = channels.indexOf(ch);
     if (index < 0) return;
+    swallowNextSelect();
+    setPickedGroup(group);
     if (index !== currentChannelIndex) {
       setCurrentChannelIndex(index);
       // 换台后 programs / canCatchup 要等下一次渲染，这里先手动写入
@@ -579,7 +654,11 @@ export default function LiveScreen() {
           if (event.eventKeyAction === 0) openPanel(true);
           break;
         case "select":
-          if (Date.now() - panelClosedAt.current < 300) break;
+          if (swallowSelectUntil.current) {
+            const swallow = Date.now() < swallowSelectUntil.current;
+            swallowSelectUntil.current = 0;
+            if (swallow) break;
+          }
           if (s.playback) togglePause();
           else openPanel(false);
           break;
@@ -920,8 +999,11 @@ export default function LiveScreen() {
       {panelOpen && channel && (
         <LiveChannelPanel
           channels={channels}
-          groups={channelGroups}
-          grouped={groupedChannels}
+          groups={panelGroups}
+          grouped={panelGrouped}
+          initialGroup={channelGroup}
+          favorites={favorites}
+          onToggleFavorite={liveSourceKey ? toggleFavorite : undefined}
           currentChannel={channel}
           epg={epg}
           tz={tz}

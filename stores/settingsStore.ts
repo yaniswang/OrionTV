@@ -20,6 +20,9 @@ interface SettingsState {
   m3uUa: string;
   /** 来自直播源接口，为空表示没有节目单 */
   epgUrl: string;
+  /** 直播源的 key / 名称：频道收藏的存储 key 和显示用（与网页版一致） */
+  liveSourceKey: string;
+  liveSourceName: string;
   remoteInputEnabled: boolean;
   videoSource: {
     enabledAll: boolean;
@@ -51,6 +54,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   m3uUrl: "",
   m3uUa: '',
   epgUrl: '',
+  liveSourceKey: '',
+  liveSourceName: '',
   remoteInputEnabled: false,
   isModalVisible: false,
   serverConfig: null,
@@ -101,6 +106,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           m3uUrl: source.url,
           m3uUa: source.ua,
           epgUrl: source.epg?.trim() ?? '',
+          liveSourceKey: source.key ?? '',
+          liveSourceName: source.name ?? '',
         });
         logger.info(`Live source url: ${source.url}, ua: ${source.ua}, epg: ${source.epg || 'none'}`);
       }

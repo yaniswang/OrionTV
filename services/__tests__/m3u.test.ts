@@ -76,6 +76,34 @@ describe('parseM3UPlaylist', () => {
     expect(parseM3UPlaylist(text).channels[0].catchup?.days).toBeUndefined();
   });
 
+  it('webIndex 与 LunaTV 网页版的频道序号一致（网页版跳过地址前夹注释行、没有名称的频道）', () => {
+    const text = [
+      '#EXTM3U',
+      '#EXTINF:-1,A',
+      'https://a/a',
+      '',
+      '#EXTINF:-1,B',
+      '#EXTVLCOPT:http-user-agent=x',
+      'https://a/b',
+      '#EXTINF:-1,',
+      'https://a/noname',
+      '#EXTINF:-1,C',
+      'https://a/c',
+    ].join('\n');
+    const { channels } = parseM3UPlaylist(text);
+    expect(channels.map((c) => [c.name, c.webIndex])).toEqual([
+      ['A', 0],
+      ['B', undefined],
+      ['Unknown', undefined],
+      ['C', 1],
+    ]);
+  });
+
+  it('webIndex：同一地址出现多次时按顺序对应', () => {
+    const text = ['#EXTM3U', '#EXTINF:-1,A', 'https://a/x', '#EXTINF:-1,B', 'https://a/x'].join('\n');
+    expect(parseM3UPlaylist(text).channels.map((c) => c.webIndex)).toEqual([0, 1]);
+  });
+
   it('不认识的 catchup 模式当作不支持回看', () => {
     const text = ['#EXTM3U catchup="shift" catchup-source="?utc={utc}"', '#EXTINF:-1,X', 'https://a/x'].join('\n');
     expect(parseM3UPlaylist(text).channels[0].catchup).toBeUndefined();

@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { View, Text, StyleSheet, Platform, Pressable } from "react-native";
 import { SkipBack, Rewind, Pause, Play, FastForward, SkipForward } from "lucide-react-native";
 import { Segment, formatClock, formatDuration, dayLabel, dayStartOf } from "@/services/liveTimeline";
-import { LC, KeyHint, LivePill, RoundButton } from "./LiveUI";
+import { LC, KeyHint, LivePill, RoundButton, BOTTOM_STRIP } from "./LiveUI";
 
 interface BarProps {
   channelName: string;
@@ -39,13 +39,17 @@ export default function LiveSeekBar(p: BarProps) {
   const frac = (t: number) => `${Math.max(0, Math.min(1, (t - seg.start) / dur)) * 100}%` as const;
   const color = isShift ? LC.accent : LC.catchup;
   const [trackWidth, setTrackWidth] = useState(0);
+  // 触屏按钮：手机上与剧集控制条一样无底色、稍小
+  const btnSize = p.compact ? 44 : 48;
+  const iconSize = p.compact ? 20 : 22;
+  const gap = p.compact ? styles.gapCompact : styles.gap;
 
   return (
     <View style={[styles.bar, p.compact && styles.barCompact]}>
-      <View style={styles.titleRow}>
-        <Text style={styles.channel}>{p.channelName}</Text>
-        <Text style={styles.title} numberOfLines={1}>{segTitle(seg, tz)}</Text>
-        {seg.title !== null && <Text style={styles.range}>{formatClock(seg.start, tz)} – {formatClock(seg.end, tz)}</Text>}
+      <View style={[styles.titleRow, p.compact && styles.titleRowCompact]}>
+        <Text style={[styles.channel, p.compact && styles.channelCompact]}>{p.channelName}</Text>
+        <Text style={[styles.title, p.compact && styles.titleCompact]} numberOfLines={1}>{segTitle(seg, tz)}</Text>
+        {seg.title !== null && <Text style={[styles.range, p.compact && styles.rangeCompact]}>{formatClock(seg.start, tz)} – {formatClock(seg.end, tz)}</Text>}
       </View>
       {/* 触屏点击进度条跳转；里面的元素不接收触摸，点击位置才是相对整条进度条的 */}
       <Pressable
@@ -59,19 +63,20 @@ export default function LiveSeekBar(p: BarProps) {
           const f = Math.max(0, Math.min(1, e.nativeEvent.locationX / trackWidth));
           p.onSeekTo(seg.start + f * dur);
         }}
-        style={styles.trackTouch}
+        style={[styles.trackTouch, p.compact && styles.trackTouchCompact]}
       >
-        <View style={styles.track} pointerEvents="none">
+        <View style={[styles.track, p.compact && styles.trackCompact]} pointerEvents="none">
           <View style={[styles.done, { width: frac(position), backgroundColor: color }]} />
           {isShift && <View style={[styles.unavail, { left: frac(now) }]} />}
           {isShift && <View style={[styles.edge, { left: frac(now) }]} />}
-          <View style={[styles.knob, { left: frac(position) }]} />
-          <View style={[styles.bubbleWrap, { left: frac(position) }]}>
-            <Text style={styles.bubble}>{formatClock(position, tz, true)}</Text>
+          <View style={[styles.knob, p.compact && styles.knobCompact, { left: frac(position) }]} />
+          <View style={[styles.bubbleWrap, p.compact && styles.bubbleWrapCompact, { left: frac(position) }]}>
+            <Text style={[styles.bubble, p.compact && styles.bubbleCompact]}>{formatClock(position, tz, true)}</Text>
           </View>
         </View>
       </Pressable>
-      <View style={styles.labels}>
+      {/* 手机：起止时间 / 时长并进按钮行中间，「上一个 / 下一个」节目名不显示（两端按钮就是上下一个节目） */}
+      {!p.compact && <View style={styles.labels}>
         {isShift ? (
           <>
             <Text style={styles.label}>{formatClock(seg.start, tz)}</Text>
@@ -90,7 +95,7 @@ export default function LiveSeekBar(p: BarProps) {
             </View>
           </>
         )}
-      </View>
+      </View>}
       {Platform.isTV ? (
         <View style={styles.hints}>
           <KeyHint k="◀▶" label="快退 / 快进（长按加速）" />
@@ -101,16 +106,24 @@ export default function LiveSeekBar(p: BarProps) {
         </View>
       ) : (
         <View style={styles.ctrls}>
-          <RoundButton label="上一个节目" onPress={p.onPrevSegment}><SkipBack color={LC.text} size={22} /></RoundButton>
-          <RoundButton label="后退 30 秒" onPress={p.onBack} style={styles.gap}><Rewind color={LC.text} size={22} /></RoundButton>
-          <RoundButton label={p.paused ? "继续" : "暂停"} onPress={p.onTogglePause} style={styles.gap}>
-            {p.paused ? <Play color={LC.text} size={22} /> : <Pause color={LC.text} size={22} />}
+          <RoundButton label="上一个节目" ghost size={btnSize} onPress={p.onPrevSegment}><SkipBack color={LC.text} size={iconSize} /></RoundButton>
+          <RoundButton label="后退 30 秒" ghost size={btnSize} onPress={p.onBack} style={gap}><Rewind color={LC.text} size={iconSize} /></RoundButton>
+          <RoundButton label={p.paused ? "继续" : "暂停"} ghost size={btnSize} onPress={p.onTogglePause} style={gap}>
+            {p.paused ? <Play color={LC.text} size={iconSize} /> : <Pause color={LC.text} size={iconSize} />}
           </RoundButton>
-          <RoundButton label="前进 30 秒" onPress={p.onForward} style={styles.gap}><FastForward color={LC.text} size={22} /></RoundButton>
-          <RoundButton label="下一个节目" onPress={p.onNextSegment} style={styles.gap}><SkipForward color={LC.text} size={22} /></RoundButton>
-          <View style={{ flex: 1 }} />
-          <RoundButton label="节目单" onPress={p.onOpenEpg} />
-          <RoundButton label="回到直播" primary onPress={p.onGoLive} style={styles.gap} />
+          <RoundButton label="前进 30 秒" ghost size={btnSize} onPress={p.onForward} style={gap}><FastForward color={LC.text} size={iconSize} /></RoundButton>
+          <RoundButton label="下一个节目" ghost size={btnSize} onPress={p.onNextSegment} style={gap}><SkipForward color={LC.text} size={iconSize} /></RoundButton>
+          <View style={styles.ctrlCenter}>
+            {p.compact && (isShift ? (
+              <Text style={styles.label} numberOfLines={1}>
+                {formatClock(seg.start, tz)} – {formatClock(seg.end, tz)} · <Text style={{ color: LC.liveText }}>直播 {formatClock(now, tz)}</Text>
+              </Text>
+            ) : (
+              <Text style={styles.label} numberOfLines={1}>{formatDuration(position - seg.start)} / {formatDuration(dur)}</Text>
+            ))}
+          </View>
+          <RoundButton label="节目单" ghost size={btnSize} onPress={p.onOpenEpg} />
+          <RoundButton label="回到直播" primary size={btnSize} onPress={p.onGoLive} style={gap} />
         </View>
       )}
     </View>
@@ -133,31 +146,37 @@ export function PlaybackBadge({ seg, position, now, tz, displayTz, touch }: { se
 }
 
 const styles = StyleSheet.create({
+  // 与剧集控制条一致：贴底通栏、半透明黑；内容离屏幕边缘的距离与原来的卡片一致（电视留出安全区）
   bar: {
-    position: "absolute",
-    left: 40,
-    right: 40,
-    bottom: 36,
+    ...BOTTOM_STRIP,
     paddingTop: 22,
-    paddingBottom: 20,
-    paddingHorizontal: 28,
-    borderRadius: 16,
-    backgroundColor: LC.bar,
+    paddingBottom: 56,
+    paddingHorizontal: 68,
     gap: 14,
   },
-  barCompact: { left: 24, right: 24, bottom: 16, paddingTop: 14, paddingBottom: 14, paddingHorizontal: 20, gap: 10 },
+  // 手机：横屏只有 360～410dp 高，原来约 185dp 挡住近一半画面；合并成标题、进度条、按钮三行
+  barCompact: { paddingTop: 10, paddingBottom: 6, paddingHorizontal: 20, gap: 6 },
   titleRow: { flexDirection: "row", alignItems: "baseline", gap: 14 },
+  titleRowCompact: { gap: 10 },
   channel: { fontSize: 20, fontWeight: "700", color: LC.text },
+  channelCompact: { fontSize: 15 },
   title: { fontSize: 18, color: LC.text, flexShrink: 1 },
+  titleCompact: { fontSize: 14 },
   range: { fontSize: 14, color: LC.muted, fontVariant: ["tabular-nums"] },
+  rangeCompact: { fontSize: 12 },
   trackTouch: { marginTop: 26 },
+  trackTouchCompact: { marginTop: 22 },
   track: { height: 8, borderRadius: 4, backgroundColor: LC.line },
+  trackCompact: { height: 6, borderRadius: 3 },
   done: { position: "absolute", left: 0, top: 0, bottom: 0, borderRadius: 4 },
   unavail: { position: "absolute", right: 0, top: 0, bottom: 0, backgroundColor: "#1d2229", borderTopRightRadius: 4, borderBottomRightRadius: 4 },
   edge: { position: "absolute", top: -6, bottom: -6, width: 3, marginLeft: -1, backgroundColor: LC.live, borderRadius: 2 },
   knob: { position: "absolute", top: -6, width: 20, height: 20, marginLeft: -10, borderRadius: 10, backgroundColor: LC.text },
+  knobCompact: { top: -5, width: 16, height: 16, marginLeft: -8, borderRadius: 8 },
   bubbleWrap: { position: "absolute", bottom: 18, width: 100, marginLeft: -50, alignItems: "center" },
+  bubbleWrapCompact: { bottom: 14 },
   bubble: { paddingHorizontal: 10, paddingVertical: 2, borderRadius: 6, overflow: "hidden", backgroundColor: LC.text, color: LC.dark, fontSize: 14, fontWeight: "700", fontVariant: ["tabular-nums"] },
+  bubbleCompact: { fontSize: 12, paddingHorizontal: 8 },
   labels: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   label: { fontSize: 13, color: LC.muted, fontVariant: ["tabular-nums"] },
   // 回看：左「上一个」、中间时长居中、右「下一个」；两侧等宽，中间才真正居中
@@ -166,7 +185,9 @@ const styles = StyleSheet.create({
   center: { marginHorizontal: 16 },
   hints: { flexDirection: "row", flexWrap: "wrap", gap: 22 },
   ctrls: { flexDirection: "row", alignItems: "center" },
+  ctrlCenter: { flex: 1, alignItems: "center", paddingHorizontal: 8, minWidth: 0 },
   gap: { marginLeft: 10 },
+  gapCompact: { marginLeft: 4 },
   badge: {
     position: "absolute",
     top: 28,

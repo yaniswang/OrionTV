@@ -292,6 +292,8 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
           return {...item[1], source, id};
         })
         const findedFavorite = arrFavoritesData.find(item => {
+          // 直播频道收藏年份为空，同名时会被误当成这部影片的旧收藏
+          if (item.origin === 'live') return false;
           const itemStype = item.total_episodes > 1 ? 'tv' : 'movie';
           return item.title.replace(' ', '') == title && item.year == year && (stype !== undefined && itemStype === stype || stype === undefined)
         });

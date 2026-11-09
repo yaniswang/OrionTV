@@ -2,23 +2,37 @@
 import React from "react";
 import { View, Text, StyleSheet, Pressable, StyleProp, ViewStyle } from "react-native";
 import { ChevronLeft } from "lucide-react-native";
+import { Colors } from "@/constants/Colors";
 
 export const LC = {
   panel: "rgba(10, 12, 16, 0.95)",
-  bar: "rgba(10, 12, 16, 0.9)",
   text: "#F2F4F7",
   muted: "#A3ACB9",
   dim: "#7F8896",
   soft: "#D5DAE1",
   line: "#2c323b",
   row: "#232830",
-  accent: "#F5A524",
+  /** 与应用主色一致 */
+  accent: Colors.dark.primary,
+  /** 大行（频道、节目单）焦点的底色，配左侧主色竖条 */
+  focusRow: "#26332d",
+  /** 焦点上的文字 */
+  onAccent: "#FFFFFF",
+  onAccentMuted: "rgba(255, 255, 255, 0.85)",
+  /** 主色的半透明描边 */
+  accentLine: "rgba(0, 187, 94, 0.5)",
   live: "#FF5A5F",
   liveText: "#FF7A7E",
   catchup: "#5AA9FF",
   catchupText: "#8EC4FF",
   dark: "#0B0D11",
 };
+
+/**
+ * 底部控制条（信息条、时移 / 回看进度条）：与剧集控制条一样贴底通栏、半透明黑。
+ * 剧集控制条几乎全是按钮用 0.4；直播这里文字多，0.4 在亮画面上看不清，用 0.6
+ */
+export const BOTTOM_STRIP: ViewStyle = { position: "absolute", left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0, 0, 0, 0.6)" };
 
 /** 遥控器按键提示：[OK] 频道与节目单 */
 export function KeyHint({ k, label }: { k: string; label: string }) {
@@ -30,19 +44,19 @@ export function KeyHint({ k, label }: { k: string; label: string }) {
   );
 }
 
-export function LivePill({ text = "直播", inverted = false }: { text?: string; inverted?: boolean }) {
+export function LivePill({ text = "直播" }: { text?: string }) {
   return (
-    <View style={[styles.pill, { backgroundColor: inverted ? LC.dark : "rgba(255, 90, 95, 0.16)" }]}>
+    <View style={[styles.pill, { backgroundColor: "rgba(255, 90, 95, 0.16)" }]}>
       <View style={styles.liveDot} />
-      <Text style={[styles.pillText, { color: inverted ? "#FF9497" : LC.liveText }]}>{text}</Text>
+      <Text style={[styles.pillText, { color: LC.liveText }]}>{text}</Text>
     </View>
   );
 }
 
-export function CatchupPill({ inverted = false }: { inverted?: boolean }) {
+export function CatchupPill() {
   return (
-    <View style={[styles.pill, styles.pillOutline, inverted && { borderColor: LC.dark }]}>
-      <Text style={[styles.pillText, { color: inverted ? LC.dark : LC.catchupText }]}>回看</Text>
+    <View style={[styles.pill, styles.pillOutline]}>
+      <Text style={[styles.pillText, { color: LC.catchupText }]}>回看</Text>
     </View>
   );
 }
@@ -56,12 +70,17 @@ export function ProgressBar({ progress, height = 6, color = LC.accent }: { progr
   );
 }
 
-/** 触屏圆按钮，最小 48×48 */
-export function RoundButton({ onPress, label, children, primary = false, style }: {
+/**
+ * 触屏圆按钮，默认 48×48。
+ * ghost：无底色（与剧集控制条一致，用在半透明控制条上）；size：高度（手机控制条用 44）
+ */
+export function RoundButton({ onPress, label, children, primary = false, ghost = false, size = 48, style }: {
   onPress: () => void;
   label: string;
   children?: React.ReactNode;
   primary?: boolean;
+  ghost?: boolean;
+  size?: number;
   style?: StyleProp<ViewStyle>;
 }) {
   return (
@@ -71,13 +90,15 @@ export function RoundButton({ onPress, label, children, primary = false, style }
       onPress={onPress}
       style={({ pressed }) => [
         styles.round,
-        children ? styles.roundIcon : null,
+        { minWidth: size, minHeight: size, borderRadius: size / 2, paddingHorizontal: size / 3 },
+        children ? [styles.roundIcon, { width: size }] : null,
+        ghost && styles.roundGhost,
         primary && styles.roundPrimary,
         pressed && { opacity: 0.7 },
         style,
       ]}
     >
-      {children ?? <Text style={[styles.roundText, primary && { color: LC.dark, fontWeight: "700" }]}>{label}</Text>}
+      {children ?? <Text style={[styles.roundText, size < 48 && styles.roundTextSmall, primary && styles.roundTextPrimary]}>{label}</Text>}
     </Pressable>
   );
 }
@@ -122,8 +143,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  roundIcon: { paddingHorizontal: 0, width: 48 },
-  roundPrimary: { backgroundColor: LC.text },
+  roundIcon: { paddingHorizontal: 0 },
+  roundGhost: { backgroundColor: "transparent" },
+  // 主按钮用应用主色
+  roundPrimary: { backgroundColor: LC.accent },
   roundText: { color: LC.text, fontSize: 16 },
+  roundTextSmall: { fontSize: 14 },
+  roundTextPrimary: { color: LC.onAccent, fontWeight: "700" },
   topBar: { position: "absolute", top: 20, left: 24, right: 24, flexDirection: "row", alignItems: "center" },
 });

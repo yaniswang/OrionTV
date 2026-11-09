@@ -14,7 +14,29 @@ export interface Channel {
   tvgName: string;
   /** 没有回放参数时为空，表示不支持回看 */
   catchup?: CatchupConfig;
+  /** LunaTV 网页版里的频道序号（收藏的 key 用它，与网页版互通）；网页版解析不到这个频道时为空 */
+  webIndex?: number;
 }
+
+/**
+ * 按 LunaTV 网页版（src/lib/live.ts parseM3U）的规则列出它能解析到的频道地址，下标即网页版的频道序号。
+ * 与本地解析的差别：地址必须紧跟 #EXTINF 行（中间夹 #EXTVLCOPT 等注释行的频道被跳过），没有名称的频道被跳过。
+ */
+const webChannelUrls = (lines: string[]): string[] => {
+  const ls = lines.map((l) => l.trim()).filter((l) => l.length > 0);
+  const urls: string[] = [];
+  for (let i = 0; i < ls.length; i++) {
+    const line = ls[i];
+    if (!line.startsWith('#EXTINF:')) continue;
+    if (i + 1 < ls.length && !ls[i + 1].startsWith('#')) {
+      const title = line.match(/,([^,]*)$/)?.[1].trim() ?? '';
+      const tvgName = line.match(/tvg-name="([^"]*)"/)?.[1] ?? '';
+      if (title || tvgName) urls.push(ls[i + 1]);
+      i++;
+    }
+  }
+  return urls;
+};
 
 const attr = (part: string, name: string): string | undefined => {
   const m = part.match(new RegExp(`${name}="([^"]*)"`, 'i'));
@@ -91,6 +113,18 @@ export const parseM3UPlaylist = (m3uText: string): { channels: Channel[] } => {
       parsedChannels.push(finalChannel);
       currentChannelInfo = null; // Reset for the next channel
     }
+  }
+
+  // 网页版序号：同一地址可能出现多次，按出现顺序一一对应
+  const webIndexes = new Map<string, number[]>();
+  webChannelUrls(lines).forEach((url, i) => {
+    const list = webIndexes.get(url);
+    if (list) list.push(i);
+    else webIndexes.set(url, [i]);
+  });
+  for (const ch of parsedChannels) {
+    const idx = webIndexes.get(ch.url)?.shift();
+    if (idx !== undefined) ch.webIndex = idx;
   }
   return { channels: parsedChannels };
 };

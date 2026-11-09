@@ -69,6 +69,8 @@ export interface Favorite {
   search_title: string;
   year: string;
   save_time?: number;
+  /** 'live' 是直播频道收藏（与 LunaTV 网页版一致），影视收藏没有这个字段 */
+  origin?: 'vod' | 'live';
 }
 
 export interface PlayRecord {
