@@ -110,6 +110,27 @@ export async function resolveLivePlayUrl(url: string, userAgent: string): Promis
   }
 }
 
+/**
+ * 时移：由原生代理把固定一段的回看拼成从 beginMs 开始、持续增长的清单（播放器当直播刷新，不用每段重新加载）。
+ * 原生不可用或失败时返回 null，调用方退回固定一段的回看。
+ */
+export async function createTimeshiftUrl(
+  template: string,
+  beginMs: number,
+  tzMinutes: number,
+  guardMs: number,
+  userAgent: string,
+): Promise<string | null> {
+  if (!(await ensureLocalProxy())) return null;
+  try {
+    const url = await getNativeMediaProxy()?.createTimeshift?.(template, beginMs, tzMinutes, guardMs, userAgent);
+    return typeof url === 'string' && url ? url : null;
+  } catch (error) {
+    logger.warn(`原生代理创建时移失败: ${String(error)}`);
+    return null;
+  }
+}
+
 /** 批量包装剧集地址；整份列表没有 HLS 时不启动代理。 */
 export async function mapEpisodesWithLocalProxy(urls: string[]): Promise<string[]> {
   if (!urls.some((url) => isHlsUrl(url))) return urls;

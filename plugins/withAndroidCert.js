@@ -58,6 +58,7 @@ function withCertFiles(config) {
       fs.copyFileSync(path.join(projectRoot, 'plugins/LegacyTls.kt'), path.join(javaDir, 'LegacyTls.kt'));
       fs.copyFileSync(path.join(projectRoot, 'plugins/MediaProxyModule.kt'), path.join(javaDir, 'MediaProxyModule.kt'));
       fs.copyFileSync(path.join(projectRoot, 'plugins/MediaProxyLive.kt'), path.join(javaDir, 'MediaProxyLive.kt'));
+      fs.copyFileSync(path.join(projectRoot, 'plugins/MediaProxyTimeshift.kt'), path.join(javaDir, 'MediaProxyTimeshift.kt'));
       fs.copyFileSync(path.join(projectRoot, 'plugins/MediaProxyPlaylist.kt'), path.join(javaDir, 'MediaProxyPlaylist.kt'));
       fs.copyFileSync(path.join(projectRoot, 'plugins/MediaProxyAdFilter.kt'), path.join(javaDir, 'MediaProxyAdFilter.kt'));
       fs.copyFileSync(path.join(projectRoot, 'plugins/DanmakuView.kt'), path.join(javaDir, 'DanmakuView.kt'));
@@ -65,6 +66,7 @@ function withCertFiles(config) {
       fs.mkdirSync(testDir, { recursive: true });
       fs.copyFileSync(path.join(projectRoot, 'plugins/MediaProxyPlaylistTest.kt'), path.join(testDir, 'MediaProxyPlaylistTest.kt'));
       fs.copyFileSync(path.join(projectRoot, 'plugins/MediaProxyLiveTest.kt'), path.join(testDir, 'MediaProxyLiveTest.kt'));
+      fs.copyFileSync(path.join(projectRoot, 'plugins/MediaProxyTimeshiftTest.kt'), path.join(testDir, 'MediaProxyTimeshiftTest.kt'));
       fs.copyFileSync(path.join(projectRoot, 'plugins/MediaProxyAdFilterTest.kt'), path.join(testDir, 'MediaProxyAdFilterTest.kt'));
       fs.copyFileSync(path.join(projectRoot, 'plugins/DanmakuSceneTest.kt'), path.join(testDir, 'DanmakuSceneTest.kt'));
       // 广告过滤回归数据（27 个真实源）：JVM 单测从测试资源里读，不能依赖 org.json

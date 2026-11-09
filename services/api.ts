@@ -19,6 +19,8 @@ export interface LiveSourceItem {
   name: string;
   url: string;
   ua: string;
+  /** 节目单（XMLTV）地址，服务器没配置时为空 */
+  epg?: string;
 }
 
 export interface LiveSourceResponse {

@@ -29,6 +29,7 @@ interface VideoCardProps extends React.ComponentProps<typeof TouchableOpacity> {
   onLongPress?: (title: string, source: string, id: string) => void;
   api: API;
   stype?: string | null;
+  hasTVPreferredFocus?: boolean;
 }
 
 const VideoCard = forwardRef<View, VideoCardProps>(
@@ -51,6 +52,7 @@ const VideoCard = forwardRef<View, VideoCardProps>(
       api,
       playTime = 0,
       stype,
+      hasTVPreferredFocus,
     }: VideoCardProps,
     ref
   ) => {
@@ -135,6 +137,7 @@ const VideoCard = forwardRef<View, VideoCardProps>(
       <Animated.View style={[styles.wrapper, animatedStyle, { opacity: fadeAnim }]}>
         <Pressable
           android_ripple={Platform.isTV || deviceType !== 'tv' ? { color: 'transparent' } : { color: Colors.dark.link }}
+          hasTVPreferredFocus={hasTVPreferredFocus}
           onPress={handlePress}
           onLongPress={handleLongPress}
           onFocus={handleFocus}

@@ -99,6 +99,8 @@ class MediaProxyModule(
     private const val MAX_CACHE_BYTES = 128L * 1024L * 1024L
     /** 过滤掉广告后通知 APP 的事件名 */
     private const val EVENT_AD_FILTERED = "MediaProxyAdFiltered"
+    /** 时移会话这么久没被播放器刷新就清理 */
+    private const val TIMESHIFT_IDLE_MS = 10L * 60L * 1000L
 
     private val FORWARD_HEADER_KEYS = listOf(
       "user-agent", "referer", "origin", "cookie", "authorization", "accept-language",
@@ -156,6 +158,22 @@ class MediaProxyModule(
   private val preferredHeadersByOrigin = ConcurrentHashMap<String, Map<String, String>>()
   /** 直播透传：uaKey -> User-Agent */
   private val liveUserAgents = ConcurrentHashMap<String, String>()
+
+  /** 时移会话：回看模板 + 固定起点，每次播放器刷新清单时向上游续拿最新片段，拼成持续增长的清单 */
+  private class TimeshiftSession(
+    val template: String,
+    val beginMs: Long,
+    val tzMinutes: Int,
+    /** 回看结束时间离现在至少留这么多（结束时间晚于现在上游返回 404） */
+    val guardMs: Long,
+    val userAgent: String,
+  ) {
+    val lock = Any()
+    @Volatile var segments: List<MediaProxyTimeshift.Segment> = emptyList()
+    @Volatile var lastActiveAt: Long = System.currentTimeMillis()
+  }
+
+  private val timeshiftSessions = ConcurrentHashMap<String, TimeshiftSession>()
 
   private val okHttpClient: OkHttpClient by lazy { buildClient() }
 
@@ -289,6 +307,32 @@ class MediaProxyModule(
       val key = MediaProxyLive.userAgentKey(userAgent)
       liveUserAgents[key] = userAgent
       promise.resolve(MediaProxyLive.buildUrl(base, key, target))
+    }
+  }
+
+  /**
+   * 建立时移会话，返回持续增长的清单地址；代理不可用时返回 null（JS 退回固定一段的回看）。
+   * template：回看地址模板（含 ${(b)…} / ${(e)…}），beginMs：起点（UTC 毫秒），tzMinutes：模板时间的时区。
+   */
+  @ReactMethod
+  fun createTimeshift(template: String, beginMs: Double, tzMinutes: Int, guardMs: Int, userAgent: String, promise: Promise) {
+    thread(name = "media-proxy-timeshift") {
+      val base = ensureStartedOrNull()
+      if (base == null) {
+        promise.resolve(null)
+        return@thread
+      }
+      val now = System.currentTimeMillis()
+      // 不用 removeIf：Collection.removeIf 要 API 24，minSdk 是 23
+      val iterator = timeshiftSessions.entries.iterator()
+      while (iterator.hasNext()) {
+        if (now - iterator.next().value.lastActiveAt > TIMESHIFT_IDLE_MS) iterator.remove()
+      }
+      if (userAgent.isNotEmpty()) liveUserAgents[MediaProxyLive.userAgentKey(userAgent)] = userAgent
+      val id = MediaProxyPlaylist.hashString("$template|$beginMs|${System.nanoTime()}").take(16)
+      timeshiftSessions[id] = TimeshiftSession(template, beginMs.toLong(), tzMinutes, guardMs.toLong(), userAgent)
+      debugLog("时移会话 id=$id begin=${beginMs.toLong()}")
+      promise.resolve(base + MediaProxyTimeshift.buildPath(id))
     }
   }
 
@@ -538,6 +582,10 @@ class MediaProxyModule(
   ) {
     MediaProxyLive.parsePath(request.rawTarget)?.let { (key, target) ->
       serveLive(key, target, request, socket, output, keepAlive)
+      return
+    }
+    MediaProxyTimeshift.parsePath(request.path)?.let { id ->
+      serveTimeshift(id, request, output, keepAlive)
       return
     }
 
@@ -848,6 +896,72 @@ class MediaProxyModule(
       }
       if (!persistent) socket.shutdownOutput()
     }
+  }
+
+  // ------------------------------------------------------------------ 时移
+
+  /** 播放器每次刷新清单：向上游续拿到「现在 − guard」为止的片段，接到已有片段后，返回持续增长的清单 */
+  private fun serveTimeshift(id: String, request: ParsedRequest, output: BufferedOutputStream, keepAlive: Boolean) {
+    val headOnly = request.method == "HEAD"
+    val session = timeshiftSessions[id]
+    if (session == null) {
+      writeSimple(output, 404, "text/plain", "timeshift not found".toByteArray(), keepAlive, headOnly)
+      return
+    }
+    session.lastActiveAt = System.currentTimeMillis()
+    val segments = synchronized(session.lock) {
+      refreshTimeshift(session)
+      session.segments
+    }
+    if (segments.isEmpty()) {
+      writeSimple(output, 502, "text/plain", "timeshift upstream error".toByteArray(), false, headOnly)
+      return
+    }
+    // 配置了 UA 的分片走直播透传补 UA；否则保持上游地址，播放器直接拉
+    val base = origin ?: ""
+    val key = if (session.userAgent.isNotEmpty()) MediaProxyLive.userAgentKey(session.userAgent) else null
+    val served = if (key == null) segments else segments.map { it.copy(uri = MediaProxyLive.buildUrl(base, key, it.uri)) }
+    writeSimple(output, 200, PLAYLIST_CONTENT_TYPE, MediaProxyTimeshift.render(served).toByteArray(Charsets.UTF_8), keepAlive, headOnly)
+  }
+
+  /** 失败时保留已有片段（不打断播放），下次刷新再续 */
+  private fun refreshTimeshift(session: TimeshiftSession) {
+    val end = System.currentTimeMillis() - session.guardMs
+    val begin = MediaProxyTimeshift.nextRequestBegin(session.beginMs, session.segments)
+    if (end - begin < 1000) return
+    val url = MediaProxyTimeshift.formatTemplate(session.template, begin, end, session.tzMinutes)
+    var fetched = fetchPlaylistText(url, session.userAgent) ?: return
+    if (!MediaProxyPlaylist.isHlsPlaylist(fetched.first)) {
+      debugLog("时移上游返回非清单 url=${shortUrl(url)}")
+      return
+    }
+    MediaProxyTimeshift.firstVariant(fetched.first, fetched.second)?.let { variant ->
+      fetched = fetchPlaylistText(variant, session.userAgent) ?: return
+    }
+    val incoming = MediaProxyTimeshift.parseMedia(fetched.first, fetched.second)
+    session.segments = MediaProxyTimeshift.merge(session.segments, incoming)
+  }
+
+  /**
+   * 拉清单文本，返回（内容，跟随跳转后的最终地址）；失败重试一次，仍失败返回 null。
+   * 不复用连接：回看要经过几次 302，实测复用连接时会读到上一个响应残留的 HTML（Unexpected status line: <html>）。
+   */
+  private fun fetchPlaylistText(url: String, userAgent: String): Pair<String, String>? {
+    val builder = Request.Builder().url(url).get()
+      .header("Accept-Encoding", "identity")
+      .header("Connection", "close")
+    if (userAgent.isNotEmpty()) builder.header("User-Agent", userAgent)
+    repeat(2) { attempt ->
+      try {
+        okHttpClient.newCall(builder.build()).execute().use { response ->
+          if (response.isSuccessful) return (response.body?.string() ?: "") to response.request.url.toString()
+          debugLog("时移回源失败 code=${response.code} attempt=$attempt url=${shortUrl(url)}")
+        }
+      } catch (error: Throwable) {
+        debugLog("时移回源异常 attempt=$attempt url=${shortUrl(url)} error=${error.message}")
+      }
+    }
+    return null
   }
 
   // ------------------------------------------------------------------ 清单映射与恢复

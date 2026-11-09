@@ -59,6 +59,8 @@ export interface LiveCastMedia {
   url: string;
   title: string;
   userAgent: string;
+  /** 回看地址（点播）：播到结尾交给直播页接下一段，不退出投屏 */
+  catchup?: boolean;
 }
 
 interface DLNAState {
@@ -133,6 +135,12 @@ let lastProgressMillis = 0;
 let skipOutroBusy = false;
 /** 非空表示当前是直播投屏 */
 let liveMedia: LiveCastMedia | null = null;
+/** 直播页注册：电视上的回看播到结尾时调用（接下一段或回到直播） */
+let liveCatchupEndHandler: (() => void) | null = null;
+
+export function setLiveCatchupEndHandler(handler: (() => void) | null): void {
+  liveCatchupEndHandler = handler;
+}
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -614,6 +622,11 @@ const useDlnaStore = create<DLNAState>((set, get) => {
       if (suppressAutoAdvance) return;
 
       suppressAutoAdvance = true;
+      // 直播投屏里的回看播到结尾：交给直播页推下一段（会重新开始轮询），不退出投屏
+      if (liveMedia?.catchup && liveCatchupEndHandler && isRemotePositionAtEnd(positionMillis, durationMillis)) {
+        liveCatchupEndHandler();
+        return;
+      }
       if (!liveMedia && isRemotePositionAtEnd(positionMillis, durationMillis)) {
         Toast.show({ type: 'info', text1: '远端播放已结束', text2: '已同步进度到手机继续播放' });
         await disconnect(true, false, { autoPlay: true });

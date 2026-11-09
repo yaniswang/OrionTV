@@ -18,6 +18,8 @@ interface SettingsState {
   adFilterEnabled: boolean;
   m3uUrl: string;
   m3uUa: string;
+  /** 来自直播源接口，为空表示没有节目单 */
+  epgUrl: string;
   remoteInputEnabled: boolean;
   videoSource: {
     enabledAll: boolean;
@@ -48,6 +50,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   adFilterEnabled: false,
   m3uUrl: "",
   m3uUa: '',
+  epgUrl: '',
   remoteInputEnabled: false,
   isModalVisible: false,
   serverConfig: null,
@@ -96,9 +99,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         const source = sources[0];
         set({ 
           m3uUrl: source.url,
-          m3uUa: source.ua
+          m3uUa: source.ua,
+          epgUrl: source.epg?.trim() ?? '',
         });
-        logger.info(`Live source url: ${source.url}, ua: ${source.ua}`);
+        logger.info(`Live source url: ${source.url}, ua: ${source.ua}, epg: ${source.epg || 'none'}`);
       }
     } catch (error) {
       logger.warn("Failed to fetch live source:", error);

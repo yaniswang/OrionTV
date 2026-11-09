@@ -203,8 +203,11 @@ export default function HomeScreen() {
     ]);
   }
 
-  const renderContentItem = ({ item }: { item: RowItem; index: number }) => (
+  const renderContentItem = ({ item, index }: { item: RowItem; index: number }) => (
     <VideoCard
+      // 没有子分类标签的分类（继续观看）首页上没有任何初始焦点，
+      // 系统会把焦点给最后渲染出来的卡片（实测落在第一行最右）；明确落到第一张
+      hasTVPreferredFocus={Platform.isTV && !selectedCategory.tags && index === 0}
       id={item.id}
       source={item.source}
       q={item.search_title}

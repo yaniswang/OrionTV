@@ -12,6 +12,8 @@ export interface NativeMediaProxy {
   wrapUrl(target: string, adFilter: boolean): Promise<string>;
   wrapUrls(targets: string[], adFilter: boolean): Promise<string[]>;
   wrapLiveUrl?(target: string, userAgent: string): Promise<string>;
+  /** 时移：回看模板 + 起点 → 持续增长的清单地址；代理不可用返回 null */
+  createTimeshift?(template: string, beginMs: number, tzMinutes: number, guardMs: number, userAgent: string): Promise<string | null>;
   cancelDownloads(): void;
 }
 
