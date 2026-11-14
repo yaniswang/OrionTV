@@ -4,6 +4,8 @@ import { SearchResult, api } from "@/services/api";
 import { getCachedSpeedTest, measureM3U8Speed, pingM3U8, resolveM3U8Segments, urlTag, M3U8ProbeInfo, M3U8Segment } from "@/services/m3u8";
 import { FavoriteManager } from "@/services/storage";
 import Logger from "@/utils/Logger";
+import { getEpisodeTotal } from "@/utils/EpisodeLabelUtils";
+import { isSameSourceTitle } from "@/utils/SourceTitleMatch";
 
 const logger = Logger.withTag('DetailStore');
 
@@ -518,7 +520,7 @@ const useDetailStore = create<DetailState>((set, get) => ({
         let preferredSearchError: any = null;
         
         try {
-          const response = await api.searchVideo(title, preferredSource, signal);
+          const response = await api.searchVideo(title, year, preferredSource, signal);
           preferredResult = response.results;
         } catch (error) {
           preferredSearchError = error;
@@ -584,7 +586,7 @@ const useDetailStore = create<DetailState>((set, get) => ({
             for (const item of message.results as SearchResult[]) {
               // 二次过滤title,year和stype
               const itemStype = item.episodes.length > 1 ? 'tv' : 'movie';
-              const sameTitle = item.title.replace(' ', '') === title;
+              const sameTitle = isSameSourceTitle(item.title, title, year);
               const sameYear = String(item.year) === String(year);
               const sameType = stype === undefined || itemStype === stype;
               if (!sameTitle || !sameYear || !sameType) continue;
@@ -711,10 +713,12 @@ const useDetailStore = create<DetailState>((set, get) => ({
     const { source, id, title, poster, source_name, episodes, year } = detail;
     const favoriteItem = {
       cover: poster,
-      title,
+      // 存片名，不存源标题的"国语1995"之类后缀
+      title: get().title || title,
       poster,
       source_name,
       total_episodes: episodes.length,
+      episode_total: getEpisodeTotal(detail.episodes_titles, episodes.length),
       search_title: get().q!,
       year: year || "",
     };

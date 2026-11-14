@@ -3,6 +3,7 @@ import { api, SearchResult, PlayRecord } from "@/services/api";
 import { PlayRecordManager } from "@/services/storage";
 import useAuthStore from "./authStore";
 import { useSettingsStore } from "./settingsStore";
+import { getRecordEpisodeBadge } from "@/utils/EpisodeLabelUtils";
 
 export type RowItem = (SearchResult | PlayRecord) & {
   id: string;
@@ -16,6 +17,8 @@ export type RowItem = (SearchResult | PlayRecord) & {
   episodeIndex?: number;
   sourceName?: string;
   totalEpisodes?: number;
+  /** 卡片角标（见 getRecordEpisodeBadge）；undefined 时按 episodeIndex/totalEpisodes 显示 */
+  episodeBadge?: string;
   year?: string;
   rate?: string;
 };
@@ -153,6 +156,7 @@ const useHomeStore = create<HomeState>((set, get) => ({
               sourceName: record.source_name,
               episodeIndex: record.index,
               totalEpisodes: record.total_episodes,
+              episodeBadge: getRecordEpisodeBadge(record),
               lastPlayed: record.save_time,
               play_time: record.play_time,
             };

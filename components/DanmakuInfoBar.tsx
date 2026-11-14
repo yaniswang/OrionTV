@@ -13,7 +13,12 @@ import {
   useDanmakuStore,
 } from "@/stores/danmakuStore";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { cleanDanmakuTitle, formatDanmakuEpisodeTitle } from "@/services/danmaku";
+import {
+  cleanDanmakuTitle,
+  formatDanmakuEpisodeTitle,
+  getDanmakuPlatformName,
+  isBackupDanmakuSource,
+} from "@/services/danmaku";
 import usePlayerStore from "@/stores/playerStore";
 
 /** 与播放面板底部控制条背景一致（PlayerControls controlsOverlay） */
@@ -180,7 +185,14 @@ export const DanmakuInfoBar: React.FC<DanmakuInfoBarProps> = ({
                 </View>
               </View>
               <DetailRow label="弹幕标题" value={sourceText} />
-              <DetailRow label="来源平台" value={match?.source || "--"} />
+              <DetailRow
+                label="来源平台"
+                value={
+                  match?.platform
+                    ? `${getDanmakuPlatformName(match.platform)}${isBackupDanmakuSource(match.source) ? "（经 360）" : ""}`
+                    : match?.source || "--"
+                }
+              />
               <DetailRow
                 label="匹配模式"
                 value={

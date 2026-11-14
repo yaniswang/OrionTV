@@ -7,7 +7,9 @@ import useDetailStore, { episodesSelectorBySource } from "./detailStore";
 import { mapEpisodesWithLocalProxy } from "@/services/localProxy";
 import { useSettingsStore } from "@/stores/settingsStore";
 import Logger from '@/utils/Logger';
+import { getEpisodeRecordInfo, getEpisodeTotal } from '@/utils/EpisodeLabelUtils';
 import { notifyPlaybackSkip } from '@/utils/PlaybackSkipNotice';
+import { isSameSourceTitle } from '@/utils/SourceTitleMatch';
 
 const logger = Logger.withTag('PlayerStore');
 
@@ -160,7 +162,8 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
     
     // 列表还没加载完（allSourcesLoaded=false）就不复用：离开播放页会 abort 后台初始化，
     // 被中止的 init 不会把 allSourcesLoaded 置回 true，复用会让换源列表一直停在加载中。
-    const needsDetailInit = !detail || !episodes || episodes.length === 0 || detail.title !== title || detail.source !== source || !useDetailStore.getState().allSourcesLoaded;
+    // 比片名而不是源标题：同一部片的源标题可能带不同后缀（"国语""1995"）
+    const needsDetailInit = !detail || !episodes || episodes.length === 0 || useDetailStore.getState().title !== title.replace(' ', '') || detail.source !== source || !useDetailStore.getState().allSourcesLoaded;
     logger.info(`[PERF] Detail check - needsInit: ${needsDetailInit}, hasDetail: ${!!detail}, episodesCount: ${episodes?.length || 0}`);
     
     if (needsDetailInit) {
@@ -277,9 +280,12 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       const episodesMappingStart = performance.now();
       // 包一层本机预缓存代理：HLS 才包，代理不可用时自动回退原地址
       const proxiedEpisodes = await mapEpisodesWithLocalProxy(episodes);
+      // 显示片源原始分集名称；episodes 退回取了别的片源时条数对不上，就不用
+      const sourceTitles =
+        detail.episodes?.length === episodes.length ? detail.episodes_titles : undefined;
       const mappedEpisodes = proxiedEpisodes.map((ep, index) => ({
         url: ep,
-        title: `第 ${index + 1} 集`,
+        title: sourceTitles?.[index]?.trim() || `第 ${index + 1} 集`,
       }));
       const episodesMappingEnd = performance.now();
       logger.info(`[PERF] Episodes mapping (${episodes.length} episodes) took ${(episodesMappingEnd - episodesMappingStart).toFixed(2)}ms`);
@@ -295,7 +301,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
           // 直播频道收藏年份为空，同名时会被误当成这部影片的旧收藏
           if (item.origin === 'live') return false;
           const itemStype = item.total_episodes > 1 ? 'tv' : 'movie';
-          return item.title.replace(' ', '') == title && item.year == year && (stype !== undefined && itemStype === stype || stype === undefined)
+          return isSameSourceTitle(item.title, title, year) && item.year == year && (stype !== undefined && itemStype === stype || stype === undefined)
         });
         if (findedFavorite) {
           await FavoriteManager.remove(findedFavorite.source, findedFavorite.id);
@@ -306,6 +312,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
             poster,
             source_name,
             total_episodes: episodes.length,
+            episode_total: getEpisodeTotal(detail.episodes_titles, episodes.length),
             search_title: q,
             year: year || "",
           };
@@ -395,10 +402,12 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
 
     const favoriteItem = {
       cover: poster,
-      title,
+      // 存片名，不存源标题的"国语1995"之类后缀
+      title: useDetailStore.getState().title || title,
       poster,
       source_name,
       total_episodes: episodes.length,
+      episode_total: getEpisodeTotal(detail.episodes_titles, episodes.length),
       search_title: q,
       year: year || "",
     };
@@ -519,7 +528,7 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       }, 10000); // 10 seconds
     }
 
-    const { q, detail } = useDetailStore.getState();
+    const { q, detail, title } = useDetailStore.getState();
     const { currentEpisodeIndex, episodes, status, introEndTime, outroStartTime } = get();
     const effectivePosition = remotePosition ?? status.positionMillis;
     const effectiveDuration = remoteDuration ?? status.durationMillis;
@@ -529,7 +538,8 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
         outroStartTime,
       };
       await PlayRecordManager.save(detail.source, detail.id.toString(), {
-        title: detail.title,
+        // 存片名，不存源标题的"国语1995"之类后缀
+        title: title || detail.title,
         search_title: q,
         cover: detail.poster || "",
         index: currentEpisodeIndex + 1,
@@ -538,6 +548,8 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
         total_time: effectiveDuration ? Math.floor(effectiveDuration / 1000) : 0,
         source_name: detail.source_name,
         year: detail.year || "",
+        // 片源原始分集标题、真实集号、集数，首页和收藏页角标用
+        ...getEpisodeRecordInfo(detail.episodes_titles, currentEpisodeIndex, episodes.length),
         ...existingRecord,
         ...updates,
       });
@@ -690,9 +702,9 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
         const proxiedEpisodes = await mapEpisodesWithLocalProxy(newEpisodes);
         const mappedEpisodes = proxiedEpisodes.map((ep, index) => ({
           url: ep,
-          title: `第 ${index + 1} 集`,
+          title: fallbackSource.episodes_titles?.[index]?.trim() || `第 ${index + 1} 集`,
         }));
-        
+
         set({
           episodes: mappedEpisodes,
           isDetialLoading: false, // 让Video组件重新渲染

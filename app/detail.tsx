@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, StyleSheet, Image, ScrollView, ActivityIndicator, Platform } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ThemedView } from "@/components/ThemedView";
@@ -12,6 +12,7 @@ import { FontAwesome } from "@expo/vector-icons";
 import { Heart } from "lucide-react-native";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { getCommonResponsiveStyles } from "@/utils/ResponsiveStyles";
+import { getEpisodeDisplayOrder, getEpisodeTotal } from "@/utils/EpisodeLabelUtils";
 import ResponsiveNavigation from "@/components/navigation/ResponsiveNavigation";
 import ResponsiveHeader from "@/components/navigation/ResponsiveHeader";
 
@@ -49,6 +50,12 @@ export default function DetailScreen() {
     };
   }, [abort, init, q, title, year, stype, source, id]);
 
+  // 选集显示顺序（原始下标）：没有集号的特别篇放到最后
+  const episodeOrder = useMemo(
+    () => getEpisodeDisplayOrder(detail?.episodes_titles ?? detail?.episodes.map(() => "") ?? []),
+    [detail],
+  );
+
   const handlePlay = (episodeIndex: number) => {
     if (!detail) return;
     // abort(); // Cancel any ongoing fetches
@@ -56,7 +63,8 @@ export default function DetailScreen() {
       pathname: "/play",
       params: {
         // Pass necessary identifiers, the rest will be in the store
-        title: detail.title,
+        // 传片名而不是源标题：源标题可能带"国语1995"之类后缀，带过去会让播放页按后缀过滤片源
+        title: title || detail.title,
         year,
         stype,
         source: detail.source,
@@ -149,7 +157,7 @@ export default function DetailScreen() {
           {/* Tabs切换 */}
           <View style={dynamicStyles.tabButtonContainer}>
             <StyledButton
-              text={'选集'+(detail.episodes.length>1?` (${detail.episodes.length})`:'')}
+              text={'选集'+(detail.episodes.length>1?` (${getEpisodeTotal(detail.episodes_titles, detail.episodes.length)})`:'')}
               onPress={() => setSelectedTab('episodes')}
               isSelected={selectedTab==='episodes'}
               style={dynamicStyles.tabButton}
@@ -169,12 +177,12 @@ export default function DetailScreen() {
           {selectedTab === 'episodes' && (
             <View style={dynamicStyles.episodesContainer}>
               <View style={dynamicStyles.episodeList}>
-                {detail.episodes.map((episode, index) => (
+                {episodeOrder.map((index) => (
                   <StyledButton
                     key={index}
                     style={dynamicStyles.episodeButton}
                     onPress={() => handlePlay(index)}
-                    text={`第 ${index + 1} 集`}
+                    text={detail.episodes_titles?.[index]?.trim() || `第 ${index + 1} 集`}
                     textStyle={dynamicStyles.episodeButtonText}
                   />
                 ))}
@@ -202,7 +210,7 @@ export default function DetailScreen() {
                       {item.episodes.length > 1 && (
                         <View style={[dynamicStyles.badge, isSelected && dynamicStyles.selectedBadge]}>
                           <Text style={dynamicStyles.badgeText}>
-                            {`${item.episodes.length}`} 集
+                            {`${getEpisodeTotal(item.episodes_titles, item.episodes.length)}`} 集
                           </Text>
                         </View>
                       )}
@@ -256,7 +264,7 @@ export default function DetailScreen() {
             {/* Tabs切换 */}
             <View style={dynamicStyles.tabButtonContainer}>
               <StyledButton
-                text={'选集'+(detail.episodes.length>1?` (${detail.episodes.length})`:'')}
+                text={'选集'+(detail.episodes.length>1?` (${getEpisodeTotal(detail.episodes_titles, detail.episodes.length)})`:'')}
                 onPress={() => setSelectedTab('episodes')}
                 isSelected={selectedTab==='episodes'}
                 style={dynamicStyles.tabButton}
@@ -274,13 +282,13 @@ export default function DetailScreen() {
             {selectedTab === 'episodes' && (
               <View style={dynamicStyles.episodesContainer}>
                 <ScrollView contentContainerStyle={dynamicStyles.episodeList}>
-                  {detail.episodes.map((episode, index) => (
+                  {episodeOrder.map((index, position) => (
                     <StyledButton
                       key={index}
-                      hasTVPreferredFocus={Platform.isTV && index === 0}
+                      hasTVPreferredFocus={Platform.isTV && position === 0}
                       style={dynamicStyles.episodeButton}
                       onPress={() => handlePlay(index)}
-                      text={`第 ${index + 1} 集`}
+                      text={detail.episodes_titles?.[index]?.trim() || `第 ${index + 1} 集`}
                       textStyle={dynamicStyles.episodeButtonText}
                     />
                   ))}
@@ -307,7 +315,7 @@ export default function DetailScreen() {
                         {item.episodes.length > 1 && (
                           <View style={[dynamicStyles.badge, isSelected && dynamicStyles.selectedBadge]}>
                             <Text style={dynamicStyles.badgeText}>
-                              {`${item.episodes.length}`} 集
+                              {`${getEpisodeTotal(item.episodes_titles, item.episodes.length)}`} 集
                             </Text>
                           </View>
                         )}

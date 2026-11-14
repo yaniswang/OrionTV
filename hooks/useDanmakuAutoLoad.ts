@@ -10,15 +10,19 @@ export const useDanmakuAutoLoad = () => {
   const enabled = useDanmakuStore((state) => state.enabled);
   const loadForEpisode = useDanmakuStore((state) => state.loadForEpisode);
   const apiUrl = useSettingsStore((state) => state.danmakuApiUrl);
-  const title = useDetailStore((state) => state.detail?.title || "");
+  // 用片名而不是源标题：源标题可能带"国语1995"之类后缀，会搜不到弹幕
+  const title = useDetailStore((state) => (state.detail ? state.title || state.detail.title : ""));
   const year = useDetailStore((state) => state.detail?.year || "");
   const source = useDetailStore((state) => state.detail?.source || "");
   const detailId = useDetailStore((state) => state.detail?.id);
   const episodeIndex = usePlayerStore((state) => state.currentEpisodeIndex);
   const episodeCount = usePlayerStore((state) => state.episodes.length);
-  const episodeTitle = usePlayerStore(
-    (state) => state.episodes[state.currentEpisodeIndex]?.title || "",
+  // 片源原始分集标题：播放器里的 "第 N 集" 是按位置生成的，解析不出真实集号
+  const episodeTitle = useDetailStore(
+    (state) => state.detail?.episodes_titles?.[episodeIndex] || "",
   );
+  // 整个列表：多版本电影等规则要看整列表（引用随 detail 变化，切集不会变）
+  const episodeTitles = useDetailStore((state) => state.detail?.episodes_titles);
 
   useEffect(() => {
     void hydrate();
@@ -35,6 +39,7 @@ export const useDanmakuAutoLoad = () => {
       episodeIndex,
       episodeCount,
       episodeTitle,
+      episodeTitles,
     });
   }, [
     hydrated,
@@ -47,6 +52,7 @@ export const useDanmakuAutoLoad = () => {
     episodeIndex,
     episodeCount,
     episodeTitle,
+    episodeTitles,
     loadForEpisode,
   ]);
 };

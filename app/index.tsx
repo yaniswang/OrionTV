@@ -220,6 +220,7 @@ export default function HomeScreen() {
       episodeIndex={item.episodeIndex}
       sourceName={item.sourceName}
       totalEpisodes={item.totalEpisodes}
+      episodeBadge={item.episodeBadge}
       api={api}
       onLongPress={onLongPress}
       stype={stype}

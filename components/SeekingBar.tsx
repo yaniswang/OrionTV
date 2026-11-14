@@ -1,6 +1,7 @@
 import React from "react";
 import { View, StyleSheet, Text } from "react-native";
 import { usePlaybackController } from "@/hooks/usePlaybackController";
+import { BottomProgressBar } from "@/components/BottomProgressBar";
 
 const formatTime = (milliseconds: number) => {
   if (!milliseconds) return "00:00";
@@ -26,8 +27,11 @@ const formatTime = (milliseconds: number) => {
 export const SeekingBar = () => {
   const { isSeeking, seekPosition, progressPosition, bufferedPosition, status, playbackRate } = usePlaybackController();
   
-  if (!((isSeeking && status?.isLoaded) || playbackRate != 1)) {
-    return null;
+  if (!(isSeeking && status?.isLoaded)) {
+    // 加速播放时只在屏幕最底部显示细进度条，避免挡住片源自带字幕
+    return playbackRate != 1 ? (
+      <BottomProgressBar progress={progressPosition} buffered={bufferedPosition} />
+    ) : null;
   }
 
   const durationMillis = status.durationMillis || 0;

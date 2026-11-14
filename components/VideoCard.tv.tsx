@@ -25,6 +25,8 @@ interface VideoCardProps extends React.ComponentProps<typeof TouchableOpacity> {
   playTime?: number; // 播放时间 in ms
   episodeIndex?: number; // 剧集索引
   totalEpisodes?: number; // 总集数
+  /** 角标文字（"200/200"、"相守结局"）；不传时按 episodeIndex/totalEpisodes 显示 */
+  episodeBadge?: string;
   onFocus?: () => void;
   onLongPress?: (title: string, source: string, id: string) => void;
   api: API;
@@ -47,6 +49,7 @@ const VideoCard = forwardRef<View, VideoCardProps>(
       progress,
       episodeIndex,
       totalEpisodes,
+      episodeBadge,
       onFocus,
       onLongPress,
       api,
@@ -192,11 +195,18 @@ const VideoCard = forwardRef<View, VideoCardProps>(
                 <Text style={styles.badgeText}>源:{sourceCount}</Text>
               </View>
             )}
-            {(totalEpisodes && totalEpisodes>1) && (
-              <View style={styles.episodesInfoBadge}>
-                <Text style={styles.badgeText}>{episodeIndex?episodeIndex+'/':null}{totalEpisodes}</Text>
-              </View>
-            )}
+            {/* episodeBadge：App 写的播放记录按片源标题显示（"" 表示不显示）；没有时按 第几条/条数 */}
+            {episodeBadge !== undefined
+              ? !!episodeBadge && (
+                  <View style={styles.episodesInfoBadge}>
+                    <Text style={styles.badgeText} numberOfLines={1}>{episodeBadge}</Text>
+                  </View>
+                )
+              : (totalEpisodes && totalEpisodes>1) && (
+                  <View style={styles.episodesInfoBadge}>
+                    <Text style={styles.badgeText}>{episodeIndex?episodeIndex+'/':null}{totalEpisodes}</Text>
+                  </View>
+                )}
           </View>
           <View style={styles.infoContainer}>
             <ThemedText numberOfLines={1}>{title}</ThemedText>
@@ -318,6 +328,8 @@ const styles = StyleSheet.create({
     position: "absolute",
     right: 8,
     bottom: 8,
+    // 番外标题可能较长，超出卡片时截断
+    maxWidth: "85%",
     backgroundColor: "rgba(34, 197, 94, 0.7)",
     borderRadius: 6,
     paddingHorizontal: 6,

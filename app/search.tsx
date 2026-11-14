@@ -22,6 +22,7 @@ import ResponsiveHeader from "@/components/navigation/ResponsiveHeader";
 import { DeviceUtils } from "@/utils/DeviceUtils";
 import Logger from '@/utils/Logger';
 import { isTVLongPressRelease } from '@/utils/TVLongPress';
+import { stripSourceTitleSuffix } from '@/utils/SourceTitleMatch';
 
 const logger = Logger.withTag('SearchScreen');
 
@@ -109,7 +110,9 @@ export default function SearchScreen() {
     const mergeItems = (items: SearchResult[]) => {
       let changed = false;
       items.forEach((item: any) => {
-        const key = `${item.title.replace(' ', '')}-${item.year || 'unknown'}-${item.episodes.length === 1 ? 'movie' : 'tv'}`;
+        // 片名去掉年份/语言等可确定后缀再分组："神雕侠侣国语""神雕侠侣1995"合成一张"神雕侠侣"
+        const baseTitle = stripSourceTitleSuffix(item.title, item.year);
+        const key = `${baseTitle}-${item.year || 'unknown'}-${item.episodes.length === 1 ? 'movie' : 'tv'}`;
         const existedItem = mapResults.get(key);
         if (existedItem) {
           // 换成新对象，保证列表能感知到源数量的变化
@@ -119,6 +122,7 @@ export default function SearchScreen() {
           delete item['source'];
           delete item['source_name'];
           delete item['id'];
+          item['title'] = baseTitle;
           item['source_count'] = 1;
           mapResults.set(key, item);
         }

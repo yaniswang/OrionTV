@@ -13,6 +13,7 @@ import { getCommonResponsiveStyles } from "@/utils/ResponsiveStyles";
 import { FontAwesome } from "@expo/vector-icons";
 import { SpeedTestIcon } from "./SpeedTestIcon";
 import { usePlaybackController } from "@/hooks/usePlaybackController";
+import { getEpisodeTotal } from "@/utils/EpisodeLabelUtils";
 
 const logger = Logger.withTag('SourceSelectionModal');
 
@@ -75,7 +76,7 @@ export const SourceSelectionModal: React.FC = () => {
                   {item.episodes.length > 1 && (
                     <View style={[dynamicStyles.badge, isSelected && dynamicStyles.selectedBadge]}>
                       <Text style={dynamicStyles.badgeText}>
-                        {`${item.episodes.length}`} 集
+                        {`${getEpisodeTotal(item.episodes_titles, item.episodes.length)}`} 集
                       </Text>
                     </View>
                   )}

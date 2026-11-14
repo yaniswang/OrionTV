@@ -38,6 +38,7 @@ import { usePlaybackController } from '@/hooks/usePlaybackController';
 import { buildPlaybackTitle } from '@/utils/PlaybackTitleUtils';
 import { DanmakuOnIcon, DanmakuOffIcon, DanmakuSettingsIcon } from "@/components/icons/DanmakuIcons";
 import { DanmakuInfoBar } from "@/components/DanmakuInfoBar";
+import { BottomProgressBar } from "@/components/BottomProgressBar";
 import { useDanmakuStore } from "@/stores/danmakuStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 
@@ -352,26 +353,14 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
       )}
 
       {showLockControls && (
-        <View style={styles.lockBottomBarContainer}>
-          <View style={{ ...styles.progressBarContainer, marginTop: 0 }}>
-            <View style={styles.progressBarBackground} />
-            <View style={[styles.bufferedBarFilled, { width: `${bufferedPosition * 100}%` }]} />
-            <View
-              style={[
-                styles.progressBarFilled,
-                { width: `${(isSeeking ? seekPosition : progressPosition) * 100}%` },
-              ]}
-            />
-            <Pressable
-              focusable={false}
-              onLayout={(event) => {
-                progressBarWidthRef.current = event.nativeEvent.layout.width;
-              }}
-              onPress={handleProgressPress}
-              style={styles.progressBarTouchable}
-            />
-          </View>
-        </View>
+        <BottomProgressBar
+          progress={isSeeking ? seekPosition : progressPosition}
+          buffered={bufferedPosition}
+          onLayout={(event) => {
+            progressBarWidthRef.current = event.nativeEvent.layout.width;
+          }}
+          onPress={handleProgressPress}
+        />
       )}
     </View>
   );
@@ -510,11 +499,5 @@ const styles = StyleSheet.create({
     top: '50%',
     marginTop: -35,
     zIndex: 999,
-  },
-  lockBottomBarContainer: {
-    position: 'absolute',
-    bottom: 0,
-    width: '100%',
-    justifyContent: "space-between",
   },
 });

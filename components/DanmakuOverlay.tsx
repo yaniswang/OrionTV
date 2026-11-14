@@ -89,11 +89,18 @@ interface NativeDanmakuItem {
  * 原生弹幕画布（plugins/DanmakuView.kt）：只负责绘制和移动，按时间戳自行逐帧计算位置，
  * 与 JS 的估算公式一致；指令晚到也画在正确位置。
  */
-const OrionDanmakuView = requireNativeComponent<{
+type OrionDanmakuViewProps = {
   style?: StyleProp<ViewStyle>;
   fontSize: number;
   lineHeight: number;
-}>("OrionDanmakuView");
+};
+// 热更新会重新执行本模块，同名原生组件再注册一次会抛 "Tried to register two views with the same name"，
+// 所以注册结果缓存在全局，只注册一次
+const globalCache = globalThis as typeof globalThis & {
+  __orionDanmakuView?: ReturnType<typeof requireNativeComponent<OrionDanmakuViewProps>>;
+};
+const OrionDanmakuView = (globalCache.__orionDanmakuView ??=
+  requireNativeComponent<OrionDanmakuViewProps>("OrionDanmakuView"));
 
 const adjustBrightness =(hex: string, factor: number): string => {
   const match = /^#?([0-9a-f]{6})$/i.exec(hex);

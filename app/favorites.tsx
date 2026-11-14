@@ -58,7 +58,7 @@ export default function FavoritesScreen() {
     ]);
   }
 
-  const renderItem = ({ item }: { item: Favorite & { key: string }; index: number }) => {
+  const renderItem = ({ item }: { item: Favorite & { key: string; episodeBadge?: string }; index: number }) => {
     const [source, id] = item.key.split("+");
     return (
       <VideoCard
@@ -72,6 +72,7 @@ export default function FavoritesScreen() {
         api={api}
         episodeIndex={item.episode_index}
         totalEpisodes={item.total_episodes}
+        episodeBadge={item.episodeBadge}
         progress={item.progress}
         onLongPress={onLongPress}
       />

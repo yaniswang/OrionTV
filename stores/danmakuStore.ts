@@ -1,12 +1,15 @@
 import { create } from "zustand";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
+  DANMAKU_SELECTION_VERSION,
   fetchDanmakuComments,
-  parseEpisodeNumber,
+  parsePlaybackEpisodeNumber,
+  parsePlaybackEpisodeNumbers,
   resolveEpisodeForSearch,
   type DanmakuComment,
   type DanmakuCommentsResult,
   type DanmakuMatch,
+  type DanmakuSavedSelection,
 } from "@/services/danmaku";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { DanmakuSelectionManager } from "@/services/storage";
@@ -95,6 +98,7 @@ interface DanmakuState {
     episodeIndex: number;
     episodeCount?: number;
     episodeTitle?: string;
+    episodeTitles?: string[];
   } | null;
   hydrate: () => Promise<void>;
   toggleEnabled: () => void;
@@ -106,7 +110,10 @@ interface DanmakuState {
     id?: string;
     episodeIndex: number;
     episodeCount?: number;
+    /** 片源原始分集标题（episodes_titles），用来解析真实集号 */
     episodeTitle?: string;
+    /** 片源整个分集标题列表；多版本电影等规则要看整列表 */
+    episodeTitles?: string[];
     force?: boolean;
   }) => Promise<void>;
   loadEpisode: (
@@ -117,6 +124,8 @@ interface DanmakuState {
       rememberSelection?: {
         source: string;
         id: string;
+        /** auto：只选站点，按集号对齐；offset：指定具体集，按偏移对齐 */
+        mode: "auto" | "offset";
         playbackEpisodeNumber?: number;
       };
     },
@@ -203,7 +212,7 @@ export const useDanmakuStore = create<DanmakuState>((set, get) => ({
     persist({ enabled: get().enabled, settings });
   },
 
-  loadForEpisode: async ({ title, year, source, id, episodeIndex, episodeCount, episodeTitle, force = false }) => {
+  loadForEpisode: async ({ title, year, source, id, episodeIndex, episodeCount, episodeTitle, episodeTitles, force = false }) => {
     const baseUrl = useSettingsStore.getState().danmakuApiUrl;
     if (!baseUrl.trim()) {
       set({
@@ -225,7 +234,7 @@ export const useDanmakuStore = create<DanmakuState>((set, get) => ({
       loading: true,
       error: null,
       loadedKey: key,
-      lastRequest: { title, year, source, id, episodeIndex, episodeCount, episodeTitle },
+      lastRequest: { title, year, source, id, episodeIndex, episodeCount, episodeTitle, episodeTitles },
       comments: [],
       match: null,
       matchMode: null,
@@ -233,14 +242,7 @@ export const useDanmakuStore = create<DanmakuState>((set, get) => ({
       loadedAt: null,
     });
     try {
-      let savedSelection: {
-        animeId: number;
-        animeTitle: string;
-        source?: string;
-        episodeId?: number;
-        episodeNumber?: number;
-        playbackEpisodeNumber?: number;
-      } | null = null;
+      let savedSelection: DanmakuSavedSelection | null = null;
       if (!force && source && id) {
         try {
           savedSelection = await DanmakuSelectionManager.get(source, id);
@@ -248,10 +250,16 @@ export const useDanmakuStore = create<DanmakuState>((set, get) => ({
           savedSelection = null;
         }
       }
+      // 整列表和播放列表条数一致时按整列表解析，否则只看当前这一条
+      const targetNumber =
+        episodeTitles?.length && episodeTitles.length === episodeCount
+          ? parsePlaybackEpisodeNumbers(episodeTitles)[episodeIndex] ?? null
+          : parsePlaybackEpisodeNumber(episodeTitle, episodeIndex, episodeCount || 0);
       const match = await resolveEpisodeForSearch(baseUrl, title, episodeIndex, {
         year,
         episodeCount,
-        episodeNumber: episodeTitle ? parseEpisodeNumber(episodeTitle) ?? undefined : undefined,
+        episodeNumber: targetNumber,
+        episodeTitle,
         savedSelection,
       });
       if (seq !== requestSeq) return;
@@ -326,12 +334,15 @@ export const useDanmakuStore = create<DanmakuState>((set, get) => ({
             options.rememberSelection.source,
             options.rememberSelection.id,
             {
-            animeId: match.animeId,
-            animeTitle: match.animeTitle,
+              animeId: match.animeId,
+              animeTitle: match.animeTitle,
               source: match.source,
+              platform: match.platform,
+              mode: options.rememberSelection.mode,
               episodeId: match.episodeId,
               episodeNumber: match.episodeNumber,
               playbackEpisodeNumber: options.rememberSelection.playbackEpisodeNumber,
+              version: DANMAKU_SELECTION_VERSION,
             },
           );
         } catch (error) {

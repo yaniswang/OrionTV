@@ -25,6 +25,8 @@ interface VideoCardMobileProps extends React.ComponentProps<typeof TouchableOpac
   playTime?: number;
   episodeIndex?: number;
   totalEpisodes?: number;
+  /** 角标文字（"200/200"、"相守结局"）；不传时按 episodeIndex/totalEpisodes 显示 */
+  episodeBadge?: string;
   onFocus?: () => void;
   onLongPress?: (title: string, source: string, id: string) => void;
   api: API;
@@ -46,6 +48,7 @@ const VideoCardMobile = forwardRef<View, VideoCardMobileProps>(
       progress,
       episodeIndex,
       totalEpisodes,
+      episodeBadge,
       onFocus,
       onLongPress,
       api,
@@ -144,11 +147,18 @@ const VideoCardMobile = forwardRef<View, VideoCardMobileProps>(
                 <Text style={styles.badgeText}>源:{sourceCount}</Text>
               </View>
             )}
-            {(totalEpisodes && totalEpisodes>1) && (
-              <View style={styles.episodesInfoBadge}>
-                <Text style={styles.badgeText}>{episodeIndex?episodeIndex+'/':null}{totalEpisodes}</Text>
-              </View>
-            )}
+            {/* episodeBadge：App 写的播放记录按片源标题显示（"" 表示不显示）；没有时按 第几条/条数 */}
+            {episodeBadge !== undefined
+              ? !!episodeBadge && (
+                  <View style={styles.episodesInfoBadge}>
+                    <Text style={styles.badgeText} numberOfLines={1}>{episodeBadge}</Text>
+                  </View>
+                )
+              : (totalEpisodes && totalEpisodes>1) && (
+                  <View style={styles.episodesInfoBadge}>
+                    <Text style={styles.badgeText}>{episodeIndex?episodeIndex+'/':null}{totalEpisodes}</Text>
+                  </View>
+                )}
           </View>
 
           <View style={styles.infoContainer}>
@@ -251,6 +261,8 @@ const createMobileStyles = (cardWidth: number, cardHeight: number, spacing: numb
       position: "absolute",
       right: 8,
       bottom: 8,
+      // 番外标题可能较长，超出卡片时截断
+      maxWidth: "85%",
       backgroundColor: "rgba(34, 197, 94, 0.7)",
       borderRadius: 6,
       paddingHorizontal: 4,

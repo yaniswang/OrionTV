@@ -3,7 +3,7 @@ import { useFonts } from "expo-font";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
-import { DeviceEventEmitter, Platform, View, StyleSheet } from "react-native";
+import { DeviceEventEmitter, LogBox, Platform, View, StyleSheet } from "react-native";
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import SystemSetting from "react-native-system-setting";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -22,6 +22,10 @@ import Toast, { ToastHost } from '@/utils/Toast';
 import { AD_FILTERED_EVENT } from '@/services/localProxy/native';
 
 const logger = Logger.withTag('RootLayout');
+
+// 开发版不弹 console.warn / console.error 的底部提示条（日志仍写入 logcat 和 Metro）；
+// 未捕获异常的红屏照常显示。正式包本来就没有这些提示。
+if (__DEV__) LogBox.ignoreAllLogs(true);
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();

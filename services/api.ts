@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import EventSource from "react-native-sse";
+import { isSameSourceTitle } from "@/utils/SourceTitleMatch";
 
 // region: --- Interface Definitions ---
 export interface DoubanItem {
@@ -50,6 +51,8 @@ export interface SearchResult {
   title: string;
   poster: string;
   episodes: string[];
+  /** 片源原始分集标题（"第01集""第01集【总第125集】""正片"…），与 episodes 一一对应 */
+  episodes_titles?: string[];
   source: string;
   source_name: string;
   source_count?: number;
@@ -71,6 +74,8 @@ export interface Favorite {
   save_time?: number;
   /** 'live' 是直播频道收藏（与 LunaTV 网页版一致），影视收藏没有这个字段 */
   origin?: 'vod' | 'live';
+  /** 按片源分集标题算出的集数（App 写入；网页版写的收藏没有） */
+  episode_total?: number;
 }
 
 export interface PlayRecord {
@@ -84,6 +89,10 @@ export interface PlayRecord {
   total_time: number;
   save_time: number;
   year: string;
+  /** 以下由 App 写入，网页版写的记录没有：当前这一集的片源原始标题、真实集号（番外为 null）、集数 */
+  episode_title?: string;
+  episode_number?: number | null;
+  episode_total?: number;
 }
 
 export interface ApiSite {
@@ -425,11 +434,11 @@ export class API {
     });
   }
 
-  async searchVideo(query: string, resourceId: string, signal?: AbortSignal): Promise<{ results: SearchResult[] }> {
+  async searchVideo(query: string, year: string, resourceId: string, signal?: AbortSignal): Promise<{ results: SearchResult[] }> {
     const url = `/api/search/one?q=${encodeURIComponent(query)}&resourceId=${encodeURIComponent(resourceId)}`;
     const response = await this._fetch(url, { signal });
     const { results } = await response.json();
-    return { results: results.filter((item: any) => item.title === query )};
+    return { results: results.filter((item: any) => isSameSourceTitle(item.title, query, year)) };
   }
 
   async getResources(signal?: AbortSignal): Promise<ApiSite[]> {

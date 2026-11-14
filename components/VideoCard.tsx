@@ -21,6 +21,8 @@ interface VideoCardProps extends React.ComponentProps<typeof TouchableOpacity> {
   playTime?: number;
   episodeIndex?: number;
   totalEpisodes?: number;
+  /** 角标文字（"200/200"、"相守结局"）；不传时按 episodeIndex/totalEpisodes 显示 */
+  episodeBadge?: string;
   onFocus?: () => void;
   onLongPress?: (title: string, source: string, id: string) => void;
   api: API;

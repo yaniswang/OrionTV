@@ -69,14 +69,17 @@ export interface AccountsData {
   currentId: string | null;
 }
 
-/** 手动匹配记住的番剧来源，按播放源和内容 ID 复用 */
+/** 手动匹配记住的弹幕源，按播放源和内容 ID 复用（字段含义见 DanmakuSavedSelection） */
 export interface DanmakuSelectionMemory {
   animeId: number;
   animeTitle: string;
   source?: string;
+  platform?: string;
+  mode?: "auto" | "offset";
   episodeId?: number;
   episodeNumber?: number;
   playbackEpisodeNumber?: number;
+  version?: number;
   updatedAt: number;
 }
 
@@ -474,14 +477,7 @@ export class DanmakuSelectionManager {
   static async save(
     source: string,
     id: string | number,
-    selection: {
-      animeId: number;
-      animeTitle: string;
-      source?: string;
-      episodeId?: number;
-      episodeNumber?: number;
-      playbackEpisodeNumber?: number;
-    },
+    selection: Omit<DanmakuSelectionMemory, "updatedAt">,
   ): Promise<void> {
     const normalizedSource = source.trim();
     const normalizedId = String(id).trim();

@@ -7,6 +7,7 @@ import usePlayerStore from "@/stores/playerStore";
 import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 import { useScreenDimensions } from "@/hooks/useScreenDimensions";
 import { usePlaybackController } from "@/hooks/usePlaybackController";
+import { getEpisodeGroups, getEpisodeTotal } from "@/utils/EpisodeLabelUtils";
 
 interface EpisodeSelectionModalProps {}
 
@@ -24,36 +25,43 @@ export const EpisodeSelectionModal: React.FC<EpisodeSelectionModalProps> = () =>
   const { playEpisode } = usePlaybackController();
   const setShowEpisodeModal = usePlayerStore((s) => s.setShowEpisodeModal);
 
-  const [episodeGroupSize] = useState(30);
-  // 组件挂载时可能还没拿到剧集（currentEpisodeIndex 为 -1），这里必须夹到 0，
-  // 否则分组会是 -1，下面的 slice 取不到数据、初始滚动位置又会越界
-  const [selectedEpisodeGroup, setSelectedEpisodeGroup] = useState(
-    Math.max(0, Math.floor(currentEpisodeIndex / episodeGroupSize)),
+  // 集数、分组标签按片源分集标题里的集号算；没有集号的特别篇显示在最后
+  const episodeTitles = useMemo(() => episodes.map((episode) => episode.title), [episodes]);
+  const episodeTotal = useMemo(
+    () => getEpisodeTotal(episodeTitles, episodes.length),
+    [episodeTitles, episodes.length],
   );
+  // 分组：正片按集号每 30 集一组，没有集号的条目放最后的"其它"组；组内存的是原始下标，播放、选中都用原始下标
+  const [episodeGroupSize] = useState(30);
+  const groups = useMemo(
+    () => getEpisodeGroups(episodeTitles, episodeGroupSize),
+    [episodeTitles, episodeGroupSize],
+  );
+  // 组件挂载时可能还没拿到剧集（currentEpisodeIndex 为 -1），找不到所在组时落到第 0 组
+  const currentGroup = Math.max(
+    0,
+    groups.findIndex((group) => group.indices.includes(currentEpisodeIndex)),
+  );
+  const [selectedEpisodeGroup, setSelectedEpisodeGroup] = useState(currentGroup);
 
   // 打开弹窗或切集时，把分组跟到当前集所在的那一组
   useEffect(() => {
     if (!showEpisodeModal) return;
-    setSelectedEpisodeGroup(Math.max(0, Math.floor(currentEpisodeIndex / episodeGroupSize)));
-  }, [showEpisodeModal, currentEpisodeIndex, episodeGroupSize]);
+    setSelectedEpisodeGroup(currentGroup);
+  }, [showEpisodeModal, currentGroup]);
 
-  // 这两个数组以前是每次渲染都新建，导致 FlashList 的缓存全部失效、每帧重新测量
-  const groupCount = Math.max(1, Math.ceil(episodes.length / episodeGroupSize));
+  const groupCount = Math.max(1, groups.length);
   const safeGroupIndex = Math.min(selectedEpisodeGroup, groupCount - 1);
+  // 这两个数组以前是每次渲染都新建，导致 FlashList 的缓存全部失效、每帧重新测量
   const groupData = useMemo(() => new Array(groupCount).fill(0), [groupCount]);
   const visibleEpisodes = useMemo(
-    () =>
-      episodes.slice(
-        safeGroupIndex * episodeGroupSize,
-        (safeGroupIndex + 1) * episodeGroupSize,
-      ),
-    [episodes, safeGroupIndex, episodeGroupSize],
+    () => (groups[safeGroupIndex]?.indices || []).map((index) => ({ index, title: episodes[index]?.title })),
+    [groups, episodes, safeGroupIndex],
   );
   // 初始滚动位置一旦超过列表长度，FlashList 会直接抛 "No layout available"
+  const positionInGroup = visibleEpisodes.findIndex((item) => item.index === currentEpisodeIndex);
   const initialEpisodeIndex =
-    visibleEpisodes.length > 0
-      ? Math.min(Math.max(currentEpisodeIndex, 0) % episodeGroupSize, visibleEpisodes.length - 1)
-      : undefined;
+    visibleEpisodes.length > 0 ? Math.max(0, positionInGroup) : undefined;
 
   const responsiveConfig = useResponsiveLayout();
   const onSelectEpisode = (index: number) => {
@@ -68,8 +76,8 @@ export const EpisodeSelectionModal: React.FC<EpisodeSelectionModalProps> = () =>
   return (
     <Modal isVisible={showEpisodeModal} statusBarTranslucent={true} deviceWidth={screen.width} deviceHeight={screen.height} onBackButtonPress={onClose} onBackdropPress={onClose} onSwipeComplete={onClose} swipeDirection="down" style={styles.modalContainer}>
       <View style={styles.modalContent}>
-        <Text style={styles.modalTitle}>{'选集'+(episodes.length>1?` (${episodes.length})`:'')}</Text>
-        {episodes.length > episodeGroupSize && (
+        <Text style={styles.modalTitle}>{'选集'+(episodes.length>1?` (${episodeTotal})`:'')}</Text>
+        {groups.length > 1 && (
           <View style={styles.episodeGroupContainer}>
             <FlashList
               data={groupData}
@@ -78,10 +86,7 @@ export const EpisodeSelectionModal: React.FC<EpisodeSelectionModalProps> = () =>
               initialScrollIndex={safeGroupIndex}
               renderItem={({ index }) => <StyledButton
                 key={index}
-                text={`${index * episodeGroupSize + 1}-${Math.min(
-                  (index + 1) * episodeGroupSize,
-                  episodes.length
-                )}`}
+                text={groups[index]?.label}
                 onPress={() => setSelectedEpisodeGroup(index)}
                 isSelected={safeGroupIndex === index}
                 style={styles.episodeGroupButton}
@@ -95,11 +100,11 @@ export const EpisodeSelectionModal: React.FC<EpisodeSelectionModalProps> = () =>
           data={visibleEpisodes}
           initialScrollIndex={initialEpisodeIndex}
           numColumns={Math.floor((responsiveConfig.screenWidth * 0.9) / 120)}
-          keyExtractor={(_, index) => `episode-${safeGroupIndex * episodeGroupSize + index}`}
-          extraData={currentEpisodeIndex} 
+          keyExtractor={(item) => `episode-${item.index}`}
+          extraData={currentEpisodeIndex}
           estimatedItemSize={60}
-          renderItem={({ item, index }) => {
-            const absoluteIndex = safeGroupIndex * episodeGroupSize + index;
+          renderItem={({ item }) => {
+            const absoluteIndex = item.index;
             return (
               <StyledButton
                 text={item.title || `第 ${absoluteIndex + 1} 集`}
