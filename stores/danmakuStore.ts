@@ -131,6 +131,8 @@ interface DanmakuState {
     },
   ) => Promise<void>;
   reload: () => Promise<void>;
+  /** 删除当前剧的手动匹配记忆，按自动规则重新匹配当前集 */
+  resetToAuto: () => Promise<void>;
   clear: () => void;
 }
 
@@ -369,6 +371,17 @@ export const useDanmakuStore = create<DanmakuState>((set, get) => ({
     if (lastRequest) {
       await get().loadForEpisode({ ...lastRequest, force: true });
     }
+  },
+
+  resetToAuto: async () => {
+    const { lastRequest } = get();
+    if (!lastRequest) return;
+    if (lastRequest.source && lastRequest.id) {
+      await DanmakuSelectionManager.remove(lastRequest.source, lastRequest.id);
+    }
+    // 清掉 loadedKey 才会重新匹配；不用 force，弹幕仍可走缓存
+    set({ loadedKey: null });
+    await get().loadForEpisode(lastRequest);
   },
 
   clear: () => {

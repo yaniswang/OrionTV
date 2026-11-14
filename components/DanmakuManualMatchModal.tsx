@@ -32,6 +32,7 @@ import {
   getDanmakuPlatformRank,
   parsePlaybackEpisodeNumber,
   parsePlaybackEpisodeNumbers,
+  romanFallbackKeyword,
   searchDanmakuAnime,
   sortDanmakuAnimeCandidates,
   type DanmakuMatch,
@@ -81,6 +82,7 @@ export const DanmakuManualMatchModal: React.FC = () => {
   const currentMatch = useDanmakuStore((state) => state.match);
   const matchMode = useDanmakuStore((state) => state.matchMode);
   const loadEpisode = useDanmakuStore((state) => state.loadEpisode);
+  const resetToAuto = useDanmakuStore((state) => state.resetToAuto);
   const currentEpisodeIndex = usePlayerStore((state) => state.currentEpisodeIndex);
   const currentEpisodeCount = usePlayerStore((state) => state.episodes.length);
   const playbackEpisodeTitles = useDetailStore((state) => state.detail?.episodes_titles);
@@ -105,6 +107,7 @@ export const DanmakuManualMatchModal: React.FC = () => {
   const [searching, setSearching] = useState(false);
   const [loadingSources, setLoadingSources] = useState(false);
   const [applyingId, setApplyingId] = useState<number | null>(null);
+  const [resetting, setResetting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [inputFocused, setInputFocused] = useState(false);
   /** 弹幕源全部加载完后递增，触发把电视焦点移到定位的那一行 */
@@ -116,6 +119,7 @@ export const DanmakuManualMatchModal: React.FC = () => {
   const inputAnchorRef = useRef<View>(null);
   const searchButtonRef = useRef<View>(null);
   const closeButtonRef = useRef<View>(null);
+  const resetButtonRef = useRef<View>(null);
   const previewSourceRef = useRef<View>(null);
   const entryEpisodeRef = useRef<View>(null);
   const [focusTags, setFocusTags] = useState<{
@@ -123,6 +127,7 @@ export const DanmakuManualMatchModal: React.FC = () => {
     inputAnchor?: number;
     search?: number;
     close?: number;
+    reset?: number;
     previewSource?: number;
     entryEpisode?: number;
   }>({});
@@ -141,12 +146,13 @@ export const DanmakuManualMatchModal: React.FC = () => {
         inputAnchor: findNodeHandle(inputAnchorRef.current) ?? undefined,
         search: findNodeHandle(searchButtonRef.current) ?? undefined,
         close: findNodeHandle(closeButtonRef.current) ?? undefined,
+        reset: findNodeHandle(resetButtonRef.current) ?? undefined,
         previewSource: findNodeHandle(previewSourceRef.current) ?? undefined,
         entryEpisode: findNodeHandle(entryEpisodeRef.current) ?? undefined,
       });
     }, 320);
     return () => clearTimeout(timer);
-  }, [show, sources.length, previewKey]);
+  }, [show, sources.length, previewKey, matchMode]);
 
   // hasTVPreferredFocus 在 Modal 刚挂载时经常被忽略，等弹窗动画结束后显式请求焦点
   useEffect(() => {
@@ -215,8 +221,14 @@ export const DanmakuManualMatchModal: React.FC = () => {
       setError(null);
       setSources([]);
       try {
+        let found = await searchDanmakuAnime(baseUrl, trimmed);
+        // 与自动匹配一致：搜不到时把中文间的 II/III 换成 Ⅱ/Ⅲ 再搜
+        const fallbackKeyword = romanFallbackKeyword(trimmed);
+        if (!found.length && fallbackKeyword !== trimmed) {
+          found = await searchDanmakuAnime(baseUrl, fallbackKeyword);
+        }
         const animes = sortDanmakuAnimeCandidates(
-          await searchDanmakuAnime(baseUrl, trimmed),
+          found,
           year,
           currentEpisodeCount,
         );
@@ -399,6 +411,18 @@ export const DanmakuManualMatchModal: React.FC = () => {
     void apply(source, episode, "auto");
   };
 
+  /** 删除手动记忆，按自动规则重新匹配当前集，与选弹幕源后一样关闭弹窗 */
+  const onResetToAuto = async () => {
+    if (resetting || applyingId !== null) return;
+    setResetting(true);
+    try {
+      await resetToAuto();
+      setShow(false);
+    } finally {
+      setResetting(false);
+    }
+  };
+
   const onClose = () => setShow(false);
   const isWide = screenWidth >= 700;
   const targetYear = Number(year);
@@ -455,61 +479,79 @@ export const DanmakuManualMatchModal: React.FC = () => {
           )}
         </View>
 
-        <Text style={styles.status} numberOfLines={1}>
-          {typeof statusText === "string" ? (
-            statusText
-          ) : (
-            <>
-              当前弹幕：<Text style={styles.statusHead}>{statusText.head}</Text>
-              {"　"}
-              <Text style={styles.statusMode}>{statusText.mode}</Text>
-            </>
-          )}
-        </Text>
+        {/* TextInput 不支持 nextFocusUp，向上只能靠几何查找，会被集列表里滚出可视区的行抢走；
+            手动匹配时向上只在状态行和搜索行内查找，落到「恢复自动匹配」 */}
+        <TVFocusGuideView trapFocusUp={matchMode === "manual"}>
+          <View style={styles.status}>
+            <Text style={styles.statusText} numberOfLines={1}>
+              {typeof statusText === "string" ? (
+                statusText
+              ) : (
+                <>
+                  当前弹幕：<Text style={styles.statusHead}>{statusText.head}</Text>
+                  {"　"}
+                  <Text style={styles.statusMode}>{statusText.mode}</Text>
+                </>
+              )}
+            </Text>
+            {matchMode === "manual" && (
+              <Pressable
+                ref={resetButtonRef}
+                focusable
+                nextFocusDown={focusTags.search}
+                style={({ focused }) => [styles.resetButton, focused && styles.itemFocused]}
+                onPress={() => void onResetToAuto()}
+                disabled={resetting || applyingId !== null}
+              >
+                <Text style={styles.resetButtonText}>{resetting ? "匹配中…" : "恢复自动匹配"}</Text>
+              </Pressable>
+            )}
+          </View>
 
-        {/* TextInput 不支持 nextFocusRight，向右只能靠几何查找；集列表滚动后可视区上方被裁掉的行
-            与本行同高且更近，会抢走焦点，所以向右只在本行内查找 */}
-        <TVFocusGuideView style={styles.searchRow} trapFocusRight>
-          <Pressable
-            ref={inputAnchorRef}
-            focusable
-            nextFocusRight={focusTags.search}
-            nextFocusDown={focusTags.previewSource}
-            onFocus={() => inputRef.current?.focus()}
-            style={styles.inputAnchor}
-            accessibilityLabel="搜索关键词输入区"
-          >
-            <TextInput
-              ref={inputRef}
+          {/* TextInput 不支持 nextFocusRight，向右只能靠几何查找；集列表滚动后可视区上方被裁掉的行
+              与本行同高且更近，会抢走焦点，所以向右只在本行内查找 */}
+          <TVFocusGuideView style={styles.searchRow} trapFocusRight>
+            <Pressable
+              ref={inputAnchorRef}
               focusable
               nextFocusRight={focusTags.search}
               nextFocusDown={focusTags.previewSource}
-              style={[styles.input, inputFocused && styles.inputFocused]}
-              onFocus={() => setInputFocused(true)}
-              onBlur={() => setInputFocused(false)}
-              value={keyword}
-              onChangeText={setKeyword}
-              placeholder="输入标题关键词"
-              placeholderTextColor="#777"
-              autoCapitalize="none"
-              autoCorrect={false}
-              onSubmitEditing={() => void runSearch(keyword)}
-            />
-          </Pressable>
-          <Pressable
-            ref={searchButtonRef}
-            focusable
-            nextFocusLeft={focusTags.inputAnchor}
-            nextFocusUp={focusTags.close}
-            nextFocusDown={focusTags.previewSource}
-            style={({ focused }) => [styles.searchButton, focused && styles.searchButtonFocused]}
-            hasTVPreferredFocus={!sources.length}
-            onPress={() => void runSearch(keyword)}
-            disabled={searching}
-          >
-            {searching ? <ActivityIndicator color="#04150c" size="small" /> : <Search color="#04150c" size={16} />}
-            <Text style={styles.searchButtonText}>搜索弹幕源</Text>
-          </Pressable>
+              onFocus={() => inputRef.current?.focus()}
+              style={styles.inputAnchor}
+              accessibilityLabel="搜索关键词输入区"
+            >
+              <TextInput
+                ref={inputRef}
+                focusable
+                nextFocusRight={focusTags.search}
+                nextFocusDown={focusTags.previewSource}
+                style={[styles.input, inputFocused && styles.inputFocused]}
+                onFocus={() => setInputFocused(true)}
+                onBlur={() => setInputFocused(false)}
+                value={keyword}
+                onChangeText={setKeyword}
+                placeholder="输入标题关键词"
+                placeholderTextColor="#777"
+                autoCapitalize="none"
+                autoCorrect={false}
+                onSubmitEditing={() => void runSearch(keyword)}
+              />
+            </Pressable>
+            <Pressable
+              ref={searchButtonRef}
+              focusable
+              nextFocusLeft={focusTags.inputAnchor}
+              nextFocusUp={matchMode === "manual" ? focusTags.reset : focusTags.close}
+              nextFocusDown={focusTags.previewSource}
+              style={({ focused }) => [styles.searchButton, focused && styles.searchButtonFocused]}
+              hasTVPreferredFocus={!sources.length}
+              onPress={() => void runSearch(keyword)}
+              disabled={searching}
+            >
+              {searching ? <ActivityIndicator color="#04150c" size="small" /> : <Search color="#04150c" size={16} />}
+              <Text style={styles.searchButtonText}>搜索弹幕源</Text>
+            </Pressable>
+          </TVFocusGuideView>
         </TVFocusGuideView>
 
         {!!error && <Text style={styles.error}>{error}</Text>}
@@ -732,12 +774,31 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   status: {
-    color: "rgba(255,255,255,0.55)",
-    fontSize: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
     paddingHorizontal: 18,
     paddingVertical: 7,
     borderBottomWidth: 1,
     borderBottomColor: "rgba(255,255,255,0.1)",
+  },
+  statusText: {
+    flex: 1,
+    color: "rgba(255,255,255,0.55)",
+    fontSize: 12,
+  },
+  // 次要按钮：描边无底色，焦点沿用 itemFocused
+  resetButton: {
+    height: 24,
+    justifyContent: "center",
+    paddingHorizontal: 10,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.16)",
+  },
+  resetButtonText: {
+    color: "rgba(255,255,255,0.85)",
+    fontSize: 12,
   },
   statusHead: {
     color: "white",

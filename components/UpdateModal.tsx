@@ -154,12 +154,12 @@ export function UpdateModal() {
   }
 
   React.useEffect(() => {
-    if (showUpdateModal && Platform.isTV) {
-      // TV平台自动聚焦到更新按钮
-      setTimeout(() => {
-        updateButtonRef.current?.focus();
-      }, 100);
-    }
+    if (!showUpdateModal || !Platform.isTV) return;
+    // Modal 刚挂载时请求焦点会被忽略，等弹窗动画结束后再给更新按钮焦点（同 DanmakuManualMatchModal）
+    const timer = setTimeout(() => {
+      (updateButtonRef.current as unknown as { requestTVFocus?: () => void })?.requestTVFocus?.();
+    }, 320);
+    return () => clearTimeout(timer);
   }, [showUpdateModal]);
 
   const getButtonText = () => {
@@ -268,7 +268,7 @@ export function UpdateModal() {
               <StyledButton
                 ref={updateButtonRef}
                 onPress={handleUpdate}
-                disabled={downloading && !downloadedPath}
+                // 不用 disabled：disabled 会让按钮不可聚焦，下载完成后 TV 上没有焦点，按中键无反应；下载中 handleUpdate 本身不做事
                 variant="default"
                 isSelected
                 style={[
