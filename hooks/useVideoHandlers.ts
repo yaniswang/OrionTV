@@ -80,7 +80,7 @@ export const useVideoHandlers = ({
     source: {
       uri: currentEpisode?.url || '',
       bufferConfig: {
-        minBufferMs: 30000, // 最小缓冲
+        minBufferMs: 60000, // 最小缓冲，与最大缓冲相同，始终补满
         maxBufferMs: 60000, // 最大缓冲
         bufferForPlaybackMs: 2500, // 首次起播缓冲量
         bufferForPlaybackAfterRebufferMs: 5000, // 卡顿后恢复缓冲量

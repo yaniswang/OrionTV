@@ -75,7 +75,7 @@ class MediaProxyModule(
 
     private const val DEFAULT_CONNECT_TIMEOUT_MS = 15_000L
     /** 上游空闲读超时 */
-    private const val DEFAULT_READ_TIMEOUT_MS = 60_000L
+    private const val DEFAULT_READ_TIMEOUT_MS = 15_000L
     /** 一次写回播放器的分块大小 */
     private const val BUFFER_BYTES = 64 * 1024
     private const val CRLF = "\r\n"
@@ -87,14 +87,18 @@ class MediaProxyModule(
     private const val PORT_ATTEMPTS = 5
     /** 调试日志单文件上限，超过后从空文件重新写，避免长期调试无限增长 */
     private const val MAX_DEBUG_LOG_BYTES = 5L * 1024L * 1024L
-    /** 在途数低于该值时补预取 */
-    private const val PREFETCH_TRIGGER_INFLIGHT = 6
-    /** 单次最多新增的预取数 */
-    private const val MAX_PREFETCH_PER_TRIGGER = 5
-    /** 清单和已完成未消费缓存的超时时间 */
+    /** 预取窗口：只预取当前请求分片之后的这么多个分片，窗口外的预取会被取消 */
+    private const val PREFETCH_WINDOW = 10
+    /** 窗口内同时在途的预取上限（不含播放器当前请求的分片） */
+    private const val MAX_PREFETCH_IN_FLIGHT = 5
+    /** 已完成未消费预取缓存的超时时间 */
     private const val CACHE_TTL_MS = 5L * 60L * 1000L
+    /** 清单这么久没有请求、且没有客户端正在读它的分片，就释放它的预取（换集/换源后的旧清单） */
+    private const val PLAYLIST_IDLE_MS = 30L * 1000L
     /** 后台清理周期 */
-    private const val CACHE_CLEAN_INTERVAL_MS = 60L * 1000L
+    private const val CACHE_CLEAN_INTERVAL_MS = 10L * 1000L
+    /** 缓存统计日志周期 */
+    private const val STATS_LOG_INTERVAL_MS = 60L * 1000L
     /** 预取缓存总大小上限 */
     private const val MAX_CACHE_BYTES = 128L * 1024L * 1024L
     /** 过滤掉广告后通知 APP 的事件名 */
@@ -136,6 +140,10 @@ class MediaProxyModule(
     @Volatile var lastActiveAt = System.currentTimeMillis()
     val inFlightCount = AtomicInteger(0)
     val cacheBytes = AtomicLong(0)
+    /** 播放器最近一次请求的分片，预取窗口以它为起点 */
+    @Volatile var currentSid = -1
+    /** 播放器请求和预取完成都会补预取，串行执行避免超出并发上限 */
+    val prefetchLock = Any()
   }
 
   private class ManifestRef(
@@ -644,6 +652,7 @@ class MediaProxyModule(
     keepAlive: Boolean,
   ) {
     playlists[pid]?.lastActiveAt = System.currentTimeMillis()
+    releaseOutsideWindow(pid, sid)
 
     val key = downloadKey(pid, sid)
     val existing = downloads[key]
@@ -676,7 +685,7 @@ class MediaProxyModule(
         } finally {
           releaseDownload(key, existing)
         }
-        maybePrefetch(pid, sid, headers)
+        maybePrefetch(pid, headers)
         return
       }
       // 文件被系统清掉了：丢掉这条失效缓存，走正常回源
@@ -715,7 +724,7 @@ class MediaProxyModule(
     consumer.start()
     consumer.join()
 
-    maybePrefetch(pid, sid, headers)
+    maybePrefetch(pid, headers)
   }
 
   /** 把落盘的预取分片写给播放器；上游没给 Content-Length 时用 chunked。 */
@@ -1523,6 +1532,9 @@ class MediaProxyModule(
             download.lock.notifyAll()
           }
           logPrefetchEnd(download)
+          // 腾出一个在途名额：播放器卡在慢分片上不发新请求时，窗口里排队的分片也能接着下。
+          // 只在成功时补，失败后立即补可能对报错的上游反复重试。
+          if (download.prefetch) maybePrefetch(download.pid, download.requestHeaders)
         } catch (error: Throwable) {
           debugLog("分片回源读取失败 pid=${download.pid} sid=${download.sid} error=${error.message} bytes=$receivedBytes 用时=${System.currentTimeMillis() - startedAt}ms")
           synchronized(download.lock) {
@@ -1585,42 +1597,59 @@ class MediaProxyModule(
   private fun totalPrefetchCacheBytes(): Long =
     downloads.values.sumOf { if (it.prefetch) it.cachedBytes else 0L }
 
-  /** 每次分片请求结束后，根据当前在途数补预取。 */
-  private fun maybePrefetch(pid: String, currentSid: Int, headers: Map<String, String>) {
+  /**
+   * 播放器请求分片时调用：记下当前位置，取消并释放该清单窗口 [sid, sid+PREFETCH_WINDOW] 外的预取。
+   * 正常顺序播放时窗口外没有预取；跳转后旧位置的预取在这里清掉。正在被读的下载不动。
+   */
+  private fun releaseOutsideWindow(pid: String, sid: Int) {
     val playlist = playlists[pid] ?: return
-    if (totalPrefetchCacheBytes() >= MAX_CACHE_BYTES) return
-    val inFlight = playlist.inFlightCount.get()
-    if (inFlight >= PREFETCH_TRIGGER_INFLIGHT) return
-    val toStart = minOf(MAX_PREFETCH_PER_TRIGGER, PREFETCH_TRIGGER_INFLIGHT - inFlight)
-    if (toStart <= 0) return
+    playlist.currentSid = sid
+    val lastSid = sid + PREFETCH_WINDOW
+    val outside = downloads.values.filter { it.pid == pid && it.prefetch && it.sid !in sid..lastSid }
+    if (outside.isEmpty()) return
+    outside.forEach { download -> releaseDownload(download.key, download, onlyIfIdle = true) }
+    debugLog("窗口外预取释放 pid=$pid current=$sid 数量=${outside.size}")
+  }
 
-    var sid = currentSid + 1
-    var started = 0
-    while (sid < playlist.segments.size && started < toStart) {
-      val key = downloadKey(pid, sid)
-      val existing = downloads[key]
-      if (existing != null) {
-        sid += 1
-        continue
+  /**
+   * 把当前位置之后 PREFETCH_WINDOW 个分片中缺的补上，窗口内在途预取最多 MAX_PREFETCH_IN_FLIGHT 个。
+   * 播放器每次请求分片后、以及每个预取成功下完后调用。
+   */
+  private fun maybePrefetch(pid: String, headers: Map<String, String>) {
+    val playlist = playlists[pid] ?: return
+    synchronized(playlist.prefetchLock) {
+      if (totalPrefetchCacheBytes() >= MAX_CACHE_BYTES) return
+      val currentSid = playlist.currentSid
+      if (currentSid < 0) return
+      val lastSid = minOf(currentSid + PREFETCH_WINDOW, playlist.segments.size - 1)
+      val window = currentSid + 1..lastSid
+      var inFlight = downloads.values.count { it.pid == pid && it.prefetch && !it.completed && it.sid in window }
+      var started = 0
+      for (sid in window) {
+        if (inFlight >= MAX_PREFETCH_IN_FLIGHT) break
+        val key = downloadKey(pid, sid)
+        if (downloads[key] != null) continue
+        // 同上：避免 computeIfAbsent 带来的 java.util.function 依赖（API 24）
+        val createdDownload = SharedDownload(key, playlist.segments[sid], pid, sid, true, headers)
+        val download = downloads.putIfAbsent(key, createdDownload) ?: createdDownload
+        if (downloads[key] === download && startDownloadIfNeeded(download, headers)) {
+          started += 1
+          inFlight += 1
+        }
       }
-      // 同上：避免 computeIfAbsent 带来的 java.util.function 依赖（API 24）
-      val createdDownload = SharedDownload(key, playlist.segments[sid], pid, sid, true, headers)
-      val download = downloads.putIfAbsent(key, createdDownload) ?: createdDownload
-      if (downloads[key] === download && startDownloadIfNeeded(download, headers)) {
-        started += 1
+      if (started > 0) {
+        debugLog(
+          "预取发起 pid=$pid current=$currentSid 新增=$started 窗口在途=$inFlight " +
+            "在途=${playlist.inFlightCount.get()} 缓存字节=${playlist.cacheBytes.get()}",
+        )
       }
-      sid += 1
-    }
-    if (started > 0) {
-      debugLog(
-        "预取发起 pid=$pid current=$currentSid 新增=$started " +
-          "在途=${playlist.inFlightCount.get()} 缓存字节=${playlist.cacheBytes.get()}",
-      )
     }
   }
 
   /**
-   * 定时清理闲置清单的缓存和超过5分钟未消费的预取缓存。
+   * 定时清理：闲置清单的预取缓存，以及超过5分钟未消费的预取缓存。
+   * 闲置 = PLAYLIST_IDLE_MS 内没有请求，且没有客户端正在读它的分片（播放器卡在慢分片上时不算闲置）。
+   * 只看单个清单，不影响投屏等其它客户端正在用的清单。
    * 闲置清单只释放缓存、保留分片地址：长时间暂停后播放器仍会按旧 pid 取分片，
    * 若整份释放，只能重新拉清单恢复，而上游清单内容一变 pid 就对不上，后续分片全部失败。
    * 分片地址占用很小，清单份数由 MAX_PLAYLISTS 兜底。
@@ -1628,7 +1657,7 @@ class MediaProxyModule(
   private fun cleanupExpired() {
     val now = System.currentTimeMillis()
     playlists.values.toList().forEach { playlist ->
-      if (now - playlist.lastActiveAt > CACHE_TTL_MS) {
+      if (now - playlist.lastActiveAt > PLAYLIST_IDLE_MS && !hasActiveConsumer(playlist.pid)) {
         releasePlaylistCache(playlist)
       }
     }
@@ -1638,8 +1667,16 @@ class MediaProxyModule(
       releaseDownload(download.key, download, onlyIfIdle = true)
     }
     persistManifestRefsIfDirty()
-    logStats()
+    if (now - lastStatsAt >= STATS_LOG_INTERVAL_MS) {
+      lastStatsAt = now
+      logStats()
+    }
   }
+
+  @Volatile private var lastStatsAt = 0L
+
+  private fun hasActiveConsumer(pid: String): Boolean =
+    downloads.values.any { it.pid == pid && synchronized(it.lock) { it.consumers.isNotEmpty() } }
 
   /** 每分钟输出一次全局缓存统计，便于分析缓存随时间的变化。 */
   private fun logStats() {
