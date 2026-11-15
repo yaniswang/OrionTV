@@ -1,7 +1,7 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, StyleSheet, Pressable, Platform, Image, TVFocusGuideView, BackHandler, ScrollView, FlatList, LayoutChangeEvent } from "react-native";
 import { FlashList } from "@shopify/flash-list";
-import { ChevronLeft } from "lucide-react-native";
+import { ChevronLeft, X } from "lucide-react-native";
 import { Channel } from "@/services/m3u";
 import { EpgData, EpgProgram, findChannelPrograms, programIndexAt } from "@/services/epg";
 import { Segment, daySegments, dayStartOf, dayLabel, formatClock, HOUR, catchupMaxAge } from "@/services/liveTimeline";
@@ -515,7 +515,8 @@ export default function LiveChannelPanel(p: Props) {
           {!isTV && <RoundButton label="返回" onPress={p.onBack}><ChevronLeft color={LC.text} size={24} /></RoundButton>}
           <Text style={[styles.headTitle, !isTV && { marginLeft: 8 }]}>频道</Text>
           {p.headerRight}
-          {isTV && <Text style={styles.clock}>{formatClock(now, p.displayTz)}</Text>}
+          {!isTV && <RoundButton label="关闭" onPress={p.onClose} style={{ marginLeft: 8 }}><X color={LC.text} size={24} /></RoundButton>}
+          {isTV &&<Text style={styles.clock}>{formatClock(now, p.displayTz)}</Text>}
         </View>
         <View style={styles.cols}>
           <TVFocusGuideView autoFocus ref={groupFocus.guideRef} style={[styles.col, p.compact && styles.colCompact, { width: groupColumnWidth }]}>

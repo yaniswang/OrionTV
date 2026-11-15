@@ -990,9 +990,9 @@ export default function LiveScreen() {
               }}
             />
           )}
-          {!isTV && controls && !panelOpen && (
-            // 时移 / 回看中先回到直播，直播中才退出直播页（与遥控器返回键一致）
-            <TouchTopBar onBack={() => (playback || pendingSeek !== null ? goLive() : router.back())} right={castButtons} />
+          {!isTV && controls && !panelOpen && (playback || pendingSeek !== null) && (
+            // 只在时移 / 回看中显示，返回 = 回到直播；直播中不显示，退出直播统一走频道页左上角的返回
+            <TouchTopBar onBack={goLive} right={castButtons} />
           )}
         </>
       )}
@@ -1017,8 +1017,8 @@ export default function LiveScreen() {
           onSelectChannel={selectChannelFromPanel}
           onPlaySegment={playSegmentFromPanel}
           onClose={closePanel}
-          // 面板左上角的返回：回到播放画面，不退出直播
-          onBack={closePanel}
+          // 面板左上角的返回：退出直播；右上角的关闭：回到播放画面
+          onBack={() => router.back()}
         />
       )}
       {castAvailable && (
