@@ -64,6 +64,15 @@ object MediaProxyPlaylist {
     return if (isPlaylistTarget(targetUrl)) "$path$PLAYLIST_SUFFIX" else path
   }
 
+  private val HOST_PATTERN = Regex("^[A-Za-z0-9.-]+(:[0-9]{1,5})?$")
+
+  /**
+   * 按请求的 Host 头生成下一层地址的前缀：本机播放器来的是 127.0.0.1，投屏的电视来的是局域网 IP，
+   * 各自拿到自己能访问的地址。Host 缺失或格式异常时用 fallback。
+   */
+  fun originFromHost(host: String?, fallback: String): String =
+    if (host != null && HOST_PATTERN.matches(host)) "http://$host" else fallback
+
   private fun isPlaylistTarget(targetUrl: String): Boolean =
     targetUrl.substringBefore('?').substringBefore('#').endsWith(".m3u8", ignoreCase = true)
 

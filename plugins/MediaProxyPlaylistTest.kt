@@ -36,6 +36,15 @@ class MediaProxyPlaylistTest {
   }
 
   @Test
+  fun originFromHostFollowsRequest() {
+    val local = "http://127.0.0.1:18923"
+    assertEquals(local, MediaProxyPlaylist.originFromHost("127.0.0.1:18923", origin))
+    assertEquals("http://192.168.1.8:18923", MediaProxyPlaylist.originFromHost("192.168.1.8:18923", local))
+    assertEquals(local, MediaProxyPlaylist.originFromHost(null, local))
+    assertEquals(local, MediaProxyPlaylist.originFromHost("a\"/b", local))
+  }
+
+  @Test
   fun proxyTargetEncodingRoundTrips() {
     val target = "https://mp.yaniswang.cn/https://cdn.example.com/a b/%2F.ts?token=a+b&x=%26"
     val encoded = MediaProxyPlaylist.encodeProxyTarget(target)

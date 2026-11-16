@@ -306,31 +306,13 @@ export default function PlayScreen() {
           : null;
       const changed = previousIp !== undefined && previousIp !== ipAddress;
       previousIp = ipAddress;
-      if (!changed || !source || !id || !title || !videoYear) return;
-
+      // 本机播放走 127.0.0.1，不受网络切换影响；只有投屏时电视拿的是旧局域网地址，退回本机继续播
       const castState = useDlnaStore.getState();
-      const resumePosition = castState.enabled
-        ? castState.positionMillis
-        : usePlayerStore.getState().status.positionMillis;
-      Toast.show({ type: 'info', text1: '网络已变化', text2: '正在重新加载播放' });
-      void (async () => {
-        if (castState.enabled) {
-          await castState.disableCast({ restoreLocal: false, stopRemote: true });
-        }
-        await stopProxyServer();
-        const player = usePlayerStore.getState();
-        await loadVideo({
-          source,
-          id: parseInt(id, 10),
-          episodeIndex: player.currentEpisodeIndex,
-          title,
-          year: videoYear,
-          stype: videoStype,
-          position: resumePosition,
-        });
-      })();
+      if (!changed || !castState.enabled) return;
+      Toast.show({ type: 'info', text1: '网络已变化', text2: '已退出投屏，在本机继续播放' });
+      void castState.disableCast({ restoreLocal: true, stopRemote: true });
     });
-  }, [source, id, title, videoYear, videoStype, loadVideo]);
+  }, []);
 
   // TV遥控器处理 - 总是调用hook，但根据设备类型决定是否使用结果
   const tvRemoteHandler = useTVRemoteHandler();

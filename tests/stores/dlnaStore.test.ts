@@ -37,9 +37,9 @@ jest.mock('@/services/dlna/events', () => ({
 
 jest.mock('@/services/localProxy', () => ({
   cancelProxyDownloads: jest.fn(),
-  ensureLocalProxy: jest.fn(async () => 'http://192.168.1.5:18923'),
+  getLanProxyOrigin: jest.fn(async () => 'http://192.168.1.5:18923'),
   isHlsUrl: (url: string) => url.includes('m3u8'),
-  isLanProxyOrigin: jest.fn(() => true),
+  toLanProxyUrl: jest.fn(async (url: string) => url),
   resolvePlayUrl: jest.fn(async (url: string) => `proxy:${url}`),
   resolveLivePlayUrl: jest.fn(async (url: string, ua: string) => `live:${ua}:${url}`),
 }));

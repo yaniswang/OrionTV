@@ -12,7 +12,7 @@ import type {
 } from '@/services/dlna/types';
 import usePlayerStore, { selectCurrentEpisode } from '@/stores/playerStore';
 import useDetailStore from '@/stores/detailStore';
-import { cancelProxyDownloads, ensureLocalProxy, isHlsUrl, isLanProxyOrigin, resolveLivePlayUrl, resolvePlayUrl } from '@/services/localProxy';
+import { cancelProxyDownloads, getLanProxyOrigin, isHlsUrl, resolveLivePlayUrl, resolvePlayUrl, toLanProxyUrl } from '@/services/localProxy';
 import { parseDeviceDescription } from '@/services/dlna/xml';
 import {
   isRemoteDurationReady,
@@ -303,21 +303,20 @@ function getCastSourceUrl(): string | undefined {
 }
 
 async function resolveCastUri(uri: string): Promise<string> {
-  if (liveMedia) {
-    // 直播只在配置了 UA 时经过代理补 UA，其余直接透传原地址。
-    if (!liveMedia.userAgent) return uri;
-    const origin = await ensureLocalProxy();
-    if (!origin || !isLanProxyOrigin(origin)) {
-      throw new Error('未获取到局域网 IP，请确认手机与电视连接同一网络');
-    }
-    return resolveLivePlayUrl(uri, liveMedia.userAgent);
-  }
-  if (!isHlsUrl(uri)) return uri;
-  const origin = await ensureLocalProxy();
-  if (!origin || !isLanProxyOrigin(origin)) {
+  // 直播只在配置了 UA 时经过代理补 UA，其余直接透传原地址；点播只有 HLS 经过代理。
+  const needsProxy = liveMedia ? !!liveMedia.userAgent : isHlsUrl(uri);
+  if (needsProxy && !(await getLanProxyOrigin())) {
     throw new Error('未获取到局域网 IP，请确认手机与电视连接同一网络');
   }
-  return resolvePlayUrl(uri);
+  const wrapped = !needsProxy
+    ? uri
+    : liveMedia
+      ? await resolveLivePlayUrl(uri, liveMedia.userAgent)
+      : await resolvePlayUrl(uri);
+  // 本机代理地址是 127.0.0.1，电视访问不到，换成当前局域网地址
+  const lanUrl = await toLanProxyUrl(wrapped);
+  if (!lanUrl) throw new Error('未获取到局域网 IP，请确认手机与电视连接同一网络');
+  return lanUrl;
 }
 
 const useDlnaStore = create<DLNAState>((set, get) => {
@@ -1091,9 +1090,9 @@ const useDlnaStore = create<DLNAState>((set, get) => {
         return;
       }
       if (isHlsUrl(episode.url)) {
-        const origin = await ensureLocalProxy();
+        const lanOrigin = await getLanProxyOrigin();
         if (session !== sessionId) return;
-        if (!origin || !isLanProxyOrigin(origin)) {
+        if (!lanOrigin) {
           Toast.show({ type: 'error', text1: '无法开启投屏', text2: '请确认手机已连接 Wi-Fi 或以太网' });
           return;
         }
@@ -1118,9 +1117,9 @@ const useDlnaStore = create<DLNAState>((set, get) => {
       const session = ++sessionId;
       liveMedia = media;
       if (media.userAgent) {
-        const origin = await ensureLocalProxy();
+        const lanOrigin = await getLanProxyOrigin();
         if (session !== sessionId) return;
-        if (!origin || !isLanProxyOrigin(origin)) {
+        if (!lanOrigin) {
           liveMedia = null;
           Toast.show({ type: 'error', text1: '无法开启投屏', text2: '请确认手机已连接 Wi-Fi 或以太网' });
           return;

@@ -2,6 +2,7 @@
 
 import {
   buildDanmakuSources,
+  danmakuTitleKey,
   parsePlaybackEpisodeNumber,
   parsePlaybackEpisodeNumbers,
   resolveEpisodeForSearch,
@@ -134,6 +135,23 @@ describe("罗马数字兜底关键词", () => {
   it("英文片名和阿拉伯数字不动", () => {
     expect(romanFallbackKeyword("Running Man II")).toBe("Running Man II");
     expect(romanFallbackKeyword("斗罗大陆2绝世唐门")).toBe("斗罗大陆2绝世唐门");
+  });
+});
+
+describe("剧名比较键", () => {
+  it.each([
+    ["斩神之凡尘神域 第二季", "斩神之凡尘神域 第2季(2026)【动漫】from 360"],
+    ["某剧第十季", "某剧 第10季"],
+    ["某剧第十二季", "某剧第12季"],
+    ["某剧第二十季", "某剧第20季"],
+    ["某剧第二十一部", "某剧第21部"],
+  ])("%s = %s", (a, b) => {
+    expect(danmakuTitleKey(a)).toBe(danmakuTitleKey(b));
+  });
+
+  it("不同季不相等，季以外的中文数字不动", () => {
+    expect(danmakuTitleKey("某剧第二季")).not.toBe(danmakuTitleKey("某剧第3季"));
+    expect(danmakuTitleKey("一人之下")).toBe("一人之下");
   });
 });
 
@@ -288,6 +306,41 @@ describe("自动匹配", () => {
     );
     const match = await resolveEpisodeForSearch(BASE, "凡人修仙传第一季", 2, { year: "2020", episodeCount: 17, episodeNumber: 3 });
     expect(match?.episodeId).toBe(23);
+  });
+
+  const zhanshenSearch = [
+    { animeId: 1825944, animeTitle: "斩神之凡尘神域 第2季(2026)【3D动漫】from tencent", startDate: "2026-01-01", source: "tencent", episodeCount: 27 },
+    { animeId: 284644, animeTitle: "斩神之凡尘神域 第2季(2026)【动漫】from 360", startDate: "2026-01-01", source: "360", episodeCount: 15 },
+  ];
+  const zhanshenBangumi = {
+    1825944: [ep(74397, "【qq】 斩神之凡尘神域 第2季 第1话 与神同战"), ep(74412, "【qq】 斩神之凡尘神域 第2季 小剧场-游乐场一日游")],
+    284644: [ep(74424, "【qq】 第1集")],
+  };
+
+  it("剧名比较时季数的中文数字与阿拉伯数字视同：第二季 = 第2季，原站优先", async () => {
+    mockApi({ "斩神之凡尘神域 第二季": zhanshenSearch }, zhanshenBangumi);
+    const match = await resolveEpisodeForSearch(BASE, "斩神之凡尘神域 第二季", 0, { year: "2026", episodeCount: 15, episodeNumber: 1 });
+    expect(match).toMatchObject({ episodeId: 74397, animeId: 1825944, source: "tencent" });
+  });
+
+  it("反方向：片源写第2季、弹幕写第二季也视同", async () => {
+    mockApi(
+      {
+        "庆余年 第2季": [
+          { animeId: 226037, animeTitle: "庆余年第二季(2024)【电视剧】from 360", startDate: "2024-01-01", source: "360", episodeCount: 36 },
+          { animeId: 2125916, animeTitle: "庆余年第二季(2024)【电视剧】from tencent", startDate: "2024-01-01", source: "tencent", episodeCount: 37 },
+        ],
+      },
+      { 226037: [ep(1, "【qq】 第1集")], 2125916: [ep(2, "【qq】 庆余年第二季 第1集")] },
+    );
+    const match = await resolveEpisodeForSearch(BASE, "庆余年 第2季", 0, { year: "2024", episodeCount: 36, episodeNumber: 1 });
+    expect(match).toMatchObject({ episodeId: 2, source: "tencent" });
+  });
+
+  it("剧名都对不上时，按集数最接近选出的同名组里也原站优先", async () => {
+    mockApi({ 斩神之凡尘神域S2: zhanshenSearch }, zhanshenBangumi);
+    const match = await resolveEpisodeForSearch(BASE, "斩神之凡尘神域S2", 0, { year: "2026", episodeCount: 15, episodeNumber: 1 });
+    expect(match).toMatchObject({ episodeId: 74397, source: "tencent" });
   });
 
   it("搜不到同年份候选时用罗马数字兜底再搜一次", async () => {

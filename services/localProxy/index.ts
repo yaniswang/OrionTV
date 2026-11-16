@@ -17,14 +17,26 @@ export function getProxyOrigin(): string | null {
   return nativeOrigin;
 }
 
-export function isLanProxyOrigin(origin = getProxyOrigin()): boolean {
-  if (!origin) return false;
+/** 投屏用：当前局域网 IP 的代理地址（每次现取）；代理不可用或没有局域网 IP 时返回 null。 */
+export async function getLanProxyOrigin(): Promise<string | null> {
+  if (!(await ensureLocalProxy())) return null;
   try {
-    const host = new URL(origin).hostname;
-    return host !== '127.0.0.1' && host !== 'localhost' && host !== '::1';
+    const lan = await getNativeMediaProxy()?.getLanOrigin?.();
+    return typeof lan === 'string' && lan ? lan : null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+/**
+ * 投屏地址：本机代理地址（127.0.0.1）换成当前局域网地址，电视才能访问；
+ * 不是本机代理地址的原样返回；取不到局域网 IP 时返回 null。
+ */
+export async function toLanProxyUrl(url: string): Promise<string | null> {
+  const local = getProxyOrigin();
+  if (!local || !url.startsWith(`${local}/`)) return url;
+  const lan = await getLanProxyOrigin();
+  return lan ? lan + url.slice(local.length) : null;
 }
 
 export function cancelProxyDownloads(): void {

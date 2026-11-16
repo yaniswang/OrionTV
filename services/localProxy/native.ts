@@ -8,6 +8,8 @@ export const AD_FILTERED_EVENT = 'MediaProxyAdFiltered';
 export interface NativeMediaProxy {
   start(options: { preferredPort: number }): Promise<{ origin?: string }>;
   stop(): Promise<void>;
+  /** 投屏用：当前局域网 IP 的代理地址；没有局域网 IP 时返回 null */
+  getLanOrigin?(): Promise<string | null>;
   /** adFilter=true 时走 /_noad 前缀，清单会在本地代理里过滤插播广告 */
   wrapUrl(target: string, adFilter: boolean): Promise<string>;
   wrapUrls(targets: string[], adFilter: boolean): Promise<string[]>;

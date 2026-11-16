@@ -715,21 +715,17 @@ export default function LiveScreen() {
   }, [goLive]);
 
   // ---------- 触屏 ----------
-  // 直播中单击打开频道列表；时移 / 回看中单击显示 / 隐藏控制条（与遥控器 OK 键一致）
+  // 单击显示 / 隐藏信息屏（与剧集页一致）；触屏打开频道页只走信息条上的「频道」按钮
   const onScreenTap = useCallback(() => {
     const s = st.current;
-    // 点面板外空白处关闭面板时，同一次点击还会传到播放器这里，要忽略，否则面板马上又被打开
+    // 点面板外空白处关闭面板时，同一次点击还会传到播放器这里，要忽略，否则信息屏马上又被打开
     if (s.panelOpen || Date.now() - panelClosedAt.current < 300) return;
-    if (!s.playback && s.pendingSeek === null) {
-      openPanel(false);
-      return;
-    }
     if (controls) {
       setControls(false);
     } else {
       showControls(!(st.current.playback && st.current.paused));
     }
-  }, [controls, showControls, openPanel]);
+  }, [controls, showControls]);
 
   // 中间区域上下滑：直播中换台，时移 / 回看中切上 / 下一段节目（手指往上推 = 下一个）
   const onVerticalSwipe = useCallback((dir: 'up' | 'down') => {
@@ -990,9 +986,9 @@ export default function LiveScreen() {
               }}
             />
           )}
-          {!isTV && controls && !panelOpen && (playback || pendingSeek !== null) && (
-            // 只在时移 / 回看中显示，返回 = 回到直播；直播中不显示，退出直播统一走频道页左上角的返回
-            <TouchTopBar onBack={goLive} right={castButtons} />
+          {!isTV && controls && !panelOpen && (
+            // 时移 / 回看中先回到直播，直播中才退出直播页（与遥控器返回键一致）
+            <TouchTopBar onBack={() => (playback || pendingSeek !== null ? goLive() : router.back())} right={castButtons} />
           )}
         </>
       )}
@@ -1013,12 +1009,10 @@ export default function LiveScreen() {
           compact={compact}
           focusEpg={panelFocusEpg}
           playingSegStart={playback ? playback.seg.start : null}
-          headerRight={castButtons}
           onSelectChannel={selectChannelFromPanel}
           onPlaySegment={playSegmentFromPanel}
+          // 右上角关闭：回到播放画面，不退出直播
           onClose={closePanel}
-          // 面板左上角的返回：退出直播；右上角的关闭：回到播放画面
-          onBack={() => router.back()}
         />
       )}
       {castAvailable && (

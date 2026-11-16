@@ -1,7 +1,7 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, StyleSheet, Pressable, Platform, Image, TVFocusGuideView, BackHandler, ScrollView, FlatList, LayoutChangeEvent } from "react-native";
 import { FlashList } from "@shopify/flash-list";
-import { ChevronLeft, X } from "lucide-react-native";
+import { X } from "lucide-react-native";
 import { Channel } from "@/services/m3u";
 import { EpgData, EpgProgram, findChannelPrograms, programIndexAt } from "@/services/epg";
 import { Segment, daySegments, dayStartOf, dayLabel, formatClock, HOUR, catchupMaxAge } from "@/services/liveTimeline";
@@ -40,12 +40,10 @@ interface Props {
   focusEpg: boolean;
   /** 正在播放的段开头（回看中），用于高亮；直播为 null */
   playingSegStart: number | null;
-  headerRight?: React.ReactNode;
   /** group：从哪个分组选的 */
   onSelectChannel: (channel: Channel, closePanel: boolean, group: string) => void;
   onPlaySegment: (channel: Channel, seg: Segment, group: string) => void;
   onClose: () => void;
-  onBack: () => void;
 }
 
 type RowState = "past" | "now" | "future";
@@ -512,11 +510,9 @@ export default function LiveChannelPanel(p: Props) {
       {/* 焦点锁在面板内，不跑到后面的页面上 */}
       <TVFocusGuideView trapFocusUp trapFocusDown trapFocusLeft trapFocusRight style={[styles.panel, { width: p.showEpgColumn ? "86%" : "47%" }]}>
         <View style={styles.head}>
-          {!isTV && <RoundButton label="返回" onPress={p.onBack}><ChevronLeft color={LC.text} size={24} /></RoundButton>}
-          <Text style={[styles.headTitle, !isTV && { marginLeft: 8 }]}>频道</Text>
-          {p.headerRight}
-          {!isTV && <RoundButton label="关闭" onPress={p.onClose} style={{ marginLeft: 8 }}><X color={LC.text} size={24} /></RoundButton>}
-          {isTV &&<Text style={styles.clock}>{formatClock(now, p.displayTz)}</Text>}
+          <Text style={styles.headTitle}>频道</Text>
+          {!isTV && <RoundButton label="关闭" onPress={p.onClose}><X color={LC.text} size={24} /></RoundButton>}
+          {isTV && <Text style={styles.clock}>{formatClock(now, p.displayTz)}</Text>}
         </View>
         <View style={styles.cols}>
           <TVFocusGuideView autoFocus ref={groupFocus.guideRef} style={[styles.col, p.compact && styles.colCompact, { width: groupColumnWidth }]}>

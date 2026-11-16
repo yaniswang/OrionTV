@@ -416,10 +416,22 @@ export const buildDanmakuSources = (
     .sort((a, b) => platformRank(a.platform) - platformRank(b.platform));
 };
 
-/** 剧名比较键：去掉 "(年份)【类型】from xx"、空格标点，罗马数字与阿拉伯数字视同 */
+const CHINESE_DIGITS: Record<string, number> = { 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
+/** 一 ~ 九十九 */
+const chineseNumber = (text: string): number => {
+  const [tens, ones = ""] = text.split("十");
+  if (!text.includes("十")) return CHINESE_DIGITS[text];
+  return (tens ? CHINESE_DIGITS[tens] : 1) * 10 + (ones ? CHINESE_DIGITS[ones] : 0);
+};
+
+/** 剧名比较键：去掉 "(年份)【类型】from xx"、空格标点，罗马数字、"第二季"的中文数字与阿拉伯数字视同 */
 export const danmakuTitleKey = (value: string): string =>
   value
     .replace(/\(\d{4}\)【[^】]*】.*$/, "")
+    .replace(
+      /第([一二两三四五六七八九]?十?[一二两三四五六七八九]?)([季部])/g,
+      (whole, number: string, unit: string) => (number ? `第${chineseNumber(number)}${unit}` : whole),
+    )
     .replace(/[\s·:：,，!！?？\-—_（）()[\]【】《》"'“”‘’.。]/g, "")
     .toLowerCase()
     .replace(/ⅲ|iii/g, "3")
@@ -637,7 +649,8 @@ export const resolveEpisodeForSearch = async (
       for (const source of await loadSources(anime)) {
         const episode = find(source);
         if (!episode) continue;
-        const rank = platformRank(source.platform) * 1000 + order;
+        // 原站优先于 360，其次平台优先级，再按候选顺序
+        const rank = (source.isBackup ? 1_000_000 : 0) + platformRank(source.platform) * 1000 + order;
         if (!best || rank < best.rank) best = { source, episode, rank };
       }
     }

@@ -272,6 +272,16 @@ class MediaProxyModule(
     }
   }
 
+  /** 投屏用：当前局域网 IP 的代理地址（每次现取）；没有局域网 IP 或代理不可用时返回 null */
+  @ReactMethod
+  fun getLanOrigin(promise: Promise) {
+    thread(name = "media-proxy-lan") {
+      val port = if (ensureStartedOrNull() != null) serverSocket?.localPort else null
+      val lan = if (port != null) getLanIPv4Address() else null
+      promise.resolve(if (port != null && lan != null) "http://$lan:$port" else null)
+    }
+  }
+
   /** 把播放地址包成本地代理地址；非 HLS 或代理不可用时原样返回 */
   @ReactMethod
   fun wrapUrl(target: String, adFilter: Boolean, promise: Promise) {
@@ -384,7 +394,6 @@ class MediaProxyModule(
     origin?.let { return it }
     loadManifestRefs()
     cleanPrefetchCacheDir()
-    val lan = getLanIPv4Address() ?: throw IOException("未获取到局域网 IP")
     val candidates = listOf(0) + (0 until PORT_ATTEMPTS).map { preferredPort + it }
     var lastError: Throwable? = null
     for (port in candidates) {
@@ -395,7 +404,8 @@ class MediaProxyModule(
         serverSocket = socket
         accepting = true
         val resolved = socket.localPort
-        val value = "http://$lan:$resolved"
+        // 本机播放固定走 127.0.0.1，网络切换不影响；投屏另取局域网地址（getLanOrigin）
+        val value = "http://127.0.0.1:$resolved"
         origin = value
         debugLog("代理启动 origin=$value")
         acceptLoop(socket)
@@ -535,6 +545,10 @@ class MediaProxyModule(
     val query: Map<String, String>,
     val headers: Map<String, String>,
   )
+
+  /** 清单里下一层地址的前缀跟随本次请求的 Host（本机 127.0.0.1 / 电视局域网 IP） */
+  private fun requestOrigin(request: ParsedRequest): String =
+    MediaProxyPlaylist.originFromHost(request.headers["host"], origin ?: "")
 
   private fun readHead(input: BufferedInputStream): String? {
     val buffer = ByteArrayOutputStream(1024)
@@ -805,7 +819,7 @@ class MediaProxyModule(
           writeSimple(output, current.code, contentType, bytes, keepAlive, request.method == "HEAD")
         } else {
           // /_noad 前缀要继续带到子清单、分片、密钥上，否则下一层清单又变回不过滤
-          val base = proxyBase(origin ?: "", adFilter)
+          val base = proxyBase(requestOrigin(request), adFilter)
           val rewritten = if (MediaProxyPlaylist.isLeafPlaylist(text)) {
             val leafText = if (adFilter) filterAds(text, target, headers, notify = true) else text
             val leaf = MediaProxyPlaylist.rewriteLeafPlaylist(leafText, base, target)
@@ -868,7 +882,7 @@ class MediaProxyModule(
         val bytes = current.body?.bytes() ?: ByteArray(0)
         val text = String(bytes, Charsets.UTF_8)
         if (MediaProxyPlaylist.isHlsPlaylist(text)) {
-          val base = origin ?: ""
+          val base = requestOrigin(request)
           val rewritten = MediaProxyLive.rewritePlaylist(text, base, key, finalUrl)
           writeSimple(output, current.code, PLAYLIST_CONTENT_TYPE, rewritten.toByteArray(Charsets.UTF_8), keepAlive, headOnly)
         } else {
@@ -927,7 +941,7 @@ class MediaProxyModule(
       return
     }
     // 配置了 UA 的分片走直播透传补 UA；否则保持上游地址，播放器直接拉
-    val base = origin ?: ""
+    val base = requestOrigin(request)
     val key = if (session.userAgent.isNotEmpty()) MediaProxyLive.userAgentKey(session.userAgent) else null
     val served = if (key == null) segments else segments.map { it.copy(uri = MediaProxyLive.buildUrl(base, key, it.uri)) }
     writeSimple(output, 200, PLAYLIST_CONTENT_TYPE, MediaProxyTimeshift.render(served).toByteArray(Charsets.UTF_8), keepAlive, headOnly)

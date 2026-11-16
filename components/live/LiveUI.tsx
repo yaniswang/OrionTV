@@ -107,7 +107,10 @@ export function RoundButton({ onPress, label, children, primary = false, ghost =
 export function TouchTopBar({ onBack, right }: { onBack: () => void; right?: React.ReactNode }) {
   return (
     <View style={styles.topBar} pointerEvents="box-none">
-      <RoundButton onPress={onBack} label="返回"><ChevronLeft color={LC.text} size={24} /></RoundButton>
+      {/* 与剧集页顶栏的返回一致：无底色白色箭头 */}
+      <Pressable accessibilityRole="button" accessibilityLabel="返回" onPress={onBack} style={styles.topBack}>
+        <ChevronLeft color="white" size={26} />
+      </Pressable>
       <View style={{ flex: 1 }} pointerEvents="none" />
       {right}
     </View>
@@ -150,5 +153,7 @@ const styles = StyleSheet.create({
   roundText: { color: LC.text, fontSize: 16 },
   roundTextSmall: { fontSize: 14 },
   roundTextPrimary: { color: LC.onAccent, fontWeight: "700" },
-  topBar: { position: "absolute", top: 20, left: 24, right: 24, flexDirection: "row", alignItems: "center" },
+  // 左边距、返回按钮与剧集页顶栏一致（left 10、padding 5、高 48）
+  topBar: { position: "absolute", top: 20, left: 10, right: 24, height: 48, flexDirection: "row", alignItems: "center" },
+  topBack: { padding: 5 },
 });
