@@ -32,6 +32,7 @@ import { DanmakuSettingsModal } from "@/components/DanmakuSettingsModal";
 import { DanmakuManualMatchModal } from "@/components/DanmakuManualMatchModal";
 import { useDanmakuAutoLoad } from "@/hooks/useDanmakuAutoLoad";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { SIDE_ZONE, SWIPE_DISTANCE } from "@/components/LivePlayer";
 
 const logger = Logger.withTag('PlayScreen');
 
@@ -416,10 +417,14 @@ export default function PlayScreen() {
   const accumulativeX = useRef(0);
   const lastT_Y = useRef(0);
   const accumulativeY = useRef(0);
-  // --- 2. 平移手势 (快进、音量、亮度) ---
+  const panStartX = useRef(0);
+  const swipingRef = useRef(false);
+  // --- 2. 平移手势 (快进、音量、亮度；与直播页一致：左右两侧调亮度 / 音量，中间上下滑切集) ---
   const panGesture = Gesture.Pan()
     .runOnJS(true)
-    .onBegin(async () => {
+    .onBegin(async (e) => {
+      panStartX.current = e.x;
+      swipingRef.current = false;
       gestureReadPendingRef.current = true;
       try {
         const [volumeResult, brightnessResult] = await Promise.allSettled([
@@ -443,7 +448,7 @@ export default function PlayScreen() {
     .onUpdate((e) => {
       if (gestureReadPendingRef.current) return;
       if (showLockControls) return;
-      const { x, translationX, translationY } = e;
+      const { translationX, translationY } = e;
 
       const deltaX = translationX - lastT_X.current;
       lastT_X.current = translationX;
@@ -453,8 +458,8 @@ export default function PlayScreen() {
       lastT_Y.current = translationY;
       accumulativeY.current += deltaY;
 
-      const isRightSide = x > screenWidth / 2;
-      
+      const startX = panStartX.current;
+
       const absX = Math.abs(accumulativeX.current);
       const absY = Math.abs(accumulativeY.current);
 
@@ -463,13 +468,16 @@ export default function PlayScreen() {
       if(gestureMode == '') {
         // 首次判断手势模式，灵敏度阈值更高防止误判
         if (absY > 50) {
-          // 垂直没滑动
-          if (isRightSide) {
+          if (startX > screenWidth * (1 - SIDE_ZONE)) {
             setGestureMode('volume');
             handleVolume(directionY);
-          } else {
+          } else if (startX < screenWidth * SIDE_ZONE) {
             setGestureMode('brightness');
             handleBrightness(directionY);
+          } else {
+            // 中间区域：松手时再按总位移判断切集
+            setGestureMode('swipe');
+            swipingRef.current = true;
           }
           accumulativeY.current = 0;
         }
@@ -502,6 +510,12 @@ export default function PlayScreen() {
     })
     .onFinalize(() => {
       void commitSeek();
+      // 手指往上推 = 下一集，往下拉 = 上一集；首尾集不响应
+      if (swipingRef.current && !showLockControls && Math.abs(lastT_Y.current) > SWIPE_DISTANCE) {
+        const target = currentEpisodeIndex + (lastT_Y.current < 0 ? 1 : -1);
+        if (target >= 0 && target < episodes.length) void playEpisode(target);
+      }
+      swipingRef.current = false;
       setGestureMode('');
       accumulativeX.current = 0;
       accumulativeY.current = 0;
