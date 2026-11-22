@@ -196,6 +196,77 @@ describe('播放页进入时的 detail 复用', () => {
   });
 });
 
+describe('自动换源后收藏跟随新源', () => {
+  // 用内存表模拟服务端收藏，key 格式同 FavoriteManager："source+id"
+  let favorites: Record<string, any>;
+  const { FavoriteManager } = jest.requireMock('@/services/storage');
+
+  beforeEach(() => {
+    favorites = {
+      'pref+1': { title: '白日提灯', year: '2025', total_episodes: 1, source_name: 'pref', cover: '' },
+    };
+    FavoriteManager.isFavorited.mockImplementation(async (s: string, i: string) => !!favorites[`${s}+${i}`]);
+    FavoriteManager.getAll.mockImplementation(async () => ({ ...favorites }));
+    FavoriteManager.remove.mockImplementation(async (s: string, i: string) => {
+      delete favorites[`${s}+${i}`];
+    });
+    FavoriteManager.toggle.mockImplementation(async (s: string, i: string, item: any) => {
+      favorites[`${s}+${i}`] = item;
+      return true;
+    });
+  });
+
+  it('起播时推荐源测速失败自动换源：收藏迁到实际播放的源', async () => {
+    mockApi.searchVideo.mockResolvedValue({ results: [makeSource(1, 'pref')] });
+    mockApi.searchVideosWs.mockResolvedValue([
+      { type: 'source_result', results: [makeSource(2, 'other')] },
+      { type: 'complete' },
+    ]);
+    global.fetch = jest.fn(async (input: any, init: any = {}) => {
+      const url = String(input);
+      if (url.includes('pref.example.com')) return makeResponse(404, '', 0);
+      if (init.method === 'HEAD') return makeResponse(200, '', 0);
+      if (url.includes('.m3u8')) return makeResponse(200, PLAYLIST, 0);
+      return makeResponse(200, '', 512 * 1024);
+    }) as any;
+
+    await usePlayerStore.getState().loadVideo({
+      source: 'pref',
+      id: 1,
+      episodeIndex: 0,
+      title: '白日提灯',
+      year: '2025',
+      stype: 'movie',
+    } as any);
+
+    expect(useDetailStore.getState().detail?.source).toBe('other');
+    expect(Object.keys(favorites)).toEqual(['other+2']);
+    expect(usePlayerStore.getState().isFavorited).toBe(true);
+    useDetailStore.getState().abort();
+  });
+
+  it('播放中出错自动跳下一个源：收藏迁到新源', async () => {
+    const preferred = withProbe(makeSource(1, 'pref'), 100);
+    const other = withProbe(makeSource(2, 'other'), 200);
+    useDetailStore.setState({
+      q: '白日提灯',
+      title: '白日提灯',
+      searchResults: [preferred, other],
+      detail: preferred,
+      loading: false,
+      allSourcesLoaded: true,
+    });
+    usePlayerStore.setState({ isFavorited: true });
+
+    await usePlayerStore.getState().handleVideoError('network', preferred.episodes[0]);
+
+    expect(useDetailStore.getState().detail?.source).toBe('other');
+    expect(Object.keys(favorites)).toEqual(['other+2']);
+    expect(usePlayerStore.getState().isFavorited).toBe(true);
+    expect(useDetailStore.getState().isFavorited).toBe(true);
+  });
+});
+
 describe('播放器 Seek 提交时机', () => {
   it('预览阶段不清泳道，500ms 后真正调用 seek 才增加提交版本', async () => {
     jest.useFakeTimers();

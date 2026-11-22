@@ -10,8 +10,53 @@ import Logger from '@/utils/Logger';
 import { getEpisodeRecordInfo, getEpisodeTotal } from '@/utils/EpisodeLabelUtils';
 import { notifyPlaybackSkip } from '@/utils/PlaybackSkipNotice';
 import { isSameSourceTitle } from '@/utils/SourceTitleMatch';
+import type { SearchResult } from '@/services/api';
 
 const logger = Logger.withTag('PlayerStore');
+
+/**
+ * 收藏跟随实际播放的源：当前源没收藏、但有同片的旧源收藏时，删旧存新。
+ * 返回当前源是否已收藏。
+ */
+async function migrateFavoriteToSource(
+  detail: SearchResult,
+  episodesCount: number,
+  title: string,
+  year: string,
+  stype: string | undefined,
+  q: string | undefined,
+): Promise<boolean> {
+  const { source, id } = detail;
+  if (await FavoriteManager.isFavorited(source, id.toString())) return true;
+
+  const favoritesData = await FavoriteManager.getAll();
+  const arrFavoritesData = Object.entries(favoritesData).map(item => {
+    const [source, id] = item[0].split("+");
+    return { ...item[1], source, id };
+  });
+  const findedFavorite = arrFavoritesData.find(item => {
+    // 直播频道收藏年份为空，同名时会被误当成这部影片的旧收藏
+    if (item.origin === 'live') return false;
+    const itemStype = item.total_episodes > 1 ? 'tv' : 'movie';
+    return isSameSourceTitle(item.title, title, year) && item.year == year && (stype !== undefined && itemStype === stype || stype === undefined)
+  });
+  if (!findedFavorite) return false;
+
+  logger.info(`[FAVORITE] 收藏换源：${findedFavorite.source}+${findedFavorite.id} -> ${source}+${id}`);
+  await FavoriteManager.remove(findedFavorite.source, findedFavorite.id);
+  const { poster, source_name } = detail;
+  await FavoriteManager.toggle(source, id.toString(), {
+    cover: poster,
+    title,
+    poster,
+    source_name,
+    total_episodes: episodesCount,
+    episode_total: getEpisodeTotal(detail.episodes_titles, episodesCount),
+    search_title: q,
+    year: year || "",
+  });
+  return true;
+}
 
 interface Episode {
   url: string;
@@ -290,36 +335,8 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
       const episodesMappingEnd = performance.now();
       logger.info(`[PERF] Episodes mapping (${episodes.length} episodes) took ${(episodesMappingEnd - episodesMappingStart).toFixed(2)}ms`);
       
-      let isFavorited = await FavoriteManager.isFavorited(source, id.toString());
-      if (!isFavorited) {
-        const favoritesData = await FavoriteManager.getAll();
-        const arrFavoritesData = Object.entries(favoritesData).map(item =>{
-          const [source, id] = item[0].split("+");
-          return {...item[1], source, id};
-        })
-        const findedFavorite = arrFavoritesData.find(item => {
-          // 直播频道收藏年份为空，同名时会被误当成这部影片的旧收藏
-          if (item.origin === 'live') return false;
-          const itemStype = item.total_episodes > 1 ? 'tv' : 'movie';
-          return isSameSourceTitle(item.title, title, year) && item.year == year && (stype !== undefined && itemStype === stype || stype === undefined)
-        });
-        if (findedFavorite) {
-          await FavoriteManager.remove(findedFavorite.source, findedFavorite.id);
-          const { poster, source_name } = detail;
-          const favoriteItem = {
-            cover: poster,
-            title,
-            poster,
-            source_name,
-            total_episodes: episodes.length,
-            episode_total: getEpisodeTotal(detail.episodes_titles, episodes.length),
-            search_title: q,
-            year: year || "",
-          };
-          const newIsFavorited = await FavoriteManager.toggle(source, id.toString(), favoriteItem);
-          isFavorited = true;
-        }
-      }
+      // 起播时推荐源可能已自动换成别的源，收藏要跟实际播放的 detail 走
+      const isFavorited = await migrateFavoriteToSource(detail, episodes.length, title, year, stype, q);
 
       set({
         isDetialLoading: false,
@@ -709,7 +726,20 @@ const usePlayerStore = create<PlayerState>((set, get) => ({
           episodes: mappedEpisodes,
           isDetialLoading: false, // 让Video组件重新渲染
         });
-        
+
+        // 收藏跟着换到新源
+        const { q, title } = useDetailStore.getState();
+        const isFavorited = await migrateFavoriteToSource(
+          fallbackSource,
+          newEpisodes.length,
+          title || fallbackSource.title,
+          fallbackSource.year || '',
+          newEpisodes.length > 1 ? 'tv' : 'movie',
+          q ?? undefined,
+        );
+        set({ isFavorited });
+        useDetailStore.setState({ isFavorited });
+
         const perfEnd = performance.now();
         logger.info(`[VIDEO_ERROR] Successfully switched to fallback source in ${(perfEnd - perfStart).toFixed(2)}ms`);
         logger.info(`[VIDEO_ERROR] New episode URL: ${newEpisodes[currentEpisodeIndex].substring(0, 100)}...`);
